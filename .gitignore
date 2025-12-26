@@ -1,0 +1,13 @@
+# Dépendances (trop lourd)
+node_modules/
+venv/
+__pycache__/
+
+# Fichiers de build (inutile)
+dist/
+.DS_Store
+
+# SECRETS (TRÈS IMPORTANT)
+.env
+.env.local
+.env.*
