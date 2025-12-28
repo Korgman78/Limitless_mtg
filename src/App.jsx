@@ -459,7 +459,7 @@ const CardEvaluationBlock = ({ card, allCards }) => {
     const hasAlsa = !!card.alsa;
     const rankAlsaRarity = hasAlsa ? getRank(peersRarity, 'alsa', card.alsa, true) : null;
     const rankAlsaColor = hasAlsa ? getRank(peersColor, 'alsa', card.alsa, true) : null;
-    const rarityLabel = normalizeRarity(card.rarity) === 'C' ? 'Commons' : normalizeRarity(card.rarity) === 'U' ? 'Uncommons' : 'Rares';
+   const rarityLabel = normalizeRarity(card.rarity) === 'M' ? 'Mythics' : normalizeRarity(card.rarity) === 'R' ? 'Rares' : normalizeRarity(card.rarity) === 'U' ? 'Uncommons' : 'Commons';
     const RankingRow = ({ label, rank, total, type }) => {
         if (!rank || !total) return null;
         const percent = Math.max(5, Math.min(100, ((total - rank) / total) * 100)); 
@@ -753,7 +753,9 @@ export default function MTGLimitedApp() {
           else if (count === 2 && isSplash) type = "Two colors + splash";
           else if (count === 3 && !isSplash) type = "Three colors";
           else if (count >= 3) type = "More than 3 colors"; 
-          return { id: d.id, name: d.archetype_name, colors: d.colors, wr: d.win_rate, games: d.games_count, type: type, history: [d.win_rate, d.win_rate, d.win_rate] };
+          return { id: d.id, name: d.archetype_name, colors: d.colors, wr: d.win_rate, games: d.games_count, type: type, history: (d.win_rate_history && d.win_rate_history.length > 1) 
+                     ? d.win_rate_history 
+                     : [d.win_rate, d.win_rate]};
         });
         setDecks(formattedDecks);
       } else { setDecks([]); setTotalGames(1); }
