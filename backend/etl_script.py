@@ -16,9 +16,7 @@ INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
 
 # ✅ VARIABLE DE CIBLAGE
-# "FIN" pour charger uniquement Final Fantasy.
-# None ou "" pour charger TOUS les sets actifs (mode quotidien).
-TARGET_SET_CODE = "FIN"
+TARGET_SET_CODE = ""
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
@@ -96,7 +94,7 @@ def fetch_data_safe(url, context_name="Données"):
         return None
 
 # ==============================================================================
-# 3. RECUPERATION DES SETS ACTIFS
+# 3. RECUPERATION DES SETS ACTIFS & HISTORIQUE
 # ==============================================================================
 
 def get_active_sets():
@@ -113,8 +111,25 @@ def get_active_sets():
         print(f"❌ Exception Fetch Sets: {e}")
         return []
 
+def get_existing_histories(set_code, fmt):
+    """
+    Récupère l'historique actuel pour ne pas l'écraser.
+    Retourne un dictionnaire : { 'Colors': [55.2, 56.1, ...] }
+    """
+    url = f"{SUPABASE_URL}/rest/v1/archetype_stats?select=colors,win_rate_history&set_code=eq.{set_code}&format=eq.{fmt}"
+    try:
+        r = requests.get(url, headers=HEADERS_SUPABASE)
+        if r.status_code == 200:
+            data = r.json()
+            # On transforme la liste en dictionnaire pour accès rapide par couleurs
+            history_map = {row['colors']: row.get('win_rate_history', []) for row in data}
+            return history_map
+        return {}
+    except Exception:
+        return {}
+
 # ==============================================================================
-# 4. INGESTION DES DECKS (Dynamique)
+# 4. INGESTION DES DECKS (Avec Gestion Historique)
 # ==============================================================================
 
 def ingest_decks(set_code, start_date):
@@ -122,6 +137,10 @@ def ingest_decks(set_code, start_date):
     
     for fmt in ALL_FORMATS:
         print(f" 👉 Format: {fmt}")
+        
+        # 1. Récupération de l'historique existant AVANT traitement
+        existing_histories = get_existing_histories(set_code, fmt)
+        
         url = f"https://www.17lands.com/color_ratings/data?expansion={set_code}&event_type={fmt}&start_date={start_date}&end_date={END_DATE}&combine_splash=false"
         raw_data = fetch_data_safe(url, f"Decks {fmt}")
         random_sleep()
@@ -143,13 +162,30 @@ def ingest_decks(set_code, start_date):
                 if wr is None:
                     wins = safe_float(row.get('wins', 0)) or 0
                     wr = (wins / games) * 100
+                
+                current_wr = round(wr, 1)
+
+                # --- GESTION DE L'HISTORIQUE ---
+                # On récupère l'ancien tableau ou vide
+                history = existing_histories.get(final_code_colors)
+                if history is None: 
+                    history = []
+                
+                # On ajoute la nouvelle valeur à la fin
+                history.append(current_wr)
+                
+                # On garde seulement les 14 dernières valeurs (Rolling Window)
+                if len(history) > 14:
+                    history = history[-14:]
+                # -------------------------------
 
                 record = {
                     "set_code": set_code,
                     "archetype_name": name,
                     "colors": final_code_colors,
                     "format": fmt,
-                    "win_rate": round(wr, 1),
+                    "win_rate": current_wr,
+                    "win_rate_history": history, # Nouvelle colonne
                     "games_count": games,
                 }
                 unique_batch[f"{fmt}_{final_code_colors}"] = record
@@ -161,11 +197,11 @@ def ingest_decks(set_code, start_date):
             try:
                 resp = requests.post(api_url, json=records, headers=HEADERS_SUPABASE)
                 if resp.status_code >= 400: print(f"      ❌ Erreur Supabase: {resp.text}")
-                else: print(f"      ✅ {len(records)} decks sauvegardés.")
+                else: print(f"      ✅ {len(records)} decks sauvegardés (avec historique).")
             except Exception as e: print(f"      ❌ Exception POST: {e}")
 
 # ==============================================================================
-# 5. INGESTION DES CARTES (Dynamique)
+# 5. INGESTION DES CARTES (Dynamique) - Inchangé
 # ==============================================================================
 
 def ingest_cards(set_code, start_date):
@@ -204,8 +240,6 @@ def ingest_cards(set_code, start_date):
 
                     gih = get_gih_strict(row)
                     alsa = safe_float(row.get('avg_seen'))
-
-                    # Correction Game Count (Priorité au Game Count car Seen Count buggé en Sealed)
                     img_count = row.get('game_count') or 0
 
                     record = {
