@@ -607,25 +607,40 @@ const CardDetailOverlay = ({ card, activeFormat, activeSet, decks, cards: allCar
 
     return (
         <SwipeableOverlay onClose={onClose}>
-            <div className="flex flex-col h-full md:flex-row">
-                <div className="bg-slate-900/50 pb-8 px-6 flex flex-col items-center border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 pt-8 flex-shrink-0">
-                    <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-56 md:w-72 rounded-[18px] shadow-2xl shadow-black my-4 ring-1 ring-white/10" />
-                    <h1 className="text-2xl font-black text-center text-white leading-tight mb-3">{card.name}</h1>
-                    <div className="flex items-center gap-3 mb-6">
-                        <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${RARITY_STYLES[rCode]}`}>{rCode}</span>
-                        <ManaIcons colors={card.colors} size="lg" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
-                        <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold mb-1">GIH Win Rate</span>
-                            <div className={`text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)}`}>{card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%</div>
-                        </div>
-                        <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold mb-1">ALSA</span>
-                            <div className="text-3xl font-black text-white">{card.alsa ? card.alsa.toFixed(2) : '--'}</div>
-                        </div>
-                    </div>
+    <div className="flex flex-col h-full md:flex-row">
+        
+        {/* --- DÉBUT DU BLOC À REMPLACER (COLONNE GAUCHE/HAUT) --- */}
+        <div className="bg-slate-900/50 py-3 px-4 md:pb-8 md:px-6 flex flex-col items-center border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
+            
+            {/* IMAGE : Contrainte à 25% de la hauteur d'écran sur mobile (h-[25vh]) */}
+            <motion.img 
+                layoutId={`img-${card.id}`} 
+                src={getCardImage(card.name)} 
+                className="h-[25vh] w-auto md:h-auto md:w-72 rounded-[12px] md:rounded-[18px] shadow-2xl shadow-black my-2 md:my-4 ring-1 ring-white/10 object-contain" 
+            />
+            
+            {/* TITRE : Plus petit sur mobile */}
+            <h1 className="text-lg md:text-2xl font-black text-center text-white leading-tight mb-1 md:mb-3 truncate w-full px-2">{card.name}</h1>
+            
+            {/* RARITY & MANA : Marges réduites */}
+            <div className="flex items-center gap-3 mb-3 md:mb-6 scale-90 md:scale-100">
+                <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${RARITY_STYLES[rCode]}`}>{rCode}</span>
+                <ManaIcons colors={card.colors} size="lg" />
+            </div>
+
+            {/* STATS : Compactes sur mobile (text-xl vs text-3xl sur PC) */}
+            <div className="grid grid-cols-2 gap-2 md:gap-3 w-full max-w-xs">
+                <div className="bg-slate-800 p-2 md:p-3 rounded-xl border border-slate-700 flex flex-col items-center">
+                    <span className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold mb-0.5 md:mb-1">GIH WR</span>
+                    <div className={`text-xl md:text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)}`}>{card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%</div>
                 </div>
+                <div className="bg-slate-800 p-2 md:p-3 rounded-xl border border-slate-700 flex flex-col items-center">
+                    <span className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold mb-0.5 md:mb-1">ALSA</span>
+                    <div className="text-xl md:text-3xl font-black text-white">{card.alsa ? card.alsa.toFixed(2) : '--'}</div>
+                </div>
+            </div>
+        </div>
+        {/* --- FIN DU BLOC À REMPLACER --- */}
                  
                 <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-slate-950">
                     <CardEvaluationBlock card={card} allCards={allCards} />
