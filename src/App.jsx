@@ -127,13 +127,14 @@ const MetagamePieChart = ({ decks, totalGames }) => {
   const data = [
     { label: 'Mono', value: counts['Mono'], color: '#94a3b8' },
     { label: '2 Color', value: counts['2 Color'], color: '#6366f1' },
-    { label: '2+Splash', value: counts['2+Splash'], color: '#818cf8' },
+    { label: '2+Splash', value: counts['2+Splash'], color: '#a855f7' },
     { label: '3 Color', value: counts['3 Color'], color: '#f59e0b' },
-    { label: '>3 Color', value: counts['>3 Color'], color: '#d97706' },
+    { label: '>3 Color', value: counts['>3 Color'], color: '#ea580c' },
   ];
 
   const total = totalGames || 1;
   let cumulativePercent = 0;
+
   const getCoordinatesForPercent = (percent) => {
     const x = Math.cos(2 * Math.PI * percent);
     const y = Math.sin(2 * Math.PI * percent);
@@ -141,40 +142,79 @@ const MetagamePieChart = ({ decks, totalGames }) => {
   };
 
   return (
-    <div className="flex items-center gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800 h-full">
-      <div className="relative w-24 h-24 lg:w-32 lg:h-32 flex-shrink-0">
-        <svg viewBox="-1.1 -1.1 2.2 2.2" className="transform -rotate-90">
-          {data.map((slice, i) => {
-            if (slice.value === 0) return null;
-            const startPercent = cumulativePercent;
-            const slicePercent = slice.value / total;
-            cumulativePercent += slicePercent;
-            const endPercent = cumulativePercent;
-            const [startX, startY] = getCoordinatesForPercent(startPercent);
-            const [endX, endY] = getCoordinatesForPercent(endPercent);
-            const largeArcFlag = slicePercent > 0.5 ? 1 : 0;
-            const pathData = slicePercent >= 0.999
-              ? `M 1 0 A 1 1 0 1 1 -1 0 A 1 1 0 1 1 1 0`
-              : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
-            return <path key={i} d={pathData} fill={slice.color} stroke="#0f172a" strokeWidth="0.05" />;
-          })}
-          <circle cx="0" cy="0" r="0.6" fill="#0f172a" />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-          <span className="text-[9px] text-slate-400 font-bold uppercase">Total</span>
-          <span className="text-xs font-black text-white">{(total / 1000).toFixed(0)}k</span>
-        </div>
-      </div>
-      <div className="flex-1 space-y-1 min-w-0">
-        {data.map((d, i) => (
-          <div key={i} className="flex justify-between items-center text-xs">
-            <div className="flex items-center gap-2 truncate">
-              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-              <span className="text-slate-300 truncate">{d.label}</span>
-            </div>
-            <span className="font-bold text-slate-500 ml-2">{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+    <div className="flex flex-col bg-slate-900 p-4 rounded-xl border border-slate-800 h-full overflow-hidden">
+      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">
+        COLORS BREAKDOWN (NUMBER OF GAMES)
+      </h3>
+
+      {/* AMÉLIORATION : Réduction du gap de 6 à 3 sur mobile pour laisser plus de place au donut. 
+          Maintien du 'flex-row' permanent (pas de flex-col ici).
+      */}
+      <div className="flex items-start gap-3 md:gap-6 flex-1 pt-1">
+        
+        {/* GRAPHIQUE : Augmentation de la taille de 28 à 32 sur mobile. 
+            Le 'flex-shrink-0' garantit que le cercle ne s'écrase pas.
+        */}
+        <div className="relative w-32 h-32 md:w-36 md:h-36 flex-shrink-0">
+          <svg viewBox="-1.1 -1.1 2.2 2.2" className="transform -rotate-90">
+            {data.map((slice, i) => {
+              if (slice.value === 0) return null;
+              const startPercent = cumulativePercent;
+              const slicePercent = slice.value / total;
+              cumulativePercent += slicePercent;
+              const endPercent = cumulativePercent;
+              
+              const [startX, startY] = getCoordinatesForPercent(startPercent);
+              const [endX, endY] = getCoordinatesForPercent(endPercent);
+              
+              const largeArcFlag = slicePercent > 0.5 ? 1 : 0;
+              const pathData = slicePercent >= 0.999
+                ? `M 1 0 A 1 1 0 1 1 -1 0 A 1 1 0 1 1 1 0`
+                : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
+              
+              return (
+                <path 
+                  key={i} 
+                  d={pathData} 
+                  fill={slice.color} 
+                  stroke="#0f172a" 
+                  strokeWidth="0.05" 
+                />
+              );
+            })}
+            <circle cx="0" cy="0" r="0.65" fill="#0f172a" />
+          </svg>
+          
+          <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
+            <span className="text-[9px] text-slate-400 font-bold uppercase">Total</span>
+            <span className="text-xs font-black text-white">{(total / 1000).toFixed(0)}k</span>
           </div>
-        ))}
+        </div>
+
+        {/* LÉGENDE : Réduction de max-w à 130px sur mobile pour éviter qu'elle ne pousse 
+            le donut hors de l'écran.
+        */}
+        <div className="flex-1 flex justify-end">
+          <div className="w-full max-w-[130px] md:max-w-[150px] space-y-1">
+            {data.map((d, i) => (
+              <div 
+                key={i} 
+                className="flex justify-between items-center text-[10px] md:text-[11px] p-1 md:p-1.5 rounded-md border border-transparent transition-all hover:bg-slate-800/50 hover:border-slate-700"
+                style={{ 
+                  borderLeftColor: d.value > 0 ? d.color : 'transparent', 
+                  borderLeftWidth: '3px' 
+                }}
+              >
+                <div className="flex items-center gap-1.5 md:gap-2">
+                  <span className="text-slate-300 font-medium whitespace-nowrap">{d.label}</span>
+                </div>
+                <span className="font-bold text-slate-400 tabular-nums">
+                  {total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -202,27 +242,55 @@ const PairBreakdownChart = ({ decks }) => {
   });
 
   return (
-    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2 h-full overflow-y-auto">
-      {pairStats.sort((a, b) => b.value - a.value).map(p => (
-        <div key={p.code} className="flex items-center gap-2 text-xs">
-          <div className="w-8 font-bold text-slate-400">{p.code}</div>
-          <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-indigo-500" style={{ width: totalBicoloreGames > 0 ? `${Math.min(((p.value / totalBicoloreGames) * 100) * 2, 100)}%` : '0%' }} />
+    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col h-full">
+      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">
+        META SHARE
+      </h3>
+
+      {/* MODIFICATION : 
+          1. Ajout de 'pr-4' pour créer un espace de sécurité pour la scrollbar.
+          2. Remplacement de 'no-scrollbar' par une scrollbar fine et stylisée.
+      */}
+      <div className="space-y-2 flex-1 overflow-y-auto pr-4 custom-scrollbar">
+        {pairStats.sort((a, b) => b.value - a.value).map(p => (
+          <div key={p.code} className="flex items-center gap-3 text-xs">
+            <div className="w-8 font-bold text-slate-400 tabular-nums">
+              {p.code}
+            </div>
+
+            <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+                style={{
+                  width: totalBicoloreGames > 0
+                    ? `${Math.min(((p.value / totalBicoloreGames) * 100) * 2, 100)}%`
+                    : '0%'
+                }}
+              />
+            </div>
+
+            {/* MODIFICATION : 
+                Largeur fixe 'w-12' pour garantir que le texte ne bouge pas 
+                et ne soit pas recouvert par l'ascenseur.
+            */}
+            <div className="w-12 text-right font-mono text-slate-300 tabular-nums text-[10px] flex-shrink-0">
+              {totalBicoloreGames > 0 ? ((p.value / totalBicoloreGames) * 100).toFixed(1) : 0}%
+            </div>
           </div>
-          <div className="w-8 text-right font-mono text-slate-300">
-            {totalBicoloreGames > 0 ? ((p.value / totalBicoloreGames) * 100).toFixed(1) : 0}%
-          </div>
-        </div>
-      ))}
-      <div className="text-[10px] text-center text-slate-500 italic pt-2">
-        *Share of all 2-Color & Splash
+        ))}
+      </div>
+
+      <div className="text-[9px] text-center text-slate-600 italic pt-2 border-t border-slate-800/50 mt-2">
+        *Share of all 2-Color & 2-Color + Splash
       </div>
     </div>
   );
 };
 
 const Sparkline = ({ data }) => {
-  const safeData = data || [50, 50, 50, 50, 50];
+  const [isHovered, setIsHovered] = useState(false);
+  const safeData = (data && data.length > 0) ? data : [0, 0];
+
   const min = Math.min(...safeData);
   const max = Math.max(...safeData);
   const range = max - min || 1;
@@ -231,13 +299,45 @@ const Sparkline = ({ data }) => {
     const y = 20 - ((d - min) / range) * 20;
     return `${x},${y}`;
   }).join(' ');
-  const isRising = safeData[safeData.length - 1] >= safeData[0];
+
+  const first = safeData[0];
+  const last = safeData[safeData.length - 1];
+  const delta = last - first;
+  const isRising = delta >= 0;
+  const days = safeData.length; // Basé sur le nombre de points dans l'historique
 
   return (
-    <div className="flex flex-col items-end opacity-80">
+    <div
+      className="relative flex flex-col items-end opacity-80 cursor-help"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <svg width="40" height="20" className="overflow-visible">
-        <polyline points={points} fill="none" stroke={isRising ? "#10b981" : "#ef4444"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <polyline
+          points={points}
+          fill="none"
+          stroke={isRising ? "#10b981" : "#ef4444"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
+
+      <AnimatePresence>
+        {isHovered && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute bottom-full mb-2 right-0 bg-slate-800 text-[9px] font-bold py-1 px-2 rounded border border-slate-700 whitespace-nowrap z-50 shadow-xl"
+          >
+            <span className={isRising ? "text-emerald-400" : "text-red-400"}>
+              {isRising ? '+' : ''}{delta.toFixed(1)}%
+            </span>
+            <span className="text-slate-400 ml-1 font-medium italic">since {days} days</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -721,26 +821,26 @@ const PressReview = ({ activeSet }) => {
   const [activeSetsOptions, setActiveSetsOptions] = useState([]); // Liste des sets actifs chargée dynamiquement
   const [loading, setLoading] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState(null);
-  
+
   // États Filtres
   const [selectedTags, setSelectedTags] = useState([]); // Multi-sélection
   const [currentSetFilter, setCurrentSetFilter] = useState('All'); // Filtre Set
   const [zoomedCard, setZoomedCard] = useState(null);
 
-const cleanSummary = (text) => {
-  if (!text) return "";
+  const cleanSummary = (text) => {
+    if (!text) return "";
 
-  // 1. On coupe avant le début du JSON technique
-  let content = text.split('{')[0];
+    // 1. On coupe avant le début du JSON technique
+    let content = text.split('{')[0];
 
-  // 2. Nettoyage en profondeur
-  return content
-    .replace(/```[\s\S]*?$/g, '')      // Supprime un bloc de code ouvert et non fermé à la fin
-    .replace(/`{1,3}/g, '')           // Supprime les backticks restants partout
-    .replace(/[-_*]{3,}/g, '')        // Supprime les lignes horizontales (---, ***, ___)
-    .replace(/\s+$/g, '')             // Supprime tous les espaces et retours à la ligne à la fin
-    .trim();
-};
+    // 2. Nettoyage en profondeur
+    return content
+      .replace(/```[\s\S]*?$/g, '')      // Supprime un bloc de code ouvert et non fermé à la fin
+      .replace(/`{1,3}/g, '')           // Supprime les backticks restants partout
+      .replace(/[-_*]{3,}/g, '')        // Supprime les lignes horizontales (---, ***, ___)
+      .replace(/\s+$/g, '')             // Supprime tous les espaces et retours à la ligne à la fin
+      .trim();
+  };
 
   const parsePostgresArray = (pgArray) => {
     if (!pgArray) return [];
@@ -769,12 +869,12 @@ const cleanSummary = (text) => {
       setLoading(true);
       try {
         let query = supabase.from('press_articles').select('*').order('published_at', { ascending: false });
-        
+
         // Si un set spécifique est sélectionné (ex: TLA), on filtre sur set_tag
         if (currentSetFilter !== 'All') {
           query = query.eq('set_tag', currentSetFilter);
         }
-        
+
         const { data } = await query.limit(50);
         if (data) setArticles(data);
       } catch (err) { console.error("Error fetching articles:", err); }
@@ -788,7 +888,7 @@ const cleanSummary = (text) => {
     if (!articles) return [];
     if (selectedTags.length === 0) return articles;
     // L'article doit contenir TOUS les tags sélectionnés
-    return articles.filter(article => 
+    return articles.filter(article =>
       selectedTags.every(tag => article.tags?.includes(tag))
     );
   }, [articles, selectedTags]);
@@ -804,7 +904,7 @@ const cleanSummary = (text) => {
 
   // Gestion du clic sur un tag (Ajout/Suppression)
   const toggleTag = (tag) => {
-    setSelectedTags(prev => 
+    setSelectedTags(prev =>
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
     );
   };
@@ -827,16 +927,16 @@ const cleanSummary = (text) => {
       {/* ZOOM CARTE */}
       <AnimatePresence>
         {zoomedCard && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setZoomedCard(null)}
             className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out"
           >
-            <motion.img 
+            <motion.img
               initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
               src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(zoomedCard)}&format=image&version=border_crop`}
               className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()} 
+              onClick={(e) => e.stopPropagation()}
             />
           </motion.div>
         )}
@@ -851,10 +951,10 @@ const cleanSummary = (text) => {
               </h2>
               <p className="text-slate-400 text-sm">Curated summaries & strategic insights.</p>
             </div>
-            
+
             {/* SÉLECTEUR DE SET DYNAMIQUE (TLA, FDN...) */}
             <div className="relative min-w-[160px]">
-              <select 
+              <select
                 value={currentSetFilter}
                 onChange={(e) => setCurrentSetFilter(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 text-white text-xs font-bold py-2.5 pl-4 pr-10 rounded-xl outline-none focus:border-indigo-500 appearance-none cursor-pointer transition-all hover:border-slate-600"
@@ -870,7 +970,7 @@ const cleanSummary = (text) => {
 
           {/* NUAGE DE TAGS (MULTI-SELECTION) */}
           <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar mask-linear-fade">
-            <button 
+            <button
               onClick={() => setSelectedTags([])}
               className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all whitespace-nowrap 
                 ${selectedTags.length === 0 ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-600'}`}
@@ -878,9 +978,9 @@ const cleanSummary = (text) => {
               All Tags
             </button>
             {allTags.map(tag => (
-              <button 
-                key={tag} 
-                onClick={() => toggleTag(tag)} 
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
                 className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all whitespace-nowrap 
                   ${selectedTags.includes(tag) ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-600'}`}
               >
@@ -900,15 +1000,15 @@ const cleanSummary = (text) => {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {filteredArticles.map((article) => (
-              <button 
-                key={article.id} 
-                onClick={() => setSelectedArticle(article)} 
+              <button
+                key={article.id}
+                onClick={() => setSelectedArticle(article)}
                 className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99]"
               >
                 <div className="md:flex">
                   <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
                     <img src={getYouTubeThumbnail(article)} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" alt="thumb" />
-                    
+
                     {/* SCORE AVEC TOOLTIP */}
                     {article.strategic_score && (
                       <div className="absolute top-2 left-2 group/score">
@@ -939,7 +1039,7 @@ const cleanSummary = (text) => {
                       {cleanSummary(article.summary)}
                     </p>
                     <div className="mt-2 text-[10px] text-slate-600 font-medium flex items-center gap-2">
-                       {formatDate(article.published_at)}
+                      {formatDate(article.published_at)}
                     </div>
                   </div>
                 </div>
@@ -953,94 +1053,94 @@ const cleanSummary = (text) => {
       <AnimatePresence>
         {selectedArticle && (
           <SwipeableOverlay onClose={() => setSelectedArticle(null)}>
-             <div className="flex flex-col h-full md:flex-row bg-slate-950">
-                {/* VOLET GAUCHE (Vidéo) - RÉDUIT SUR MOBILE */}
-                <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
-                    <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl border border-slate-700 group shrink-0">
-                        <img src={getYouTubeThumbnail(selectedArticle)} className="w-full h-full object-cover" alt="vid" />
-                        <a href={selectedArticle.video_url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="bg-red-600 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-2 text-[10px] shadow-xl transform scale-95 group-hover:scale-100 transition-transform">
-                                <Play size={12} fill="currentColor" /> Watch
-                            </div>
-                        </a>
+            <div className="flex flex-col h-full md:flex-row bg-slate-950">
+              {/* VOLET GAUCHE (Vidéo) - RÉDUIT SUR MOBILE */}
+              <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
+                <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl border border-slate-700 group shrink-0">
+                  <img src={getYouTubeThumbnail(selectedArticle)} className="w-full h-full object-cover" alt="vid" />
+                  <a href={selectedArticle.video_url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-red-600 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-2 text-[10px] shadow-xl transform scale-95 group-hover:scale-100 transition-transform">
+                      <Play size={12} fill="currentColor" /> Watch
                     </div>
-                    <div className="text-center mt-3 hidden md:block w-full">
-                        <h2 className="text-xl font-black text-white leading-tight mb-2">{selectedArticle.title}</h2>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatDate(selectedArticle.published_at)}</span>
-                    </div>
-                    <a href={selectedArticle.video_url} target="_blank" rel="noopener noreferrer" className="hidden md:flex mt-6 w-full max-w-[200px] bg-white text-black py-2.5 rounded-lg font-bold items-center justify-center gap-2 hover:bg-indigo-500 hover:text-white transition-colors text-xs">
-                        <ExternalLink size={14} /> Open on YouTube
-                    </a>
+                  </a>
                 </div>
+                <div className="text-center mt-3 hidden md:block w-full">
+                  <h2 className="text-xl font-black text-white leading-tight mb-2">{selectedArticle.title}</h2>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatDate(selectedArticle.published_at)}</span>
+                </div>
+                <a href={selectedArticle.video_url} target="_blank" rel="noopener noreferrer" className="hidden md:flex mt-6 w-full max-w-[200px] bg-white text-black py-2.5 rounded-lg font-bold items-center justify-center gap-2 hover:bg-indigo-500 hover:text-white transition-colors text-xs">
+                  <ExternalLink size={14} /> Open on YouTube
+                </a>
+              </div>
 
-                {/* VOLET DROIT (Contenu) */}
-                <div className="flex-1 overflow-y-auto p-5 md:p-12 bg-slate-950">
-                    <div className="max-w-2xl mx-auto pb-20 md:pb-0">
-                        {/* Titre Mobile */}
-                        <div className="md:hidden mb-6">
-                           <h2 className="text-lg font-black text-white leading-tight">{selectedArticle.title}</h2>
-                           <div className="flex items-center gap-2 mt-2">
-                              <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{selectedArticle.set_tag}</span>
-                              <span className="text-[9px] text-slate-500 font-bold uppercase">{formatDate(selectedArticle.published_at)}</span>
-                           </div>
+              {/* VOLET DROIT (Contenu) */}
+              <div className="flex-1 overflow-y-auto p-5 md:p-12 bg-slate-950">
+                <div className="max-w-2xl mx-auto pb-20 md:pb-0">
+                  {/* Titre Mobile */}
+                  <div className="md:hidden mb-6">
+                    <h2 className="text-lg font-black text-white leading-tight">{selectedArticle.title}</h2>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{selectedArticle.set_tag}</span>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase">{formatDate(selectedArticle.published_at)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+                    <h3 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
+                      <Zap size={14} className="text-indigo-500" /> Key Takeaways
+                    </h3>
+                    {selectedArticle.strategic_score && (
+                      <div className="relative group/score-detail">
+                        <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">
+                          Score: {selectedArticle.strategic_score}/10
+                        </span>
+                        <div className="absolute right-0 top-full mt-1 hidden group-hover/score-detail:block bg-slate-800 text-slate-200 text-[9px] p-2 rounded border border-slate-700 w-24 text-center shadow-xl z-20">
+                          Strategic Score
                         </div>
+                      </div>
+                    )}
+                  </div>
 
-                        <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
-                          <h3 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
-                             <Zap size={14} className="text-indigo-500" /> Key Takeaways
-                          </h3>
-                          {selectedArticle.strategic_score && (
-                            <div className="relative group/score-detail">
-                              <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">
-                                Score: {selectedArticle.strategic_score}/10
-                              </span>
-                              <div className="absolute right-0 top-full mt-1 hidden group-hover/score-detail:block bg-slate-800 text-slate-200 text-[9px] p-2 rounded border border-slate-700 w-24 text-center shadow-xl z-20">
-                                Strategic Score
+                  <div className="prose prose-invert prose-sm prose-indigo max-w-none">
+                    <ReactMarkdown>{cleanSummary(selectedArticle.summary)}</ReactMarkdown>
+                  </div>
+
+                  {/* SECTION CARTES : AFFICHAGE BRUT + ZOOM (AVEC GESTION ERREUR) */}
+                  {selectedArticle.mentioned_cards && (
+                    <div className="mt-10 pt-8 border-t border-slate-800">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 flex items-center gap-2 tracking-widest">
+                        <Gem size={14} className="text-indigo-500" /> Mentioned Cards
+                      </h4>
+                      <div className="flex flex-wrap gap-3">
+                        {parsePostgresArray(selectedArticle.mentioned_cards)
+                          .map((cardName, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setZoomedCard(cardName)} // ZOOM SIMPLE
+                              className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95"
+                            >
+                              <img
+                                src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}&format=image&version=border_crop`}
+                                alt={cardName}
+                                className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900"
+                                loading="lazy"
+                                // Masque le bouton si l'image plante (hallucination)
+                                onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl">
+                                  <Search size={14} className="text-white" />
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="prose prose-invert prose-sm prose-indigo max-w-none">
-                            <ReactMarkdown>{cleanSummary(selectedArticle.summary)}</ReactMarkdown>
-                        </div>
-
-                        {/* SECTION CARTES : AFFICHAGE BRUT + ZOOM (AVEC GESTION ERREUR) */}
-                        {selectedArticle.mentioned_cards && (
-                          <div className="mt-10 pt-8 border-t border-slate-800">
-                             <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 flex items-center gap-2 tracking-widest">
-                                <Gem size={14} className="text-indigo-500" /> Mentioned Cards
-                             </h4>
-                             <div className="flex flex-wrap gap-3">
-                                {parsePostgresArray(selectedArticle.mentioned_cards)
-                                  .map((cardName, idx) => (
-                                    <button
-                                      key={idx}
-                                      onClick={() => setZoomedCard(cardName)} // ZOOM SIMPLE
-                                      className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95"
-                                    >
-                                      <img 
-                                        src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}&format=image&version=border_crop`} 
-                                        alt={cardName}
-                                        className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900"
-                                        loading="lazy"
-                                        // Masque le bouton si l'image plante (hallucination)
-                                        onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
-                                      />
-                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
-                                        <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl">
-                                           <Search size={14} className="text-white" />
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))
-                                }
-                             </div>
-                          </div>
-                        )}
+                            </button>
+                          ))
+                        }
+                      </div>
                     </div>
+                  )}
                 </div>
-             </div>
+              </div>
+            </div>
           </SwipeableOverlay>
         )}
       </AnimatePresence>
@@ -1066,7 +1166,7 @@ export default function MTGLimitedApp() {
   const [chartMode, setChartMode] = useState('meta');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [rarityFilter, setRarityFilter] = useState('All');
+  const [rarityFilter, setRarityFilter] = useState([]);
   const [colorFilters, setColorFilters] = useState([]);
 
   const [archetypeFilter, setArchetypeFilter] = useState('Global');
@@ -1156,9 +1256,9 @@ export default function MTGLimitedApp() {
 
     if (searchTerm) res = res.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    if (rarityFilter !== 'All') {
-      res = res.filter(c => normalizeRarity(c.rarity) === rarityFilter);
-    }
+ if (rarityFilter.length > 0) {
+  res = res.filter(c => rarityFilter.includes(normalizeRarity(c.rarity)));
+}
 
     if (colorFilters.length > 0) {
       res = res.filter(c => {
@@ -1298,12 +1398,16 @@ export default function MTGLimitedApp() {
                       <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
                       <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{deck.name}</h3></div>
                     </div>
-                    <div className="flex flex-col items-end min-w-[5rem]">
+                    <div className="flex flex-col items-end min-w-[5.5rem]"> {/* min-w augmenté pour sécurité */}
                       <div className="flex items-center gap-2">
                         <Sparkline data={deck.history} />
-                        <span className={`text-2xl font-black leading-none tracking-tight ${getDeltaStyle(deck.wr, globalMeanWR)}`}>{deck.wr > 0 ? deck.wr + '%' : '-'}</span>
+                        <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
+                          {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-slate-500 font-medium">{(deck.games / totalGames * 100).toFixed(1)}% Meta</span>
+                      <span className="text-[10px] text-slate-500 font-medium tabular-nums">
+                        {(deck.games / totalGames * 100).toFixed(1)}% Meta
+                      </span>
                     </div>
                   </motion.button>
                 ))}
@@ -1350,16 +1454,37 @@ export default function MTGLimitedApp() {
 
                   <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
 
-                  <div className="relative min-w-[100px] flex-1 md:flex-none">
-                    <select value={rarityFilter} onChange={(e) => setRarityFilter(e.target.value)} className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-1.5 pl-3 pr-8 rounded-lg text-[10px] font-bold cursor-pointer hover:border-slate-500 focus:outline-none uppercase">
-                      <option value="All">All Rarities</option>
-                      <option value="M">Mythic (M)</option>
-                      <option value="R">Rare (R)</option>
-                      <option value="U">Uncommon (U)</option>
-                      <option value="C">Common (C)</option>
-                    </select>
-                    <ChevronRight size={10} className="absolute right-2 top-2.5 text-slate-500 rotate-90 pointer-events-none" />
-                  </div>
+            <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+  {['M', 'R', 'U', 'C'].map((r) => {
+    const isActive = rarityFilter.includes(r);
+    return (
+      <button
+        key={r}
+        onClick={() => {
+          setRarityFilter(prev => 
+            prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r]
+          );
+        }}
+        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${
+          isActive 
+            ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` 
+            : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'
+        }`}
+      >
+        {r}
+      </button>
+    );
+  })}
+  {rarityFilter.length > 0 && (
+    <button 
+      onClick={() => setRarityFilter([])}
+      className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"
+      title="Clear filter"
+    >
+      <X size={14} />
+    </button>
+  )}
+</div>
 
                   <div className="flex gap-2 flex-1 md:flex-none">
                     <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
