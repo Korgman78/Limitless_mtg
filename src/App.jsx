@@ -151,7 +151,7 @@ const MetagamePieChart = ({ decks, totalGames }) => {
           Maintien du 'flex-row' permanent (pas de flex-col ici).
       */}
       <div className="flex items-start gap-3 md:gap-6 flex-1 pt-1">
-        
+
         {/* GRAPHIQUE : Augmentation de la taille de 28 à 32 sur mobile. 
             Le 'flex-shrink-0' garantit que le cercle ne s'écrase pas.
         */}
@@ -163,28 +163,28 @@ const MetagamePieChart = ({ decks, totalGames }) => {
               const slicePercent = slice.value / total;
               cumulativePercent += slicePercent;
               const endPercent = cumulativePercent;
-              
+
               const [startX, startY] = getCoordinatesForPercent(startPercent);
               const [endX, endY] = getCoordinatesForPercent(endPercent);
-              
+
               const largeArcFlag = slicePercent > 0.5 ? 1 : 0;
               const pathData = slicePercent >= 0.999
                 ? `M 1 0 A 1 1 0 1 1 -1 0 A 1 1 0 1 1 1 0`
                 : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
-              
+
               return (
-                <path 
-                  key={i} 
-                  d={pathData} 
-                  fill={slice.color} 
-                  stroke="#0f172a" 
-                  strokeWidth="0.05" 
+                <path
+                  key={i}
+                  d={pathData}
+                  fill={slice.color}
+                  stroke="#0f172a"
+                  strokeWidth="0.05"
                 />
               );
             })}
             <circle cx="0" cy="0" r="0.65" fill="#0f172a" />
           </svg>
-          
+
           <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
             <span className="text-[9px] text-slate-400 font-bold uppercase">Total</span>
             <span className="text-xs font-black text-white">{(total / 1000).toFixed(0)}k</span>
@@ -197,12 +197,12 @@ const MetagamePieChart = ({ decks, totalGames }) => {
         <div className="flex-1 flex justify-end">
           <div className="w-full max-w-[130px] md:max-w-[150px] space-y-1">
             {data.map((d, i) => (
-              <div 
-                key={i} 
+              <div
+                key={i}
                 className="flex justify-between items-center text-[10px] md:text-[11px] p-1 md:p-1.5 rounded-md border border-transparent transition-all hover:bg-slate-800/50 hover:border-slate-700"
-                style={{ 
-                  borderLeftColor: d.value > 0 ? d.color : 'transparent', 
-                  borderLeftWidth: '3px' 
+                style={{
+                  borderLeftColor: d.value > 0 ? d.color : 'transparent',
+                  borderLeftWidth: '3px'
                 }}
               >
                 <div className="flex items-center gap-1.5 md:gap-2">
@@ -811,9 +811,389 @@ const CardDetailOverlay = ({ card, activeFormat, activeSet, decks, cards: allCar
   )
 }
 
+// ============================================================================
+// 5. COMPOSANT FORMAT COMPARISON 
+// ============================================================================
+
+const FormatComparison = ({ activeSet }) => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // --- ÉTATS ---
+  const [formatA, setFormatA] = useState('PremierDraft'); 
+  const [formatB, setFormatB] = useState('ArenaDirect_Sealed'); 
+  const [compareMode, setCompareMode] = useState('archetypes'); 
+  
+  // Toggle Metric
+  const [metricMode, setMetricMode] = useState('winrate');
+
+  // Filtres
+  const [rarityFilter, setRarityFilter] = useState([]);
+  const [colorFilters, setColorFilters] = useState([]);
+  const [archTypeFilter, setArchTypeFilter] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Tri & Affichage
+  const [sortDir, setSortDir] = useState('desc');
+  const [visibleCount, setVisibleCount] = useState(30);
+  const [zoomedCard, setZoomedCard] = useState(null);
+  
+  const observerTarget = React.useRef(null);
+
+  const FORMAT_OPTIONS = [
+    { label: 'Premier Draft', value: 'PremierDraft' },
+    { label: 'Trad. Draft', value: 'TradDraft' },
+    { label: 'Sealed', value: 'Sealed' },
+    { label: 'Arena Direct Sealed', value: 'ArenaDirect_Sealed' },
+  ];
+
+  const getFormatLabel = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.label || val;
+
+  // 1. FETCH DATA
+  useEffect(() => {
+    async function fetchComparison() {
+      setLoading(true);
+      try {
+        let query;
+
+        if (compareMode === 'archetypes') {
+           query = supabase
+            .from('archetype_comparison_pivot')
+            .select('*')
+            .eq('set_code', activeSet);
+        } else {
+           query = supabase
+            .from('comparison_pivot_v1_3')
+            .select('*')
+            .eq('set_code', activeSet)
+            .eq('filter_context', 'Global');
+        }
+
+        const { data: pivotData, error } = await query;
+        if (!error && pivotData) {
+          setData(pivotData);
+          setVisibleCount(30);
+        } else if (error) {
+          console.error("Supabase Error:", error);
+        }
+      } catch (err) { console.error("Fetch error:", err); }
+      setLoading(false);
+    }
+    fetchComparison();
+  }, [activeSet, compareMode]);
+
+  // 2. INFINITE SCROLL
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(prev => prev + 40);
+        }
+      },
+      { threshold: 0.1, rootMargin: '600px' }
+    );
+
+    if (observerTarget.current) observer.observe(observerTarget.current);
+    return () => { if (observerTarget.current) observer.unobserve(observerTarget.current); };
+  }, [data, compareMode, rarityFilter, colorFilters, searchTerm]);
+
+  // 3. LOGIQUE DE CALCUL
+  const processedData = useMemo(() => {
+    const fMap = { 'PremierDraft': 'premier', 'TradDraft': 'trad', 'Sealed': 'sealed', 'ArenaDirect_Sealed': 'direct' };
+    const sA = fMap[formatA] || 'premier';
+    const sB = fMap[formatB] || 'direct';
+
+    return data
+      .filter(item => {
+        if (compareMode === 'cards' && searchTerm) {
+          if (!item.card_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        }
+
+        if (compareMode === 'cards') {
+          if (rarityFilter.length > 0) {
+            const r = typeof normalizeRarity === 'function' ? normalizeRarity(item.rarity) : (item.rarity ? item.rarity[0].toUpperCase() : 'C');
+            if (!rarityFilter.includes(r)) return false;
+          }
+          if (colorFilters.length > 0) {
+            const cStr = item.colors || ""; 
+            const cColors = typeof extractColors === 'function' ? extractColors(cStr) : cStr.replace(/[^WUBRG]/g, '');
+            if (colorFilters.includes('M') && cColors.length > 1) return true;
+            if (colorFilters.includes('C') && cColors.length === 0) return true;
+            const monoFilters = colorFilters.filter(f => ['W', 'U', 'B', 'R', 'G'].includes(f));
+            if (monoFilters.length > 0) {
+              for (let f of monoFilters) {
+                if (cColors.includes(f)) return true;
+              }
+              return false;
+            }
+          }
+        }
+        if (compareMode === 'archetypes' && archTypeFilter) {
+          const rawContext = item.filter_context || "";
+          const colorsOnly = rawContext.replace(' + Splash', '').replace(/[^WUBRG]/g, '');
+          const isSplash = rawContext.toLowerCase().includes('splash');
+          
+          if (archTypeFilter === 'All') {
+            const is2Color = colorsOnly.length === 2;
+            const is3ColorPure = colorsOnly.length === 3 && !isSplash; 
+            return is2Color || is3ColorPure;
+          }
+          if (archTypeFilter === '2color') return colorsOnly.length === 2 && !isSplash;
+          if (archTypeFilter === 'splash') return colorsOnly.length === 2 && isSplash;
+          if (archTypeFilter === '3color') return colorsOnly.length === 3;
+        }
+        return true;
+      })
+      .map(item => {
+        let valA, valB, rawA, rawB, diff;
+
+        if (compareMode === 'cards') {
+          valA = parseFloat(item[`card_delta_${sA}`]);
+          valB = parseFloat(item[`card_delta_${sB}`]);
+          rawA = parseFloat(item[`card_wr_${sA}`]);
+          rawB = parseFloat(item[`card_wr_${sB}`]);
+          diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
+        } else {
+          if (metricMode === 'winrate') {
+            valA = parseFloat(item[`arch_delta_${sA}`]);
+            valB = parseFloat(item[`arch_delta_${sB}`]);
+            rawA = parseFloat(item[`arch_wr_${sA}`]);
+            rawB = parseFloat(item[`arch_wr_${sB}`]);
+            diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
+          } else {
+            valA = parseFloat(item[`meta_share_${sA}`]);
+            valB = parseFloat(item[`meta_share_${sB}`]);
+            rawA = null;
+            rawB = null;
+            diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
+          }
+        }
+
+        if (isNaN(valA) || isNaN(valB) || valA === null || valB === null) return null;
+
+        return {
+          ...item,
+          valA, 
+          valB,
+          rawA: isNaN(rawA) ? null : rawA,
+          rawB: isNaN(rawB) ? null : rawB,
+          diff
+        };
+      })
+      .filter(item => item !== null)
+      .sort((a, b) => {
+        const diffA = a.diff !== null ? a.diff : -99999;
+        const diffB = b.diff !== null ? b.diff : -99999;
+        return sortDir === 'desc' ? (diffB - diffA) : (diffA - diffB);
+      });
+  }, [data, compareMode, formatA, formatB, rarityFilter, colorFilters, archTypeFilter, sortDir, metricMode, searchTerm]);
+
+  const visibleData = processedData.slice(0, visibleCount);
+
+  // Helper pour le bouton de tri
+  const SortButtonContent = () => (
+    <>
+      {sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-6 min-h-screen relative">
+      
+      <AnimatePresence>
+        {zoomedCard && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+            onClick={() => setZoomedCard(null)}
+          >
+            <motion.img 
+              initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
+              src={typeof getCardImage === 'function' ? getCardImage(zoomedCard) : ''} 
+              className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl border border-white/10"
+              onClick={(e) => e.stopPropagation()} 
+            />
+            <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={24} /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
+        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
+                <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
+                <button onClick={() => setCompareMode('cards')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'cards' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>CARDS</button>
+              </div>
+            </div>
+            
+            <div className="flex flex-col items-center relative w-full md:w-auto">
+              <div className="flex items-center gap-2 w-full relative z-10">
+                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">{FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+                <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
+                <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">{FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+              </div>
+              <Zap size={14} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 bottom-0 mb-1 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
+            <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
+              {compareMode === 'cards' ? (
+                <div className="flex flex-col md:flex-row gap-2 w-full md:items-center justify-between">
+                   <div className="flex gap-2 w-full md:w-auto md:order-2 md:ml-auto">
+                      <div className="relative flex-1 md:w-48 md:flex-none">
+                        <input 
+                          type="text" 
+                          placeholder="Search card..." 
+                          value={searchTerm} 
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 text-slate-300 py-1.5 pl-8 pr-3 rounded-lg text-[10px] font-bold focus:border-indigo-500 focus:outline-none transition-colors" 
+                        />
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                      </div>
+                      
+                      <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0">
+                         <SortButtonContent />
+                      </button>
+                   </div>
+
+                   <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800 overflow-x-auto no-scrollbar w-full md:w-auto md:order-1 mask-linear-fade">
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {['W', 'U', 'B', 'R', 'G'].map(c => (
+                          <button key={c} onClick={() => setColorFilters(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c])}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 grayscale'}`}
+                            style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
+                            <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
+                          </button>
+                        ))}
+                        <div className="w-[1px] h-4 bg-slate-700 mx-1"/>
+                        <button onClick={() => setColorFilters(p => p.includes('M') ? p.filter(x => x !== 'M') : [...p, 'M'])} className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
+                        <button onClick={() => setColorFilters(p => p.includes('C') ? p.filter(x => x !== 'C') : [...p, 'C'])} className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
+                      </div>
+                      
+                      <div className="w-[1px] h-5 bg-slate-800 mx-1 flex-shrink-0"></div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {['M', 'R', 'U', 'C'].map(r => (
+                          <button key={r} onClick={() => setRarityFilter(p => p.includes(r) ? p.filter(x => x !== r) : [...p, r])} 
+                            // @ts-ignore
+                            className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${typeof RARITY_STYLES !== 'undefined' ? RARITY_STYLES[r] : ''} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
+                        ))}
+                        {(rarityFilter.length > 0 || colorFilters.length > 0) && (<button onClick={() => { setRarityFilter([]); setColorFilters([]); }} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>)}
+                      </div>
+                   </div>
+
+                   <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest md:order-3">
+                      <SortButtonContent />
+                   </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer w-full md:w-auto">
+                    <option value="All">All Archetypes</option>
+                    <option value="2color">2 Colors</option>
+                    <option value="splash">2 Colors + Splash</option>
+                    <option value="3color">3 Colors</option>
+                  </select>
+
+                  <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 ml-auto md:ml-0">
+                    <button onClick={() => setMetricMode('winrate')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                      <Trophy size={10} /> WR
+                    </button>
+                    <button onClick={() => setMetricMode('meta')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                      <PieChartIcon size={10} /> META
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {compareMode === 'archetypes' && (
+              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="text-indigo-400 text-[10px] font-black flex items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
+                <SortButtonContent />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 pb-32">
+        {loading ? (
+          <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div></div>
+        ) : visibleData.length === 0 ? (
+          <div className="text-center py-20 text-slate-500 font-bold italic border border-dashed border-slate-800 rounded-xl">Aucune donnée trouvée.</div>
+        ) : (
+          <>
+            {visibleData.map((item, idx) => (
+              <div 
+                key={`${item.card_name || item.filter_context}-${idx}`} 
+                onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
+                className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left active:scale-[0.98] ${compareMode === 'cards' ? 'cursor-zoom-in' : ''}`}
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  {compareMode === 'cards' ? (
+                    <div className="relative shrink-0">
+                      <img src={typeof getCardImage === 'function' ? getCardImage(item.card_name) : ''} className="w-14 h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" loading="lazy" alt={item.card_name} />
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 bg-slate-950 rounded-full border border-slate-800 shadow-inner shrink-0 flex items-center justify-center">
+                        {typeof ManaIcons !== 'undefined' && <ManaIcons colors={typeof extractColors === 'function' ? extractColors(item.filter_context) : ''} size="lg" />}
+                      </div>
+                      <span className="font-black text-sm text-slate-100 truncate tracking-tight pt-0.5">{item.filter_context}</span>
+                    </div>
+                  )}
+                  {compareMode === 'cards' && (
+                     <div className="flex flex-col truncate ml-1 justify-center h-full">
+                       <span className="font-black text-sm text-slate-100 truncate tracking-tight">{item.card_name}</span>
+                     </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-4 md:gap-8">
+                  <div className="hidden sm:flex flex-col items-end opacity-40 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight">{getFormatLabel(formatA)}</span>
+                    <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                        {item.valA !== null ? (metricMode === 'winrate' && item.valA > 0 ? '+' : '') + item.valA.toFixed(1) + '%' : '--'}
+                    </span>
+                    {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5">{item.rawA.toFixed(1)}%</span>}
+                  </div>
+
+                  <div className="hidden sm:flex flex-col items-end opacity-40 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight">{getFormatLabel(formatB)}</span>
+                    <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                        {item.valB !== null ? (metricMode === 'winrate' && item.valB > 0 ? '+' : '') + item.valB.toFixed(1) + '%' : '--'}
+                    </span>
+                    {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5">{item.rawB.toFixed(1)}%</span>}
+                  </div>
+
+                  <div className={`flex flex-col items-end min-w-[90px] p-2.5 rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                    <span className={`text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
+                    <span className={`text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {item.diff !== null ? ((item.diff >= 0 ? '+' : '') + item.diff.toFixed(1) + '%') : '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* FIX: Chargement conditionnel */}
+            {visibleCount < processedData.length && (
+              <div ref={observerTarget} className="h-10 w-full flex items-center justify-center opacity-50">
+                <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ============================================================================
-// 5. COMPOSANT MIS À JOUR : PRESS REVIEW (AVEC NETTOYAGE JSON & MARKDOWN)
+// 6. COMPOSANT MIS À JOUR : PRESS REVIEW (AVEC NETTOYAGE JSON & MARKDOWN)
 // ============================================================================
 
 const PressReview = ({ activeSet }) => {
@@ -1149,7 +1529,11 @@ const PressReview = ({ activeSet }) => {
 };
 
 // ============================================================================
-// 6. MAIN APP
+// 7. MAIN APP
+// ============================================================================
+
+// ============================================================================
+// 7. MAIN APP
 // ============================================================================
 
 export default function MTGLimitedApp() {
@@ -1174,6 +1558,10 @@ export default function MTGLimitedApp() {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [selectedCard, setSelectedCard] = useState(null);
 
+  // --- NOUVEAU : Lazy Loading States ---
+  const [visibleCardsCount, setVisibleCardsCount] = useState(40);
+  const cardsObserverTarget = React.useRef(null);
+
   useEffect(() => {
     async function fetchSets() {
       const { data } = await supabase.from('sets').select('code').eq('active', true).order('start_date', { ascending: false });
@@ -1185,7 +1573,6 @@ export default function MTGLimitedApp() {
   useEffect(() => {
     async function loadDecks() {
       if (!activeSet) return;
-      // --- FIX V1.2 : SELECT HISTORIQUE ---
       const { data } = await supabase.from('archetype_stats').select('*').eq('set_code', activeSet).eq('format', activeFormat).order('win_rate', { ascending: false });
       if (data) {
         const validDecks = data.filter(d => !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(d.archetype_name));
@@ -1209,7 +1596,6 @@ export default function MTGLimitedApp() {
             wr: d.win_rate,
             games: d.games_count,
             type: type,
-            // --- FIX V1.2 : SPARKLINE HISTORY ---
             history: (d.win_rate_history && d.win_rate_history.length > 1) ? d.win_rate_history : [d.win_rate, d.win_rate]
           };
         });
@@ -1256,9 +1642,9 @@ export default function MTGLimitedApp() {
 
     if (searchTerm) res = res.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
- if (rarityFilter.length > 0) {
-  res = res.filter(c => rarityFilter.includes(normalizeRarity(c.rarity)));
-}
+    if (rarityFilter.length > 0) {
+      res = res.filter(c => rarityFilter.includes(normalizeRarity(c.rarity)));
+    }
 
     if (colorFilters.length > 0) {
       res = res.filter(c => {
@@ -1290,6 +1676,30 @@ export default function MTGLimitedApp() {
     return res;
   }, [cards, searchTerm, rarityFilter, colorFilters, sortConfig]);
 
+  // --- NOUVEAU : Logique de Reset du Lazy Load ---
+  // Dès qu'on change un filtre, on remet le compteur à 40 pour afficher le début de la nouvelle liste
+  useEffect(() => {
+    setVisibleCardsCount(40);
+  }, [searchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat]);
+
+  // --- NOUVEAU : Observer pour Infinite Scroll ---
+  useEffect(() => {
+    if (activeTab !== 'cards') return;
+    
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          setVisibleCardsCount(prev => prev + 40);
+        }
+      },
+      { threshold: 0.1, rootMargin: '600px' }
+    );
+
+    if (cardsObserverTarget.current) observer.observe(cardsObserverTarget.current);
+    return () => { if (cardsObserverTarget.current) observer.unobserve(cardsObserverTarget.current); };
+  }, [filteredCards, activeTab]);
+
+
   const Sidebar = () => (
     <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
       <div className="mb-8 px-2">
@@ -1303,7 +1713,9 @@ export default function MTGLimitedApp() {
         <button onClick={() => setActiveTab('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Zap size={20} strokeWidth={2.5} /> <span>Card Ratings</span>
         </button>
-        {/* --- FIX V1.2 : SIDEBAR BUTTON --- */}
+        <button onClick={() => setActiveTab('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+          <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
+        </button>
         <button onClick={() => setActiveTab('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
         </button>
@@ -1346,18 +1758,26 @@ export default function MTGLimitedApp() {
               </select>
               <ChevronRight size={12} className="absolute right-2 top-2.5 text-white rotate-90 pointer-events-none" />
             </div>
-            <div className="relative">
-              <select value={activeFormat} onChange={(e) => setActiveFormat(e.target.value)} className="appearance-none bg-slate-800 hover:bg-slate-700 transition-colors text-slate-300 border border-slate-700 py-1.5 pl-3 pr-8 rounded-lg text-xs font-bold focus:outline-none cursor-pointer">
-                {FORMAT_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-              <ChevronRight size={12} className="absolute right-2 top-2.5 text-slate-500 rotate-90 pointer-events-none" />
-            </div>
+
+            {activeTab !== 'compare' && (
+              <div className="relative">
+                <select value={activeFormat} onChange={(e) => setActiveFormat(e.target.value)} className="appearance-none bg-slate-800 hover:bg-slate-700 transition-colors text-slate-300 border border-slate-700 py-1.5 pl-3 pr-8 rounded-lg text-xs font-bold focus:outline-none cursor-pointer">
+                  {FORMAT_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+                <ChevronRight size={12} className="absolute right-2 top-2.5 text-slate-500 rotate-90 pointer-events-none" />
+              </div>
+            )}
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto pb-32 md:pb-8 md:px-6 md:pt-6 scroll-smooth">
-          {loading && activeTab === 'cards' && <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div></div>}
+          {loading && activeTab === 'cards' && (
+            <div className="flex justify-center py-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+            </div>
+          )}
 
+          {/* 1. ONGLET DECKS / ARCHETYPES */}
           {activeTab === 'decks' && (
             <div className="p-4 md:p-0 space-y-4 md:space-y-6">
               <div className="flex justify-end">
@@ -1398,7 +1818,7 @@ export default function MTGLimitedApp() {
                       <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
                       <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{deck.name}</h3></div>
                     </div>
-                    <div className="flex flex-col items-end min-w-[5.5rem]"> {/* min-w augmenté pour sécurité */}
+                    <div className="flex flex-col items-end min-w-[5.5rem]">
                       <div className="flex items-center gap-2">
                         <Sparkline data={deck.history} />
                         <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
@@ -1415,10 +1835,10 @@ export default function MTGLimitedApp() {
             </div>
           )}
 
+          {/* 2. ONGLET CARD RATINGS (AVEC LAZY LOADING) */}
           {activeTab === 'cards' && (
             <div className="flex flex-col min-h-full">
               <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
-
                 <div className="flex gap-2">
                   <div className="relative flex-1 md:max-w-xs">
                     <select value={archetypeFilter} onChange={(e) => setArchetypeFilter(e.target.value)} className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-3 pr-8 rounded-lg text-xs font-bold cursor-pointer hover:border-slate-500 focus:outline-none focus:border-indigo-500">
@@ -1436,7 +1856,6 @@ export default function MTGLimitedApp() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pb-1">
-
                   <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800 mr-auto md:mr-0">
                     {['W', 'U', 'B', 'R', 'G'].map(c => (
                       <button key={c} onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
@@ -1454,37 +1873,32 @@ export default function MTGLimitedApp() {
 
                   <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
 
-            <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
-  {['M', 'R', 'U', 'C'].map((r) => {
-    const isActive = rarityFilter.includes(r);
-    return (
-      <button
-        key={r}
-        onClick={() => {
-          setRarityFilter(prev => 
-            prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r]
-          );
-        }}
-        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${
-          isActive 
-            ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` 
-            : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'
-        }`}
-      >
-        {r}
-      </button>
-    );
-  })}
-  {rarityFilter.length > 0 && (
-    <button 
-      onClick={() => setRarityFilter([])}
-      className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"
-      title="Clear filter"
-    >
-      <X size={14} />
-    </button>
-  )}
-</div>
+                  <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+                    {['M', 'R', 'U', 'C'].map((r) => {
+                      const isActive = rarityFilter.includes(r);
+                      return (
+                        <button
+                          key={r}
+                          onClick={() => {
+                            setRarityFilter(prev =>
+                              prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r]
+                            );
+                          }}
+                          className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive
+                            ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg`
+                            : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'
+                            }`}
+                        >
+                          {r}
+                        </button>
+                      );
+                    })}
+                    {rarityFilter.length > 0 && (
+                      <button onClick={() => setRarityFilter([])} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors" title="Clear filter">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
 
                   <div className="flex gap-2 flex-1 md:flex-none">
                     <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
@@ -1494,23 +1908,21 @@ export default function MTGLimitedApp() {
                       ALSA <ArrowUpDown size={10} />
                     </button>
                   </div>
-
                 </div>
               </div>
 
               <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
-                {!loading && filteredCards.map((card, idx) => (
+                {/* On map seulement sur les cartes visibles (sliced) */}
+                {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
                   <motion.button
                     layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} key={card.id} onClick={() => setSelectedCard(card)}
                     className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md"
                   >
                     <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
-
                     <div className="flex-1 min-w-0 text-left flex flex-col justify-center h-full">
                       <div className="flex justify-between items-start mb-1">
                         <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base">{card.name}</motion.span>
                       </div>
-
                       <div className="flex justify-between items-end mt-auto">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
@@ -1527,11 +1939,23 @@ export default function MTGLimitedApp() {
                     </div>
                   </motion.button>
                 ))}
+                
+                {/* Loader / Sentinel de scroll */}
+                {!loading && visibleCardsCount < filteredCards.length && (
+                  <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
+                    <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* --- FIX V1.2 : NEW TAB RENDER --- */}
+          {/* 3. NOUVEL ONGLET : FORMAT COMPARISON */}
+          {activeTab === 'compare' && (
+            <FormatComparison activeSet={activeSet} />
+          )}
+
+          {/* 4. ONGLET NEWS / PRESS REVIEW */}
           {activeTab === 'press' && (
             <PressReview activeSet={activeSet} />
           )}
@@ -1542,7 +1966,10 @@ export default function MTGLimitedApp() {
       <nav className="md:hidden bg-slate-900 border-t border-slate-800 px-8 py-3 pb-6 flex justify-around items-center absolute bottom-0 w-full z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Layers size={24} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[10px] font-bold">Decks</span></button>
         <button onClick={() => setActiveTab('cards')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Zap size={24} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[10px] font-bold">Cards</span></button>
-        {/* --- FIX V1.2 : MOBILE BUTTON --- */}
+        <button onClick={() => setActiveTab('compare')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}>
+          <Repeat size={24} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
+          <span className="text-[10px] font-bold">Compare</span>
+        </button>
         <button onClick={() => setActiveTab('press')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'press' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}>
           <Newspaper size={24} strokeWidth={activeTab === 'press' ? 2.5 : 2} />
           <span className="text-[10px] font-bold">News</span>
