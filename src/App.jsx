@@ -857,7 +857,6 @@ const FormatComparison = ({ activeSet }) => {
   ];
 
   const getFormatLabel = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.label || val;
-  // Version courte pour les labels mobiles
   const getFormatShort = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.short || val.substring(0, 3).toUpperCase();
 
   // 1. FETCH DATA
@@ -1070,8 +1069,8 @@ const FormatComparison = ({ activeSet }) => {
                       </button>
                    </div>
 
-                   <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800 overflow-x-auto no-scrollbar w-full md:w-auto md:order-1 mask-linear-fade">
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                   <div className="flex items-center gap-0.5 p-1 bg-slate-950 rounded-lg border border-slate-800 overflow-x-auto no-scrollbar w-full md:w-auto md:order-1 mask-linear-fade">
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
                         {['W', 'U', 'B', 'R', 'G'].map(c => (
                           <button key={c} onClick={() => setColorFilters(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c])}
                             className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 grayscale'}`}
@@ -1086,12 +1085,11 @@ const FormatComparison = ({ activeSet }) => {
                       
                       <div className="w-[1px] h-5 bg-slate-800 mx-1 flex-shrink-0"></div>
 
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {/* FIX UX MOBILE 2 : Raretés plus petites (w-6 h-6) pour tout faire rentrer sans scroll */}
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
                         {['M', 'R', 'U', 'C'].map(r => (
                           <button key={r} onClick={() => setRarityFilter(p => p.includes(r) ? p.filter(x => x !== r) : [...p, r])} 
                             // @ts-ignore
-                            className={`w-6 h-6 md:w-7 md:h-7 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${typeof RARITY_STYLES !== 'undefined' ? RARITY_STYLES[r] : ''} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
+                            className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${typeof RARITY_STYLES !== 'undefined' ? RARITY_STYLES[r] : ''} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
                         ))}
                         {(rarityFilter.length > 0 || colorFilters.length > 0) && (<button onClick={() => { setRarityFilter([]); setColorFilters([]); }} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>)}
                       </div>
@@ -1102,29 +1100,40 @@ const FormatComparison = ({ activeSet }) => {
                    </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                  {/* FIX UX MOBILE 1 : Selecteur plus compact (py-1.5, px-2, text-[10px]) */}
-                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] md:text-xs font-bold py-1.5 px-2 md:py-2 md:px-3 rounded-lg outline-none cursor-pointer w-full md:w-auto capitalize">
+                // --- FIX : LAYOUT ARCHETYPE MOBILE OPTIMISÉ (1 LIGNE COMPACTE) ---
+                <div className="flex gap-2 w-full md:w-auto items-center">
+                  {/* Selecteur : Flex-1 (prend la place), texte réduit, padding réduit */}
+                  <select 
+                    value={archTypeFilter} 
+                    onChange={(e) => setArchTypeFilter(e.target.value)} 
+                    className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg outline-none cursor-pointer flex-1 md:w-auto capitalize truncate"
+                  >
                     <option value="All">All Archetypes</option>
                     <option value="2color">2 Colors</option>
-                    <option value="splash">2 Colors + Splash</option>
+                    <option value="splash">2 Col. + Splash</option>
                     <option value="3color">3 Colors</option>
                   </select>
 
-                  <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 ml-auto md:ml-0">
-                    <button onClick={() => setMetricMode('winrate')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                      <Trophy size={10} /> WR
+                  {/* Toggle WR/META : Padding réduit, text-[9px] */}
+                  <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-shrink-0">
+                    <button onClick={() => setMetricMode('winrate')} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                      <Trophy size={9} /> WR
                     </button>
-                    <button onClick={() => setMetricMode('meta')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                      <PieChartIcon size={10} /> META
+                    <button onClick={() => setMetricMode('meta')} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                      <PieChartIcon size={9} /> META
                     </button>
                   </div>
+                  
+                  {/* Bouton Sort Mobile : Icône Seulement pour gagner de la place */}
+                   <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-2 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0" title={sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}>
+                      <ArrowUpDown size={14} />
+                   </button>
                 </div>
               )}
             </div>
             
             {compareMode === 'archetypes' && (
-              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="text-indigo-400 text-[10px] font-black flex items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
+              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
                 <SortButtonContent />
               </button>
             )}
@@ -1160,8 +1169,8 @@ const FormatComparison = ({ activeSet }) => {
                   )}
                   {compareMode === 'cards' && (
                      <div className="flex flex-col justify-center h-full flex-1 min-w-0">
-                       {/* FIX UX MOBILE 3 : Nom carte centré sur 2 lignes max avec police réduite */}
-                       <span className="font-black text-xs md:text-sm text-slate-100 md:text-left text-center leading-tight line-clamp-2 md:truncate w-full block">
+                       {/* FIX : Alignement gauche (text-left) sur Mobile */}
+                       <span className="font-black text-xs md:text-sm text-slate-100 text-left leading-tight line-clamp-2 md:truncate w-full block">
                          {item.card_name}
                        </span>
                      </div>
