@@ -21,10 +21,16 @@ const FORMAT_OPTIONS = [
 ];
 
 const PAIRS = [
-  { code: 'WU', name: 'Azorius (WU)' }, { code: 'UB', name: 'Dimir (UB)' }, { code: 'BR', name: 'Rakdos (BR)' },
-  { code: 'RG', name: 'Gruul (RG)' }, { code: 'GW', name: 'Selesnya (GW)' }, { code: 'WB', name: 'Orzhov (WB)' },
-  { code: 'UR', name: 'Izzet (UR)' }, { code: 'BG', name: 'Golgari (BG)' }, { code: 'RW', name: 'Boros (RW)' },
-  { code: 'GU', name: 'Simic (GU)' }
+  { code: 'WU', name: 'Azorius (WU)' }, 
+  { code: 'UB', name: 'Dimir (UB)' }, 
+  { code: 'BR', name: 'Rakdos (BR)' },
+  { code: 'RG', name: 'Gruul (RG)' }, 
+  { code: 'WG', name: 'Selesnya (GW)' }, // Était 'GW' -> Corrigé en 'WG'
+  { code: 'WB', name: 'Orzhov (WB)' },
+  { code: 'UR', name: 'Izzet (UR)' }, 
+  { code: 'BG', name: 'Golgari (BG)' }, 
+  { code: 'WR', name: 'Boros (RW)' },    // Était 'RW' -> Corrigé en 'WR'
+  { code: 'UG', name: 'Simic (GU)' }     // Était 'GU' -> Corrigé en 'UG'
 ];
 
 const TRIOS = [
@@ -1021,14 +1027,15 @@ const FormatComparison = ({ activeSet }) => {
       <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+            {/* CORRECTION 1 : Inversion Ordre Mobile (order-last/first) */}
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto order-last md:order-first">
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
                 <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
                 <button onClick={() => setCompareMode('cards')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'cards' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>CARDS</button>
               </div>
             </div>
             
-            <div className="flex flex-col items-center relative w-full md:w-auto">
+            <div className="flex flex-col items-center relative w-full md:w-auto order-first md:order-last">
               <div className="flex items-center gap-2 w-full relative z-10">
                 <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">{FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
                 <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
@@ -1091,7 +1098,8 @@ const FormatComparison = ({ activeSet }) => {
                 </div>
               ) : (
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer w-full md:w-auto">
+                  {/* CORRECTION 2 : Selecteur moins riquiqui + Capitalize */}
+                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-xs font-bold py-2 px-3 rounded-lg outline-none cursor-pointer w-full md:w-auto capitalize">
                     <option value="All">All Archetypes</option>
                     <option value="2color">2 Colors</option>
                     <option value="splash">2 Colors + Splash</option>
@@ -1153,20 +1161,21 @@ const FormatComparison = ({ activeSet }) => {
                 </div>
                 
                 <div className="flex items-center gap-4 md:gap-8">
-                  <div className="hidden sm:flex flex-col items-end opacity-40 group-hover:opacity-100 transition-opacity">
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight">{getFormatLabel(formatA)}</span>
+                  {/* CORRECTION 3 : Visibilité Mobile restaurée et renforcée */}
+                  <div className="flex flex-col items-end group-hover:opacity-100 transition-opacity">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70">{getFormatLabel(formatA)}</span>
                     <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
                         {item.valA !== null ? (metricMode === 'winrate' && item.valA > 0 ? '+' : '') + item.valA.toFixed(1) + '%' : '--'}
                     </span>
-                    {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5">{item.rawA.toFixed(1)}%</span>}
+                    {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5 opacity-80">{item.rawA.toFixed(1)}%</span>}
                   </div>
 
-                  <div className="hidden sm:flex flex-col items-end opacity-40 group-hover:opacity-100 transition-opacity">
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight">{getFormatLabel(formatB)}</span>
+                  <div className="flex flex-col items-end group-hover:opacity-100 transition-opacity">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70">{getFormatLabel(formatB)}</span>
                     <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
                         {item.valB !== null ? (metricMode === 'winrate' && item.valB > 0 ? '+' : '') + item.valB.toFixed(1) + '%' : '--'}
                     </span>
-                    {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5">{item.rawB.toFixed(1)}%</span>}
+                    {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5 opacity-80">{item.rawB.toFixed(1)}%</span>}
                   </div>
 
                   <div className={`flex flex-col items-end min-w-[90px] p-2.5 rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
@@ -1179,7 +1188,6 @@ const FormatComparison = ({ activeSet }) => {
               </div>
             ))}
             
-            {/* FIX: Chargement conditionnel */}
             {visibleCount < processedData.length && (
               <div ref={observerTarget} className="h-10 w-full flex items-center justify-center opacity-50">
                 <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
@@ -1685,7 +1693,7 @@ export default function MTGLimitedApp() {
   // --- NOUVEAU : Observer pour Infinite Scroll ---
   useEffect(() => {
     if (activeTab !== 'cards') return;
-    
+
     const observer = new IntersectionObserver(
       entries => {
         if (entries[0].isIntersecting) {
@@ -1841,10 +1849,18 @@ export default function MTGLimitedApp() {
               <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
                 <div className="flex gap-2">
                   <div className="relative flex-1 md:max-w-xs">
-                    <select value={archetypeFilter} onChange={(e) => setArchetypeFilter(e.target.value)} className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-3 pr-8 rounded-lg text-xs font-bold cursor-pointer hover:border-slate-500 focus:outline-none focus:border-indigo-500">
+                    <select
+                      value={archetypeFilter}
+                      onChange={(e) => setArchetypeFilter(e.target.value)}
+                      className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-3 pr-8 rounded-lg text-xs font-bold cursor-pointer hover:border-slate-500 focus:outline-none focus:border-indigo-500"
+                    >
                       <option value="Global">Global Stats</option>
-                      <option disabled>--- Two Colors ---</option>
+
+                      <option disabled className="bg-slate-950 text-slate-500 font-black">--- Two Colors ---</option>
                       {PAIRS.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+
+                      <option disabled className="bg-slate-950 text-slate-500 font-black">--- Three Colors ---</option>
+                      {TRIOS.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
                     </select>
                     <ChevronRight size={12} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
                   </div>
@@ -1939,7 +1955,7 @@ export default function MTGLimitedApp() {
                     </div>
                   </motion.button>
                 ))}
-                
+
                 {/* Loader / Sentinel de scroll */}
                 {!loading && visibleCardsCount < filteredCards.length && (
                   <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
