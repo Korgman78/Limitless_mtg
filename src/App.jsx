@@ -1049,8 +1049,6 @@ const FormatComparison = ({ activeSet }) => {
             </div>
           </div>
 
-          {/* SWITCH DANS LE HEADER SUPPRIMÉ ICI */}
-
           <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
             <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
               {compareMode === 'cards' ? (
@@ -1089,10 +1087,11 @@ const FormatComparison = ({ activeSet }) => {
                       <div className="w-[1px] h-5 bg-slate-800 mx-1 flex-shrink-0"></div>
 
                       <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* FIX UX MOBILE 2 : Raretés plus petites (w-6 h-6) pour tout faire rentrer sans scroll */}
                         {['M', 'R', 'U', 'C'].map(r => (
                           <button key={r} onClick={() => setRarityFilter(p => p.includes(r) ? p.filter(x => x !== r) : [...p, r])} 
                             // @ts-ignore
-                            className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${typeof RARITY_STYLES !== 'undefined' ? RARITY_STYLES[r] : ''} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
+                            className={`w-6 h-6 md:w-7 md:h-7 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${typeof RARITY_STYLES !== 'undefined' ? RARITY_STYLES[r] : ''} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
                         ))}
                         {(rarityFilter.length > 0 || colorFilters.length > 0) && (<button onClick={() => { setRarityFilter([]); setColorFilters([]); }} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>)}
                       </div>
@@ -1104,7 +1103,8 @@ const FormatComparison = ({ activeSet }) => {
                 </div>
               ) : (
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-xs font-bold py-2 px-3 rounded-lg outline-none cursor-pointer w-full md:w-auto capitalize">
+                  {/* FIX UX MOBILE 1 : Selecteur plus compact (py-1.5, px-2, text-[10px]) */}
+                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] md:text-xs font-bold py-1.5 px-2 md:py-2 md:px-3 rounded-lg outline-none cursor-pointer w-full md:w-auto capitalize">
                     <option value="All">All Archetypes</option>
                     <option value="2color">2 Colors</option>
                     <option value="splash">2 Colors + Splash</option>
@@ -1159,8 +1159,11 @@ const FormatComparison = ({ activeSet }) => {
                     </div>
                   )}
                   {compareMode === 'cards' && (
-                     <div className="flex flex-col truncate ml-1 justify-center h-full">
-                       <span className="font-black text-sm text-slate-100 truncate tracking-tight leading-tight">{item.card_name}</span>
+                     <div className="flex flex-col justify-center h-full flex-1 min-w-0">
+                       {/* FIX UX MOBILE 3 : Nom carte centré sur 2 lignes max avec police réduite */}
+                       <span className="font-black text-xs md:text-sm text-slate-100 md:text-left text-center leading-tight line-clamp-2 md:truncate w-full block">
+                         {item.card_name}
+                       </span>
                      </div>
                   )}
                 </div>
