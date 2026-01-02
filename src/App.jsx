@@ -1829,9 +1829,19 @@ export default function MTGLimitedApp() {
           <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
         </button>
       </div>
-      <div className="mt-auto pt-6 border-t border-slate-800 text-xs text-slate-600">
-        <p>Data sourced from 17lands.</p>
-        <p>Unofficial Fan Content.</p>
+<div className="mt-auto pt-6 border-t border-slate-800 space-y-4">
+        <div className="text-[10px] text-slate-500 leading-relaxed px-2">
+          <p className="mb-2">
+            <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>.
+          </p>
+          <p className="italic">
+            Limitless is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
+          </p>
+        </div>
+        <div className="flex gap-4 px-2 opacity-50 hover:opacity-100 transition-opacity">
+           <span className="text-[9px] text-slate-600">v1.3.0</span>
+           <span className="text-[9px] text-slate-600 font-mono uppercase tracking-tighter">Updated Daily</span>
+        </div>
       </div>
     </nav>
   );
