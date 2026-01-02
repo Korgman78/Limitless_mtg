@@ -833,6 +833,9 @@ const FormatComparison = ({ activeSet }) => {
   // Toggle Metric
   const [metricMode, setMetricMode] = useState('winrate');
 
+  // Toggle pour mobile uniquement (A vs B)
+  const [mobileShowFormatB, setMobileShowFormatB] = useState(false);
+
   // Filtres
   const [rarityFilter, setRarityFilter] = useState([]);
   const [colorFilters, setColorFilters] = useState([]);
@@ -847,13 +850,15 @@ const FormatComparison = ({ activeSet }) => {
   const observerTarget = React.useRef(null);
 
   const FORMAT_OPTIONS = [
-    { label: 'Premier Draft', value: 'PremierDraft' },
-    { label: 'Trad. Draft', value: 'TradDraft' },
-    { label: 'Sealed', value: 'Sealed' },
-    { label: 'Arena Direct Sealed', value: 'ArenaDirect_Sealed' },
+    { label: 'Premier Draft', value: 'PremierDraft', short: 'PD' },
+    { label: 'Trad. Draft', value: 'TradDraft', short: 'TD' },
+    { label: 'Sealed', value: 'Sealed', short: 'SEA' },
+    { label: 'Arena Direct Sealed', value: 'ArenaDirect_Sealed', short: 'ADS' },
   ];
 
   const getFormatLabel = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.label || val;
+  // Version courte pour les labels mobiles
+  const getFormatShort = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.short || val.substring(0, 3).toUpperCase();
 
   // 1. FETCH DATA
   useEffect(() => {
@@ -1027,7 +1032,6 @@ const FormatComparison = ({ activeSet }) => {
       <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            {/* CORRECTION 1 : Inversion Ordre Mobile (order-last/first) */}
             <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto order-last md:order-first">
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
                 <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
@@ -1044,6 +1048,8 @@ const FormatComparison = ({ activeSet }) => {
               <Zap size={14} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 bottom-0 mb-1 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
             </div>
           </div>
+
+          {/* SWITCH DANS LE HEADER SUPPRIMÉ ICI */}
 
           <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
             <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
@@ -1098,7 +1104,6 @@ const FormatComparison = ({ activeSet }) => {
                 </div>
               ) : (
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                  {/* CORRECTION 2 : Selecteur moins riquiqui + Capitalize */}
                   <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-xs font-bold py-2 px-3 rounded-lg outline-none cursor-pointer w-full md:w-auto capitalize">
                     <option value="All">All Archetypes</option>
                     <option value="2color">2 Colors</option>
@@ -1140,10 +1145,10 @@ const FormatComparison = ({ activeSet }) => {
                 onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
                 className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left active:scale-[0.98] ${compareMode === 'cards' ? 'cursor-zoom-in' : ''}`}
               >
-                <div className="flex items-center gap-4 min-w-0">
+                <div className="flex items-center gap-4 min-w-0 flex-1">
                   {compareMode === 'cards' ? (
                     <div className="relative shrink-0">
-                      <img src={typeof getCardImage === 'function' ? getCardImage(item.card_name) : ''} className="w-14 h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" loading="lazy" alt={item.card_name} />
+                      <img src={typeof getCardImage === 'function' ? getCardImage(item.card_name) : ''} className="w-12 h-16 md:w-14 md:h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" loading="lazy" alt={item.card_name} />
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 min-w-0">
@@ -1155,32 +1160,52 @@ const FormatComparison = ({ activeSet }) => {
                   )}
                   {compareMode === 'cards' && (
                      <div className="flex flex-col truncate ml-1 justify-center h-full">
-                       <span className="font-black text-sm text-slate-100 truncate tracking-tight">{item.card_name}</span>
+                       <span className="font-black text-sm text-slate-100 truncate tracking-tight leading-tight">{item.card_name}</span>
                      </div>
                   )}
                 </div>
                 
-                <div className="flex items-center gap-4 md:gap-8">
-                  {/* CORRECTION 3 : Visibilité Mobile restaurée et renforcée */}
-                  <div className="flex flex-col items-end group-hover:opacity-100 transition-opacity">
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70">{getFormatLabel(formatA)}</span>
-                    <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                        {item.valA !== null ? (metricMode === 'winrate' && item.valA > 0 ? '+' : '') + item.valA.toFixed(1) + '%' : '--'}
-                    </span>
-                    {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5 opacity-80">{item.rawA.toFixed(1)}%</span>}
+                {/* BLOC DROIT : COMPARAISON DES STATS (AVEC SWITCH MOBILE IN-BLOCK) */}
+                <div className="flex flex-row items-center gap-2 md:gap-3 flex-shrink-0">
+                  
+                  {/* BOUTON SWITCH MOBILE UNIQUEMENT */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); }}
+                    className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90"
+                    aria-label="Switch format view"
+                  >
+                    <Repeat size={16} />
+                  </button>
+
+                  {/* Container Stats : Desktop = 2 Colonnes / Mobile = 1 Colonne selon Switch */}
+                  <div className="flex flex-row gap-8 items-center">
+                    
+                    {/* FORMAT A */}
+                    <div className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}>
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatA)}</span>
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatA)}</span>
+                      <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                          {item.valA !== null ? (metricMode === 'winrate' && item.valA > 0 ? '+' : '') + item.valA.toFixed(1) + '%' : '--'}
+                      </span>
+                      {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawA.toFixed(1)}%</span>}
+                    </div>
+
+                    {/* FORMAT B */}
+                    <div className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}>
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatB)}</span>
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatB)}</span>
+                      <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                          {item.valB !== null ? (metricMode === 'winrate' && item.valB > 0 ? '+' : '') + item.valB.toFixed(1) + '%' : '--'}
+                      </span>
+                      {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawB.toFixed(1)}%</span>}
+                    </div>
+
                   </div>
 
-                  <div className="flex flex-col items-end group-hover:opacity-100 transition-opacity">
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70">{getFormatLabel(formatB)}</span>
-                    <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                        {item.valB !== null ? (metricMode === 'winrate' && item.valB > 0 ? '+' : '') + item.valB.toFixed(1) + '%' : '--'}
-                    </span>
-                    {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold mt-0.5 opacity-80">{item.rawB.toFixed(1)}%</span>}
-                  </div>
-
-                  <div className={`flex flex-col items-end min-w-[90px] p-2.5 rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
-                    <span className={`text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
-                    <span className={`text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {/* SHIFT (Fixe à droite) */}
+                  <div className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                    <span className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
+                    <span className={`text-lg md:text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {item.diff !== null ? ((item.diff >= 0 ? '+' : '') + item.diff.toFixed(1) + '%') : '--'}
                     </span>
                   </div>
