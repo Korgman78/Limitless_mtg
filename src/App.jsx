@@ -1100,21 +1100,14 @@ const FormatComparison = ({ activeSet }) => {
                    </button>
                 </div>
               ) : (
-                // --- FIX : LAYOUT ARCHETYPE MOBILE OPTIMISÉ (1 LIGNE COMPACTE) ---
-                <div className="flex gap-2 w-full md:w-auto items-center">
-                  {/* Selecteur : Flex-1 (prend la place), texte réduit, padding réduit */}
-                  <select 
-                    value={archTypeFilter} 
-                    onChange={(e) => setArchTypeFilter(e.target.value)} 
-                    className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg outline-none cursor-pointer flex-1 md:w-auto capitalize truncate"
-                  >
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg outline-none cursor-pointer flex-1 md:w-auto capitalize truncate">
                     <option value="All">All Archetypes</option>
                     <option value="2color">2 Colors</option>
                     <option value="splash">2 Col. + Splash</option>
                     <option value="3color">3 Colors</option>
                   </select>
 
-                  {/* Toggle WR/META : Padding réduit, text-[9px] */}
                   <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-shrink-0">
                     <button onClick={() => setMetricMode('winrate')} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
                       <Trophy size={9} /> WR
@@ -1124,7 +1117,6 @@ const FormatComparison = ({ activeSet }) => {
                     </button>
                   </div>
                   
-                  {/* Bouton Sort Mobile : Icône Seulement pour gagner de la place */}
                    <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-2 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0" title={sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}>
                       <ArrowUpDown size={14} />
                    </button>
@@ -1133,7 +1125,7 @@ const FormatComparison = ({ activeSet }) => {
             </div>
             
             {compareMode === 'archetypes' && (
-              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
+              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black flex items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
                 <SortButtonContent />
               </button>
             )}
@@ -1148,7 +1140,33 @@ const FormatComparison = ({ activeSet }) => {
           <div className="text-center py-20 text-slate-500 font-bold italic border border-dashed border-slate-800 rounded-xl">Aucune donnée trouvée.</div>
         ) : (
           <>
-            {visibleData.map((item, idx) => (
+            {visibleData.map((item, idx) => {
+              // --- HELPERS TOOLTIPS ---
+              const getStatsTooltip = (formatName, val) => {
+                 if (compareMode === 'cards') {
+                    return `In ${formatName}, this card win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
+                 }
+                 if (metricMode === 'winrate') {
+                    return `In ${formatName}, this archetype win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
+                 }
+                 return `In ${formatName}, this archetype represents ${val.toFixed(1)}% of the Meta`;
+              };
+
+              const getShiftTooltip = (val) => {
+                 const absVal = Math.abs(val).toFixed(1);
+                 const fA = getFormatLabel(formatA);
+                 const fB = getFormatLabel(formatB);
+                 
+                 if (compareMode === 'cards') {
+                    return `This card ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} of ${absVal}%`;
+                 }
+                 if (metricMode === 'winrate') {
+                    return `This archetype ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} of ${absVal}%`;
+                 }
+                 return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} of ${absVal} points`;
+              };
+
+              return (
               <div 
                 key={`${item.card_name || item.filter_context}-${idx}`} 
                 onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
@@ -1164,12 +1182,11 @@ const FormatComparison = ({ activeSet }) => {
                       <div className="p-2 bg-slate-950 rounded-full border border-slate-800 shadow-inner shrink-0 flex items-center justify-center">
                         {typeof ManaIcons !== 'undefined' && <ManaIcons colors={typeof extractColors === 'function' ? extractColors(item.filter_context) : ''} size="lg" />}
                       </div>
-                      <span className="font-black text-sm text-slate-100 truncate tracking-tight pt-0.5">{item.filter_context}</span>
+                      <span className="font-black text-xs md:text-sm text-slate-100 truncate tracking-tight pt-0.5">{item.filter_context}</span>
                     </div>
                   )}
                   {compareMode === 'cards' && (
                      <div className="flex flex-col justify-center h-full flex-1 min-w-0">
-                       {/* FIX : Alignement gauche (text-left) sur Mobile */}
                        <span className="font-black text-xs md:text-sm text-slate-100 text-left leading-tight line-clamp-2 md:truncate w-full block">
                          {item.card_name}
                        </span>
@@ -1177,10 +1194,8 @@ const FormatComparison = ({ activeSet }) => {
                   )}
                 </div>
                 
-                {/* BLOC DROIT : COMPARAISON DES STATS (AVEC SWITCH MOBILE IN-BLOCK) */}
                 <div className="flex flex-row items-center gap-2 md:gap-3 flex-shrink-0">
                   
-                  {/* BOUTON SWITCH MOBILE UNIQUEMENT */}
                   <button 
                     onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); }}
                     className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90"
@@ -1189,11 +1204,13 @@ const FormatComparison = ({ activeSet }) => {
                     <Repeat size={16} />
                   </button>
 
-                  {/* Container Stats : Desktop = 2 Colonnes / Mobile = 1 Colonne selon Switch */}
                   <div className="flex flex-row gap-8 items-center">
                     
                     {/* FORMAT A */}
-                    <div className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}>
+                    <div 
+                        className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
+                        title={getStatsTooltip(getFormatLabel(formatA), item.valA)}
+                    >
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatA)}</span>
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatA)}</span>
                       <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
@@ -1203,7 +1220,10 @@ const FormatComparison = ({ activeSet }) => {
                     </div>
 
                     {/* FORMAT B */}
-                    <div className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}>
+                    <div 
+                        className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
+                        title={getStatsTooltip(getFormatLabel(formatB), item.valB)}
+                    >
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatB)}</span>
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatB)}</span>
                       <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
@@ -1214,8 +1234,11 @@ const FormatComparison = ({ activeSet }) => {
 
                   </div>
 
-                  {/* SHIFT (Fixe à droite) */}
-                  <div className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                  {/* SHIFT */}
+                  <div 
+                    className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}
+                    title={getShiftTooltip(item.diff)}
+                  >
                     <span className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
                     <span className={`text-lg md:text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {item.diff !== null ? ((item.diff >= 0 ? '+' : '') + item.diff.toFixed(1) + '%') : '--'}
@@ -1223,7 +1246,8 @@ const FormatComparison = ({ activeSet }) => {
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
             
             {visibleCount < processedData.length && (
               <div ref={observerTarget} className="h-10 w-full flex items-center justify-center opacity-50">
@@ -2016,7 +2040,7 @@ export default function MTGLimitedApp() {
         </main>
       </div>
 
-      <nav className="md:hidden bg-slate-900 border-t border-slate-800 px-8 py-3 pb-6 flex justify-around items-center absolute bottom-0 w-full z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+<nav className="md:hidden bg-slate-900 border-t border-slate-800 px-8 py-3 pb-6 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Layers size={24} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[10px] font-bold">Decks</span></button>
         <button onClick={() => setActiveTab('cards')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Zap size={24} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[10px] font-bold">Cards</span></button>
         <button onClick={() => setActiveTab('compare')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}>
