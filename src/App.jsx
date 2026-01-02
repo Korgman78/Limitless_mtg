@@ -836,6 +836,9 @@ const FormatComparison = ({ activeSet }) => {
   // Toggle pour mobile uniquement (A vs B)
   const [mobileShowFormatB, setMobileShowFormatB] = useState(false);
 
+  // Tooltip Mobile (Toast System)
+  const [mobileTooltip, setMobileTooltip] = useState(null);
+
   // Filtres
   const [rarityFilter, setRarityFilter] = useState([]);
   const [colorFilters, setColorFilters] = useState([]);
@@ -858,6 +861,14 @@ const FormatComparison = ({ activeSet }) => {
 
   const getFormatLabel = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.label || val;
   const getFormatShort = (val) => FORMAT_OPTIONS.find(o => o.value === val)?.short || val.substring(0, 3).toUpperCase();
+
+  // Gestion du Toast Mobile
+  useEffect(() => {
+    if (mobileTooltip) {
+      const timer = setTimeout(() => setMobileTooltip(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [mobileTooltip]);
 
   // 1. FETCH DATA
   useEffect(() => {
@@ -1010,6 +1021,24 @@ const FormatComparison = ({ activeSet }) => {
   return (
     <div className="flex flex-col gap-6 min-h-screen relative">
       
+      {/* TOAST MOBILE POUR LES EXPLICATIONS */}
+      <AnimatePresence>
+        {mobileTooltip && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-20 left-4 right-4 z-[60] bg-indigo-900/95 text-white p-3 rounded-xl border border-indigo-500/50 shadow-2xl backdrop-blur-md"
+            onClick={() => setMobileTooltip(null)}
+          >
+            <div className="flex items-start gap-3">
+              <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs font-medium leading-relaxed">{mobileTooltip}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {zoomedCard && (
           <motion.div 
@@ -1166,6 +1195,14 @@ const FormatComparison = ({ activeSet }) => {
                  return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} of ${absVal} points`;
               };
 
+              // --- CLICK HANDLER pour le Toast Mobile ---
+              const handleStatClick = (e, text) => {
+                 e.stopPropagation(); // Empêche l'ouverture de la carte
+                 if (window.innerWidth < 768) { // Uniquement sur mobile
+                    setMobileTooltip(text);
+                 }
+              };
+
               return (
               <div 
                 key={`${item.card_name || item.filter_context}-${idx}`} 
@@ -1210,6 +1247,7 @@ const FormatComparison = ({ activeSet }) => {
                     <div 
                         className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
                         title={getStatsTooltip(getFormatLabel(formatA), item.valA)}
+                        onClick={(e) => handleStatClick(e, getStatsTooltip(getFormatLabel(formatA), item.valA))}
                     >
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatA)}</span>
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatA)}</span>
@@ -1223,6 +1261,7 @@ const FormatComparison = ({ activeSet }) => {
                     <div 
                         className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
                         title={getStatsTooltip(getFormatLabel(formatB), item.valB)}
+                        onClick={(e) => handleStatClick(e, getStatsTooltip(getFormatLabel(formatB), item.valB))}
                     >
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatB)}</span>
                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatB)}</span>
@@ -1238,6 +1277,7 @@ const FormatComparison = ({ activeSet }) => {
                   <div 
                     className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}
                     title={getShiftTooltip(item.diff)}
+                    onClick={(e) => handleStatClick(e, getShiftTooltip(item.diff))}
                   >
                     <span className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
                     <span className={`text-lg md:text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -2040,16 +2080,16 @@ export default function MTGLimitedApp() {
         </main>
       </div>
 
-<nav className="md:hidden bg-slate-900 border-t border-slate-800 px-8 py-3 pb-6 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-        <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Layers size={24} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[10px] font-bold">Decks</span></button>
-        <button onClick={() => setActiveTab('cards')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}><Zap size={24} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[10px] font-bold">Cards</span></button>
-        <button onClick={() => setActiveTab('compare')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}>
-          <Repeat size={24} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
-          <span className="text-[10px] font-bold">Compare</span>
+<nav className="md:hidden bg-slate-900 border-t border-slate-800 px-4 py-2 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+        <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Decks</span></button>
+        <button onClick={() => setActiveTab('cards')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400' : 'text-slate-600'}`}><Zap size={20} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[9px] font-bold">Cards</span></button>
+        <button onClick={() => setActiveTab('compare')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          <Repeat size={20} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
+          <span className="text-[9px] font-bold">Compare</span>
         </button>
-        <button onClick={() => setActiveTab('press')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'press' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}>
-          <Newspaper size={24} strokeWidth={activeTab === 'press' ? 2.5 : 2} />
-          <span className="text-[10px] font-bold">News</span>
+        <button onClick={() => setActiveTab('press')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'press' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          <Newspaper size={20} strokeWidth={activeTab === 'press' ? 2.5 : 2} />
+          <span className="text-[9px] font-bold">News</span>
         </button>
       </nav>
     </div>
