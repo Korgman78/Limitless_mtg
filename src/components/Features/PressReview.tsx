@@ -27,24 +27,24 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.1 }}
             className="z-[9999] pointer-events-none fixed
-                       /* Mobile & Tablet (< 1280px) : Centré en haut */
-                       top-20 left-1/2 -translate-x-1/2 w-[70vw] max-w-[220px]
+                       /* FIX MOBILE : Centrage via marges auto (plus robuste que translate) */
+                       top-20 left-0 right-0 mx-auto w-[70vw] max-w-[220px]
                        
-                       /* Desktop (>= 1280px) : Centrage parfait dans la gouttière droite */
+                       /* DESKTOP (>= 1280px) : Comportement sidebar à droite */
                        xl:top-24 
-                       xl:left-[calc(50%+512px)] /* Commence pile à la droite du contenu (1024px/2) */
-                       xl:right-0                /* S'étend jusqu'au bord de l'écran */
-                       xl:translate-x-0          /* Annule le centrage mobile */
+                       xl:left-[calc(50%+512px)] 
+                       xl:right-0 
+                       xl:mx-0                   /* Annulation du centrage mobile */
                        xl:w-auto xl:max-w-none
-                       xl:flex xl:justify-center xl:items-start /* Centre l'image dans l'espace dispo */
-                       xl:px-4"                  /* Marge de sécurité pour ne pas coller aux bords */
+                       xl:flex xl:justify-center xl:items-start
+                       xl:px-4"
           >
             <img 
               src={imageUrl} 
               alt={name} 
               className="rounded-2xl shadow-2xl border-2 border-slate-700 bg-slate-900 
                          w-full h-auto 
-                         xl:w-80" /* Taille fixe confortable sur PC */
+                         xl:w-80"
             />
           </motion.div>
         )}
@@ -52,7 +52,6 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
     </span>
   );
 };
-
 export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [activeSetsOptions, setActiveSetsOptions] = useState<any[]>([]);
