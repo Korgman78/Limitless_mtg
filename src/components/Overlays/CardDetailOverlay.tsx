@@ -211,33 +211,61 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
           </div>
         )}
 
-        <div className="bg-slate-900/50 py-3 px-4 md:pb-8 md:px-6 flex flex-col items-center border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
-          <motion.img
-            layoutId={`img-${card.id}`}
-            src={getCardImage(card.name)}
-            className="h-[25vh] w-auto md:h-auto md:w-72 rounded-[12px] md:rounded-[18px] shadow-2xl shadow-black my-2 md:my-4 ring-1 ring-white/10 object-contain"
-          />
-
-          <h1 className="text-lg md:text-2xl font-black text-center text-white leading-tight mb-1 md:mb-3 truncate w-full px-2">{card.name}</h1>
-
-          <div className="flex items-center gap-3 mb-3 md:mb-6 scale-90 md:scale-100">
-            <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${RARITY_STYLES[rCode]}`}>{rCode}</span>
-            <ManaIcons colors={card.colors} size="lg" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 md:gap-3 w-full max-w-xs">
-            <div className="bg-slate-800 p-2 md:p-3 rounded-xl border border-slate-700 flex flex-col items-center">
-              <span className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold mb-0.5 md:mb-1">GIH WR</span>
-              <div className={`text-xl md:text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)}`}>{card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%</div>
+        {/* Dashboard Compact Header */}
+        <div className="bg-slate-900/50 p-4 md:pb-8 md:px-6 flex flex-col border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
+          <div className="flex flex-row md:flex-col items-center gap-4 md:gap-0">
+            {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
+            <div className="w-1/3 md:w-full flex-shrink-0">
+              <motion.img
+                layoutId={`img-${card.id}`}
+                src={getCardImage(card.name)}
+                className="w-full h-auto rounded-[10px] md:rounded-[18px] shadow-2xl shadow-black md:my-4 ring-1 ring-white/10 object-contain"
+              />
             </div>
-            <div className="bg-slate-800 p-2 md:p-3 rounded-xl border border-slate-700 flex flex-col items-center">
-              <span className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold mb-0.5 md:mb-1">ALSA</span>
-              <div className="text-xl md:text-3xl font-black text-white">{card.alsa ? card.alsa.toFixed(2) : '--'}</div>
+
+            {/* Information & Stats Panel */}
+            <div className="flex-1 md:w-full flex flex-col justify-center pl-3 md:pl-0">
+              {/* justify-center ici est crucial pour l'alignement vertical face à l'image */}
+
+              {/* Header: Title + Badges on same line or tightly stacked */}
+              <div className="mb-3">
+                <h1 className="text-base md:text-2xl font-black text-left md:text-center text-white leading-tight mb-1 line-clamp-2">
+                  {card.name}
+                </h1>
+                <div className="flex items-center justify-start md:justify-center gap-2">
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded border border-white/10 font-black tracking-wide ${RARITY_STYLES[rCode]}`}>
+                    {rCode}
+                  </span>
+                  {/* J'ai ajouté border-white/10 pour un fini plus premium */}
+                  <ManaIcons colors={card.colors} size="sm" />
+                </div>
+              </div>
+
+              {/* Responsive Stats Grid - Cleaner Look */}
+              <div className="grid grid-cols-2 gap-2 w-full">
+                {/* Box 1: WR */}
+                <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
+                  {/* J'ai allégé le background et la bordure, et aligné à gauche (items-start) pour faire moins "bouton centré" */}
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
+                  <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)} leading-none`}>
+                    {card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%
+                  </div>
+                </div>
+
+                {/* Box 2: ALSA */}
+                <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
+                  <div className="text-lg md:text-3xl font-black text-white leading-none">
+                    {card.alsa ? card.alsa.toFixed(2) : '--'}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-6 bg-slate-950">
+        {/* Scrollable Content Section */}
+        <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
           <CardEvaluationBlock card={card} allCards={allCards} />
 
           <div>
