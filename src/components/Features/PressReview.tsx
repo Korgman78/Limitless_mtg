@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, ChevronRight, Gem, AlertTriangle, Newspaper, ExternalLink, Play, Clock, ChevronDown } from 'lucide-react';
+import { Search, Zap, ChevronRight, Gem, AlertTriangle, Newspaper, ExternalLink, Play, Clock, ChevronDown, Check, Minus, X, Smile, Meh, Frown, Filter } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
 
-// --- COMPOSANT TOOLTIP ---
+// --- COMPOSANT TOOLTIP (Carte au survol) ---
 const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
   const [show, setShow] = useState(false);
   const imageUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}&format=image&version=border_crop`;
 
   return (
-    <span 
+    <span
       className="relative inline-block text-indigo-400 font-bold border-b border-indigo-500/30 cursor-help"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
@@ -27,21 +27,18 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.1 }}
             className="z-[9999] pointer-events-none fixed
-                       /* FIX MOBILE : Centrage via marges auto (plus robuste que translate) */
                        top-20 left-0 right-0 mx-auto w-[70vw] max-w-[220px]
-                       
-                       /* DESKTOP (>= 1280px) : Comportement sidebar à droite */
                        xl:top-24 
                        xl:left-[calc(50%+512px)] 
                        xl:right-0 
-                       xl:mx-0                   /* Annulation du centrage mobile */
+                       xl:mx-0
                        xl:w-auto xl:max-w-none
                        xl:flex xl:justify-center xl:items-start
                        xl:px-4"
           >
-            <img 
-              src={imageUrl} 
-              alt={name} 
+            <img
+              src={imageUrl}
+              alt={name}
               className="rounded-2xl shadow-2xl border-2 border-slate-700 bg-slate-900 
                          w-full h-auto 
                          xl:w-80"
@@ -52,34 +49,55 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
     </span>
   );
 };
+
+// --- HELPER SENTIMENT ---
+const getSentimentData = (article: Article) => {
+  // Sécurisation des valeurs nulles
+  const yes = (article as any).votes_yes || 0;
+  const meh = (article as any).votes_meh || 0;
+  const no = (article as any).votes_no || 0;
+  const total = yes + meh + no;
+
+  if (total === 0) return null;
+
+  const percentGood = Math.round((yes / total) * 100);
+
+  if (percentGood >= 60) {
+    return { percent: percentGood, icon: Smile, color: 'text-emerald-400', bg: 'bg-emerald-950/60', border: 'border-emerald-500/30', label: 'Great Read' };
+  } else if (percentGood >= 35) {
+    return { percent: percentGood, icon: Meh, color: 'text-amber-400', bg: 'bg-amber-950/60', border: 'border-amber-500/30', label: 'Mixed' };
+  } else {
+    return { percent: percentGood, icon: Frown, color: 'text-rose-400', bg: 'bg-rose-950/60', border: 'border-rose-500/30', label: 'Controversial' };
+  }
+};
+
 export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [activeSetsOptions, setActiveSetsOptions] = useState<any[]>([]);
-  
+
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  
+
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentSetFilter, setCurrentSetFilter] = useState<string>('All');
-  const [zoomedCard, setZoomedCard] = useState<string | null>(null);
-  
-  const [hasMore, setHasMore] = useState<boolean>(true);
 
-  // Mapping des noms officiels
+  // FILTRE QUALITÉ
+  const [qualityFilter, setQualityFilter] = useState<'All' | 'Top'>('All');
+
+  const [zoomedCard, setZoomedCard] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState<boolean>(true);
   const [officialCardNames, setOfficialCardNames] = useState<Record<string, string>>({});
-  
-  // State pour gérer le loader lors de l'analyse des cartes
   const [isResolvingCardNames, setIsResolvingCardNames] = useState<boolean>(false);
+  const [hasVoted, setHasVoted] = useState<boolean>(false);
 
   // --- Helpers ---
   const cleanSummary = (text: string | null | undefined): string => {
     if (!text) return "";
     let content = text.split('{')[0];
     content = content.replace(/```[\s\S]*?$/g, '').replace(/`{1,3}/g, '').replace(/[-_*]{3,}/g, '').replace(/\s+$/g, '').trim();
-    
-    // Remplacement intelligent avec format d'ancre sûr
+
     const mappings = Object.entries(officialCardNames);
     if (mappings.length > 0) {
       mappings.sort((a, b) => b[0].length - a[0].length);
@@ -89,7 +107,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       content = content.replace(regex, (match) => {
         const entry = mappings.find(([approx]) => approx.toLowerCase() === match.toLowerCase());
         const officialName = entry ? entry[1] : match;
-        // Utilisation de #card- au lieu de card:// pour éviter le nettoyage par Markdown
         return `[${officialName}](#card-${encodeURIComponent(officialName)})`;
       });
     }
@@ -115,15 +132,70 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     return new Date(dateString).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
+  // --- Voting Logic ---
+  const handleVote = async (type: 'yes' | 'meh' | 'no') => {
+    if (!selectedArticle || hasVoted) return;
+
+    const column = `votes_${type}`;
+
+    // Optimistic Update
+    const updatedArticle = {
+      ...selectedArticle,
+      [column]: ((selectedArticle as any)[column] || 0) + 1
+    };
+    setSelectedArticle(updatedArticle);
+
+    // Update global list
+    setArticles(prevArticles =>
+      prevArticles.map(a => a.id === selectedArticle.id ? updatedArticle : a)
+    );
+
+    setHasVoted(true);
+    localStorage.setItem(`voted-${selectedArticle.id}`, 'true');
+
+    // Server Update
+    await supabase.rpc('increment_article_vote', {
+      row_id: selectedArticle.id,
+      col_name: column
+    });
+  };
+
   // --- Data Fetching ---
 
+  // RECHARGEMENT DES DONNÉES À L'OUVERTURE DE L'ARTICLE
+  useEffect(() => {
+    if (selectedArticle?.id) {
+      // 1. Check local storage
+      const voted = localStorage.getItem(`voted-${selectedArticle.id}`);
+      setHasVoted(!!voted);
+
+      // 2. Fetch fresh data from DB to ensure history is correct
+      const fetchFreshArticleData = async () => {
+        const { data, error } = await supabase
+          .from('press_articles')
+          .select('*') // Récupère TOUTES les colonnes, y compris les votes
+          .eq('id', selectedArticle.id)
+          .single();
+
+        if (data && !error) {
+          // Fusionne les données fraîches avec l'article sélectionné
+          setSelectedArticle(prev => prev ? { ...prev, ...data } : data);
+          // Met à jour la liste globale pour les badges
+          setArticles(prev => prev.map(a => a.id === data.id ? { ...a, ...data } : a));
+        }
+      };
+
+      fetchFreshArticleData();
+    }
+  }, [selectedArticle?.id]);
+
+  // SCRYFALL FETCHING
   useEffect(() => {
     if (!selectedArticle) return;
 
-    // Si pas de cartes mentionnées, on coupe le loader immédiatement
     if (!selectedArticle.mentioned_cards) {
-        setIsResolvingCardNames(false);
-        return;
+      setIsResolvingCardNames(false);
+      return;
     }
 
     async function fetchOfficialNames() {
@@ -143,7 +215,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       }));
 
       setOfficialCardNames(prev => ({ ...prev, ...newMappings }));
-      setIsResolvingCardNames(false); // FIN du chargement
+      setIsResolvingCardNames(false);
     }
 
     fetchOfficialNames();
@@ -176,7 +248,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
           .order('published_at', { ascending: false });
 
         if (currentSetFilter !== 'All') {
-            query = query.eq('set_tag', currentSetFilter);
+          query = query.eq('set_tag', currentSetFilter);
         }
 
         query = query.gte('published_at', dateLimitISO);
@@ -184,7 +256,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
         const { data, error } = await query;
 
         if (error) throw error;
-        
+
         if (data) {
           setArticles(data);
         }
@@ -233,9 +305,22 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
-    if (selectedTags.length === 0) return articles;
-    return articles.filter((article: Article) => selectedTags.every((tag: string) => article.tags?.includes(tag)));
-  }, [articles, selectedTags]);
+
+    let filtered = articles;
+
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter((article: Article) => selectedTags.every((tag: string) => article.tags?.includes(tag)));
+    }
+
+    if (qualityFilter === 'Top') {
+      filtered = filtered.filter((article: Article) => {
+        const sentiment = getSentimentData(article);
+        return sentiment && sentiment.percent >= 75; // Seuil 75%
+      });
+    }
+
+    return filtered;
+  }, [articles, selectedTags, qualityFilter]);
 
   const allTags = useMemo((): string[] => {
     const tags = new Set<string>();
@@ -280,13 +365,27 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
               </h2>
               <p className="text-slate-400 text-sm">Curated summaries & strategic insights.</p>
             </div>
-            <div className="relative min-w-[160px]">
-              <select value={currentSetFilter} onChange={(e) => setCurrentSetFilter(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-white text-xs font-bold py-2.5 pl-4 pr-10 rounded-xl outline-none focus:border-indigo-500 appearance-none cursor-pointer transition-all hover:border-slate-600">
-                <option value="All">All Sets</option>
-                {activeSetsOptions.map((s: any) => (<option key={s.code} value={s.code}>{s.name} ({s.code})</option>))}
-              </select>
-              <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 rotate-90 pointer-events-none" />
+
+            {/* FILTERS CONTAINER */}
+            <div className="flex gap-2 w-full md:w-auto">
+              <div className="relative flex-grow md:flex-grow-0 md:min-w-[160px]">
+                <select value={currentSetFilter} onChange={(e) => setCurrentSetFilter(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white text-xs font-bold py-2.5 pl-4 pr-10 rounded-xl outline-none focus:border-indigo-500 appearance-none cursor-pointer transition-all hover:border-slate-600">
+                  <option value="All">All Sets</option>
+                  {activeSetsOptions.map((s: any) => (<option key={s.code} value={s.code}>{s.name} ({s.code})</option>))}
+                </select>
+                <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 rotate-90 pointer-events-none" />
+              </div>
+
+              <div className="relative">
+                <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value as 'All' | 'Top')}
+                  className={`bg-slate-900 border ${qualityFilter === 'Top' ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-400'} text-xs font-bold py-2.5 pl-9 pr-4 rounded-xl outline-none focus:border-indigo-500 appearance-none cursor-pointer transition-all hover:border-slate-600 h-full`}
+                >
+                  <option value="All">All</option>
+                  <option value="Top">Top Rated</option>
+                </select>
+                <Filter size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${qualityFilter === 'Top' ? 'text-emerald-500' : 'text-slate-500'} pointer-events-none`} />
+              </div>
             </div>
           </div>
 
@@ -309,88 +408,107 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
           <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div></div>
         ) : filteredArticles.length === 0 ? (
           <div className="text-center text-slate-500 py-20 bg-slate-900 rounded-xl border border-slate-800">
-             No articles found in the last 15 days matching your filters.
+            No articles found matching your filters.
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
-            {filteredArticles.map((article: Article) => (
-              <button key={article.id} onClick={() => {
-                setSelectedArticle(article);
-                if (article.mentioned_cards) setIsResolvingCardNames(true);
-              }}
-                className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99]">
-                <div className="md:flex">
-                  <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
-                    <img src={getYouTubeThumbnail(article)} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" alt="thumb" />
-                    {article.strategic_score && (
-                      <div className="absolute top-2 left-2 group/score">
-                        <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg cursor-help">
-                          <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
+            {filteredArticles.map((article: Article) => {
+              const sentiment = getSentimentData(article);
+              return (
+                <button key={article.id} onClick={() => {
+                  setSelectedArticle(article);
+                  if (article.mentioned_cards) setIsResolvingCardNames(true);
+                }}
+                  className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99] relative"
+                >
+                  <div className="md:flex">
+                    <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
+                      <img src={getYouTubeThumbnail(article)} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" alt="thumb" />
+
+                      {article.strategic_score && (
+                        <div className="absolute top-2 left-2 group/score">
+                          <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg cursor-help">
+                            <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4 flex-1">
-                    <div className="flex flex-wrap gap-2 mb-2 items-center">
-                      <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
-                      <span className="text-[9px] font-bold uppercase text-slate-500">{(article as any).channel_name}</span>
-                      
-                      {article.tags
-                        ?.sort((a, b) => {
-                            const aSelected = selectedTags.includes(a);
-                            const bSelected = selectedTags.includes(b);
-                            if (aSelected && !bSelected) return -1;
-                            if (!aSelected && bSelected) return 1;
-                            return 0;
-                        })
-                        .slice(0, 4)
-                        .map((t: string) => (
-                        <span key={t} className={`text-[9px] font-bold border px-2 py-0.5 rounded ${selectedTags.includes(t) ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'text-slate-500 border-slate-800'}`}>
-                          {t}
-                        </span>
-                      ))}
-                      {(article.tags?.length || 0) > 5 && <span className="text-[9px] text-slate-600">+{article.tags!.length - 5}</span>}
+                      )}
                     </div>
-                    <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1 group-hover:text-indigo-300 transition-colors line-clamp-1">{article.title}</h3>
-                    <p className="text-slate-400 text-xs line-clamp-2 italic leading-relaxed">{cleanSummary(article.summary)}</p>
-                    <div className="mt-2 text-[10px] text-slate-600 font-medium flex items-center gap-2">{formatDate(article.published_at)}</div>
+
+                    <div className="p-4 flex-1">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex flex-wrap gap-2 items-center pr-2">
+                          <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
+                          <span className="text-[9px] font-bold uppercase text-slate-500">{(article as any).channel_name}</span>
+                          {article.tags
+                            ?.sort((a, b) => {
+                              const aSelected = selectedTags.includes(a);
+                              const bSelected = selectedTags.includes(b);
+                              if (aSelected && !bSelected) return -1;
+                              if (!aSelected && bSelected) return 1;
+                              return 0;
+                            })
+                            .slice(0, 4)
+                            .map((t: string) => (
+                              <span key={t} className={`text-[9px] font-bold border px-2 py-0.5 rounded ${selectedTags.includes(t) ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'text-slate-500 border-slate-800'}`}>
+                                {t}
+                              </span>
+                            ))}
+                        </div>
+                        {/* SENTIMENT BADGE - Dans le flux, aligné droite, visible partout */}
+                        {sentiment && (
+                          <div className={`relative group/badge flex-shrink-0 px-2 py-1 rounded-lg border flex items-center gap-1.5 shadow-sm cursor-help ${sentiment.bg} ${sentiment.border} ${sentiment.color}`}>
+                            <sentiment.icon size={12} strokeWidth={3} />
+                            <span className="text-[9px] font-black">{sentiment.percent}%</span>
+
+                            {/* TOOLTIP: Texte écrit en vert émeraude */}
+                            <div className="absolute right-0 top-full mt-1.5 w-max max-w-[120px] bg-slate-900/95 border border-slate-600 text-emerald-400 text-[9px] font-black px-2 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-20 text-center backdrop-blur-sm border-emerald-500/20">
+                              {sentiment.percent}% good reviews
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1 group-hover:text-indigo-300 transition-colors line-clamp-1">{article.title}</h3>
+                      <p className="text-slate-400 text-xs line-clamp-2 italic leading-relaxed">{cleanSummary(article.summary)}</p>
+                      <div className="mt-2 text-[10px] text-slate-600 font-medium flex items-center gap-2">{formatDate(article.published_at)}</div>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {/* Load More Button */}
         {!loading && hasMore && articles.length > 0 && (
-            <div className="flex justify-center pt-4 pb-8">
-                <button 
-                    onClick={loadMoreArticles}
-                    disabled={loadingMore}
-                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-full font-bold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700"
-                >
-                    {loadingMore ? (
-                        <>
-                            <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                            Loading Archives...
-                        </>
-                    ) : (
-                        <>
-                            <Clock size={14} />
-                            Load Older Articles
-                            <ChevronDown size={14} />
-                        </>
-                    )}
-                </button>
-            </div>
+          <div className="flex justify-center pt-4 pb-8">
+            <button
+              onClick={loadMoreArticles}
+              disabled={loadingMore}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-full font-bold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700"
+            >
+              {loadingMore ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                  Loading Archives...
+                </>
+              ) : (
+                <>
+                  <Clock size={14} />
+                  Load Older Articles
+                  <ChevronDown size={14} />
+                </>
+              )}
+            </button>
+          </div>
         )}
       </div>
 
       <AnimatePresence>
         {selectedArticle && (
           <SwipeableOverlay onClose={() => setSelectedArticle(null)}>
-             <div className="flex flex-col h-full md:flex-row bg-slate-950">
-              {/* Left Column (Video & Actions) */}
+            <div className="flex flex-col h-full md:flex-row bg-slate-950">
+              {/* Left Column */}
               <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
                 <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl border border-slate-700 group shrink-0">
                   <img src={getYouTubeThumbnail(selectedArticle)} className="w-full h-full object-cover" alt="vid" />
@@ -409,7 +527,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                 </a>
               </div>
 
-              {/* Right Column (Content) */}
+              {/* Right Column */}
               <div className="flex-1 overflow-y-auto p-5 md:p-12 bg-slate-950">
                 <div className="max-w-2xl mx-auto pb-20 md:pb-0">
                   <div className="md:hidden mb-6">
@@ -422,8 +540,8 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
                   {isResolvingCardNames ? (
                     <div className="flex flex-col items-center justify-center py-32 space-y-4">
-                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-                       <span className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Analyzing Card Data...</span>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                      <span className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Analyzing Card Data...</span>
                     </div>
                   ) : (
                     <>
@@ -438,20 +556,14 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                         )}
                       </div>
 
-                      {/* CUSTOM MARKDOWN WITH HOVER TOOLTIP */}
                       <div className="prose prose-invert prose-sm prose-indigo max-w-none">
-                        <ReactMarkdown 
+                        <ReactMarkdown
                           components={{
-                            // Surcharge du composant "a" (lien) pour intercepter le format #card-
                             a: ({ href, children, ...props }) => {
-                              // Si le lien commence par #card-, c'est notre marqueur spécial
                               if (href?.startsWith('#card-')) {
-                                // On décode le nom pour l'affichage
                                 const cardName = decodeURIComponent(href.replace('#card-', ''));
-                                // On retourne notre composant Tooltip qui est un SPAN (non cliquable)
                                 return <CardTooltip name={cardName} />;
                               }
-                              // Sinon, c'est un lien normal qui doit fonctionner
                               return (
                                 <a href={href} {...props} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
                                   {children}
@@ -462,6 +574,91 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                         >
                           {cleanSummary(selectedArticle.summary)}
                         </ReactMarkdown>
+                      </div>
+
+                      {/* SECTION VOTE */}
+                      <div className="mt-12 mb-8 p-6 bg-slate-900/40 rounded-3xl border border-slate-800/50 text-center backdrop-blur-sm">
+                        <h4 className="text-xs font-black text-slate-300 mb-6 uppercase tracking-[0.2em]">
+                          Was this strategic insight helpful?
+                        </h4>
+
+                        {!hasVoted ? (
+                          <div className="flex flex-wrap justify-center gap-3">
+                            <button
+                              onClick={() => handleVote('yes')}
+                              className="flex-1 min-w-[100px] py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                            >
+                              <Check size={14} strokeWidth={3} /> YES!
+                            </button>
+                            <button
+                              onClick={() => handleVote('meh')}
+                              className="flex-1 min-w-[100px] py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                            >
+                              <Minus size={14} strokeWidth={3} /> SOMEWHAT
+                            </button>
+                            <button
+                              onClick={() => handleVote('no')}
+                              className="flex-1 min-w-[100px] py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                            >
+                              <X size={14} strokeWidth={3} /> NOT REALLY
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3 max-w-sm mx-auto">
+                            {(() => {
+                              const yes = (selectedArticle as any).votes_yes || 0;
+                              const meh = (selectedArticle as any).votes_meh || 0;
+                              const no = (selectedArticle as any).votes_no || 0;
+                              const total = yes + meh + no;
+
+                              const getPercent = (val: number) => total === 0 ? 0 : Math.round((val / total) * 100);
+
+                              return (
+                                <>
+                                  {/* YES BAR */}
+                                  <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                    <motion.div
+                                      initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(yes), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                                      className="absolute left-0 top-0 bottom-0 bg-emerald-500/40 border-r border-emerald-500/50"
+                                    />
+                                    <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                      <span className="text-emerald-400 flex items-center gap-1.5"><Check size={12} strokeWidth={3} /> Yes</span>
+                                      <span className="text-white">{yes} <span className="text-slate-500 ml-1">({getPercent(yes)}%)</span></span>
+                                    </div>
+                                  </div>
+
+                                  {/* MEH BAR */}
+                                  <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                    <motion.div
+                                      initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(meh), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                                      className="absolute left-0 top-0 bottom-0 bg-amber-500/40 border-r border-amber-500/50"
+                                    />
+                                    <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                      <span className="text-amber-400 flex items-center gap-1.5"><Minus size={12} strokeWidth={3} /> Somewhat</span>
+                                      <span className="text-white">{meh} <span className="text-slate-500 ml-1">({getPercent(meh)}%)</span></span>
+                                    </div>
+                                  </div>
+
+                                  {/* NO BAR */}
+                                  <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                    <motion.div
+                                      initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(no), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
+                                      className="absolute left-0 top-0 bottom-0 bg-rose-500/40 border-r border-rose-500/50"
+                                    />
+                                    <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                      <span className="text-rose-400 flex items-center gap-1.5"><X size={12} strokeWidth={3} /> Not Really</span>
+                                      <span className="text-white">{no} <span className="text-slate-500 ml-1">({getPercent(no)}%)</span></span>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-center mt-2">
+                                    <span className="text-[9px] text-slate-500 italic">Thank you for voting! It will help us to curate better content.</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
 
                       {selectedArticle.mentioned_cards && (
@@ -477,7 +674,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                                   <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
                                     alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
                                     onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
-                                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
                                     <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
                                   </div>
                                 </button>
