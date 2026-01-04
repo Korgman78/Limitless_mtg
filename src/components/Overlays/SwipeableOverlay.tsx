@@ -7,7 +7,7 @@ export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, on
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end md:justify-center md:items-center"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex flex-col justify-end md:justify-center md:items-center"
       onClick={onClose}
     >
       <motion.div
@@ -15,7 +15,7 @@ export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, on
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="w-full h-[92vh] md:h-auto md:max-h-[90vh] md:max-w-6xl md:w-full bg-slate-950 rounded-t-[30px] md:rounded-[30px] overflow-hidden flex flex-col shadow-2xl border border-white/10 relative"
+        className="w-full h-[92vh] md:h-auto md:max-h-[90vh] md:max-w-6xl md:w-full bg-gradient-to-b from-slate-900/98 to-slate-950/99 backdrop-blur-xl rounded-t-[30px] md:rounded-[30px] overflow-hidden flex flex-col shadow-2xl border border-white/10 relative"
         onClick={(e) => e.stopPropagation()}
         drag="y"
         dragConstraints={{ top: 0, bottom: 0 }}

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp
+  X, Repeat, Newspaper, ArrowUp, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from './supabase';
@@ -12,6 +12,11 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 
 // Hooks
 import { useDebounce } from './hooks/useDebounce';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { usePullToRefresh } from './hooks/usePullToRefresh';
+
+// Utils
+import { haptics } from './utils/haptics';
 
 // Helpers
 import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage } from './utils/helpers';
@@ -24,25 +29,27 @@ import { FormatComparison, PressReview } from './components/Features';
 
 
 export default function MTGLimitedApp(): React.ReactElement {
-  const [activeTab, setActiveTab] = useState<string>('decks');
-  const [activeFormat, setActiveFormat] = useState<string>('PremierDraft');
-  const [activeSet, setActiveSet] = useState<string>('TLA');
+  // --- Persisted State (Smart Defaults) ---
+  const [activeTab, setActiveTab] = useLocalStorage<string>('limitless-tab', 'decks');
+  const [activeFormat, setActiveFormat] = useLocalStorage<string>('limitless-format', 'PremierDraft');
+  const [activeSet, setActiveSet] = useLocalStorage<string>('limitless-set', 'TLA');
+  const [deckTypeFilter, setDeckTypeFilter] = useLocalStorage<string>('limitless-deckType', 'Two colors');
+  const [archetypeFilter, setArchetypeFilter] = useLocalStorage<string>('limitless-archetype', 'Global');
+  const [sortConfig, setSortConfig] = useLocalStorage<SortConfig>('limitless-sort', { key: 'gih_wr', dir: 'desc' });
+
+  // --- Non-persisted State ---
   const [availableSets, setAvailableSets] = useState<any[]>([]);
   const [decks, setDecks] = useState<Deck[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [totalGames, setTotalGames] = useState<number>(1);
   const [globalMeanWR, setGlobalMeanWR] = useState<number>(55.0);
-  const [deckTypeFilter, setDeckTypeFilter] = useState<string>('Two colors');
   const [chartMode, setChartMode] = useState<string>('meta');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebounce<string>(searchTerm, 300);
 
   const [rarityFilter, setRarityFilter] = useState<string[]>([]);
   const [colorFilters, setColorFilters] = useState<string[]>([]);
-
-  const [archetypeFilter, setArchetypeFilter] = useState<string>('Global');
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'gih_wr', dir: 'desc' });
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
 
@@ -250,6 +257,42 @@ export default function MTGLimitedApp(): React.ReactElement {
     mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Refresh data function for pull-to-refresh
+  const refreshData = useCallback(async () => {
+    if (activeTab === 'cards') {
+      setLoading(true);
+      const { data } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('filter_context', archetypeFilter).eq('format', activeFormat);
+      if (data) {
+        setCards(data.map((c: any) => ({ id: c.id, name: c.card_name, rarity: c.rarity, colors: c.colors, gih_wr: c.gih_wr, alsa: c.alsa, img_count: c.img_count })));
+      }
+      setLoading(false);
+    } else if (activeTab === 'decks') {
+      const { data } = await supabase.from('archetype_stats').select('*').eq('set_code', activeSet).eq('format', activeFormat).order('win_rate', { ascending: false });
+      if (data) {
+        const validDecks = data.filter((d: any) => !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(d.archetype_name));
+        const total = validDecks.reduce((acc: number, curr: any) => acc + (curr.games_count || 0), 0);
+        setTotalGames(total || 1);
+        setDecks(validDecks.map((d: any) => ({
+          id: d.id, name: d.archetype_name, colors: d.colors, wr: d.win_rate, games: d.games_count,
+          type: (() => { const code = d.colors || ""; const isSplash = code.includes("Splash"); const baseColors = code.replace(' + Splash', '').replace(/[^WUBRG]/g, ''); const count = baseColors.length; if (count === 1) return "Mono-color"; if (count === 2 && !isSplash) return "Two colors"; if (count === 2 && isSplash) return "Two colors + splash"; if (count === 3 && !isSplash) return "Three colors"; return "More than 3 colors"; })(),
+          history: (d.win_rate_history && d.win_rate_history.length > 1) ? d.win_rate_history : [d.win_rate, d.win_rate]
+        })));
+      }
+    }
+  }, [activeTab, activeSet, activeFormat, archetypeFilter]);
+
+  // Pull-to-refresh hook
+  const { pullDistance, isRefreshing, handlers: pullHandlers } = usePullToRefresh({
+    onRefresh: refreshData,
+    threshold: 80
+  });
+
+  // Tab change with haptic feedback
+  const handleTabChange = (tab: string) => {
+    haptics.light();
+    setActiveTab(tab);
+  };
+
   const Sidebar = () => (
     <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
       <div className="mb-8 px-2">
@@ -257,16 +300,16 @@ export default function MTGLimitedApp(): React.ReactElement {
         <p className="text-xs text-slate-500 font-medium tracking-wide">MTG LIMITED ANALYTICS</p>
       </div>
       <div className="space-y-2">
-        <button onClick={() => setActiveTab('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onClick={() => handleTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Layers size={20} strokeWidth={2.5} /> <span>Archetypes Breakdown</span>
         </button>
-        <button onClick={() => setActiveTab('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onClick={() => handleTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Zap size={20} strokeWidth={2.5} /> <span>Card Ratings</span>
         </button>
-        <button onClick={() => setActiveTab('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onClick={() => handleTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
         </button>
-        <button onClick={() => setActiveTab('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onClick={() => handleTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
         </button>
       </div>
@@ -331,16 +374,48 @@ export default function MTGLimitedApp(): React.ReactElement {
           </div>
         </header>
 
-        <main ref={mainRef} className="flex-1 overflow-y-auto pb-32 md:pb-8 md:px-6 md:pt-6 scroll-smooth">
+        <main
+          ref={mainRef}
+          {...pullHandlers}
+          className="flex-1 overflow-y-auto pb-32 md:pb-8 md:px-6 md:pt-6 scroll-smooth relative"
+        >
+          {/* Pull-to-refresh indicator */}
+          <AnimatePresence>
+            {(pullDistance > 0 || isRefreshing) && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute top-0 left-0 right-0 flex justify-center py-3 z-10 pointer-events-none"
+              >
+                <motion.div
+                  animate={{ rotate: isRefreshing ? 360 : 0 }}
+                  transition={{ repeat: isRefreshing ? Infinity : 0, duration: 1, ease: "linear" }}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center ${pullDistance >= 80 || isRefreshing ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'} shadow-lg`}
+                >
+                  <RefreshCw size={16} strokeWidth={2.5} />
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {loading && activeTab === 'cards' && (
             <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
               {[...Array(12)].map((_, i) => <CardSkeleton key={i} />)}
             </div>
           )}
 
-          {/* 1. DECKS / ARCHETYPES TAB */}
-          {activeTab === 'decks' && (
-            <div className="p-4 md:p-0 space-y-4 md:space-y-6">
+          {/* Tab content with transitions */}
+          <AnimatePresence mode="wait">
+            {/* 1. DECKS / ARCHETYPES TAB */}
+            {activeTab === 'decks' && (
+              <motion.div
+                key="decks-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="p-4 md:p-0 space-y-4 md:space-y-6">
               <div className="flex justify-end">
                 <div className="relative w-full md:w-64">
                   <select value={deckTypeFilter} onChange={(e) => setDeckTypeFilter(e.target.value)}
@@ -394,12 +469,18 @@ export default function MTGLimitedApp(): React.ReactElement {
                   </motion.button>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 2. CARD RATINGS TAB (WITH LAZY LOADING) */}
           {activeTab === 'cards' && (
-            <div className="flex flex-col min-h-full">
+            <motion.div
+              key="cards-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="flex flex-col min-h-full">
               <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
                 <div className="flex gap-2">
                   <div className="relative flex-1 md:max-w-xs">
@@ -520,18 +601,35 @@ export default function MTGLimitedApp(): React.ReactElement {
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* 3. FORMAT COMPARISON TAB */}
           {activeTab === 'compare' && (
-            <FormatComparison activeSet={activeSet} />
+            <motion.div
+              key="compare-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <FormatComparison activeSet={activeSet} />
+            </motion.div>
           )}
 
           {/* 4. PRESS REVIEW TAB */}
           {activeTab === 'press' && (
-            <PressReview activeSet={activeSet} />
+            <motion.div
+              key="press-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <PressReview activeSet={activeSet} />
+            </motion.div>
           )}
+          </AnimatePresence>
 
         </main>
       </div>
@@ -553,13 +651,13 @@ export default function MTGLimitedApp(): React.ReactElement {
       </AnimatePresence>
 
       <nav className="md:hidden bg-slate-900 border-t border-slate-800 px-4 py-2 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-        <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Decks</span></button>
-        <button onClick={() => setActiveTab('cards')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400' : 'text-slate-600'}`}><Zap size={20} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[9px] font-bold">Cards</span></button>
-        <button onClick={() => setActiveTab('compare')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400' : 'text-slate-600'}`}>
+        <button onClick={() => handleTabChange('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Decks</span></button>
+        <button onClick={() => handleTabChange('cards')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400' : 'text-slate-600'}`}><Zap size={20} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[9px] font-bold">Cards</span></button>
+        <button onClick={() => handleTabChange('compare')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400' : 'text-slate-600'}`}>
           <Repeat size={20} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
           <span className="text-[9px] font-bold">Compare</span>
         </button>
-        <button onClick={() => setActiveTab('press')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'press' ? 'text-indigo-400' : 'text-slate-600'}`}>
+        <button onClick={() => handleTabChange('press')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'press' ? 'text-indigo-400' : 'text-slate-600'}`}>
           <Newspaper size={20} strokeWidth={activeTab === 'press' ? 2.5 : 2} />
           <span className="text-[9px] font-bold">News</span>
         </button>
