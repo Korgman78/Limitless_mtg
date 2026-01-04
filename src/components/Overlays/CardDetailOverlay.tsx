@@ -237,7 +237,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-slate-950">
+        <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-6 bg-slate-950">
           <CardEvaluationBlock card={card} allCards={allCards} />
 
           <div>
