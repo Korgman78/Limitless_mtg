@@ -6,10 +6,9 @@ import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
 
-// --- COMPOSANT TOOLTIP (Affichage simple au survol, sans lien) ---
+// --- COMPOSANT TOOLTIP ---
 const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
   const [show, setShow] = useState(false);
-  // URL de l'image via Scryfall
   const imageUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}&format=image&version=border_crop`;
 
   return (
@@ -17,25 +16,36 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
       className="relative inline-block text-indigo-400 font-bold border-b border-indigo-500/30 cursor-help"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
-      onClick={(e) => e.preventDefault()} // Sécurité supplémentaire anti-clic
+      onClick={(e) => e.preventDefault()}
     >
       {name}
       <AnimatePresence>
         {show && (
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="fixed z-[9999] bottom-24 left-1/2 -translate-x-1/2 md:absolute md:bottom-full md:left-1/2 md:mb-2 w-56 pointer-events-none"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.1 }}
+            className="z-[9999] pointer-events-none fixed
+                       /* Mobile & Tablet (< 1280px) : Centré en haut */
+                       top-20 left-1/2 -translate-x-1/2 w-[70vw] max-w-[220px]
+                       
+                       /* Desktop (>= 1280px) : Centrage parfait dans la gouttière droite */
+                       xl:top-24 
+                       xl:left-[calc(50%+512px)] /* Commence pile à la droite du contenu (1024px/2) */
+                       xl:right-0                /* S'étend jusqu'au bord de l'écran */
+                       xl:translate-x-0          /* Annule le centrage mobile */
+                       xl:w-auto xl:max-w-none
+                       xl:flex xl:justify-center xl:items-start /* Centre l'image dans l'espace dispo */
+                       xl:px-4"                  /* Marge de sécurité pour ne pas coller aux bords */
           >
             <img 
               src={imageUrl} 
               alt={name} 
-              className="rounded-xl shadow-2xl border-2 border-slate-700 bg-slate-900 w-full h-auto"
+              className="rounded-2xl shadow-2xl border-2 border-slate-700 bg-slate-900 
+                         w-full h-auto 
+                         xl:w-80" /* Taille fixe confortable sur PC */
             />
-            {/* Petite flèche décorative */}
-            <div className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 -mt-2 border-8 border-transparent border-t-slate-700"></div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -60,6 +70,9 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
   // Mapping des noms officiels
   const [officialCardNames, setOfficialCardNames] = useState<Record<string, string>>({});
+  
+  // State pour gérer le loader lors de l'analyse des cartes
+  const [isResolvingCardNames, setIsResolvingCardNames] = useState<boolean>(false);
 
   // --- Helpers ---
   const cleanSummary = (text: string | null | undefined): string => {
@@ -106,7 +119,13 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   // --- Data Fetching ---
 
   useEffect(() => {
-    if (!selectedArticle || !selectedArticle.mentioned_cards) return;
+    if (!selectedArticle) return;
+
+    // Si pas de cartes mentionnées, on coupe le loader immédiatement
+    if (!selectedArticle.mentioned_cards) {
+        setIsResolvingCardNames(false);
+        return;
+    }
 
     async function fetchOfficialNames() {
       const names = parsePostgresArray(selectedArticle?.mentioned_cards);
@@ -125,6 +144,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       }));
 
       setOfficialCardNames(prev => ({ ...prev, ...newMappings }));
+      setIsResolvingCardNames(false); // FIN du chargement
     }
 
     fetchOfficialNames();
@@ -295,7 +315,10 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {filteredArticles.map((article: Article) => (
-              <button key={article.id} onClick={() => setSelectedArticle(article)}
+              <button key={article.id} onClick={() => {
+                setSelectedArticle(article);
+                if (article.mentioned_cards) setIsResolvingCardNames(true);
+              }}
                 className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99]">
                 <div className="md:flex">
                   <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
@@ -398,64 +421,73 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
-                    <h3 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
-                      <Zap size={14} className="text-indigo-500" /> Key Takeaways
-                    </h3>
-                    {selectedArticle.strategic_score && (
-                      <div className="relative group/score-detail">
-                        <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">Score: {selectedArticle.strategic_score}/10</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* CUSTOM MARKDOWN WITH HOVER TOOLTIP */}
-                  <div className="prose prose-invert prose-sm prose-indigo max-w-none">
-                    <ReactMarkdown 
-                      components={{
-                        // Surcharge du composant "a" (lien) pour intercepter le format #card-
-                        a: ({ href, children, ...props }) => {
-                          // Si le lien commence par #card-, c'est notre marqueur spécial
-                          if (href?.startsWith('#card-')) {
-                            // On décode le nom pour l'affichage
-                            const cardName = decodeURIComponent(href.replace('#card-', ''));
-                            // On retourne notre composant Tooltip qui est un SPAN (non cliquable)
-                            return <CardTooltip name={cardName} />;
-                          }
-                          // Sinon, c'est un lien normal qui doit fonctionner
-                          return (
-                            <a href={href} {...props} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
-                              {children}
-                            </a>
-                          );
-                        }
-                      }}
-                    >
-                      {cleanSummary(selectedArticle.summary)}
-                    </ReactMarkdown>
-                  </div>
-
-                  {selectedArticle.mentioned_cards && (
-                    <div className="mt-10 pt-8 border-t border-slate-800">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 flex items-center gap-2 tracking-widest">
-                        <Gem size={14} className="text-indigo-500" /> Mentioned Cards
-                      </h4>
-                      <div className="flex flex-wrap gap-3">
-                        {parsePostgresArray(selectedArticle.mentioned_cards).map((approxName: string, idx: number) => {
-                          const officialName = officialCardNames[approxName] || approxName;
-                          return (
-                            <button key={idx} onClick={() => setZoomedCard(officialName)} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
-                              <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
-                                alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
-                                onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
-                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
-                                <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
+                  {isResolvingCardNames ? (
+                    <div className="flex flex-col items-center justify-center py-32 space-y-4">
+                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                       <span className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Analyzing Card Data...</span>
                     </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+                        <h3 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
+                          <Zap size={14} className="text-indigo-500" /> Key Takeaways
+                        </h3>
+                        {selectedArticle.strategic_score && (
+                          <div className="relative group/score-detail">
+                            <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">Score: {selectedArticle.strategic_score}/10</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* CUSTOM MARKDOWN WITH HOVER TOOLTIP */}
+                      <div className="prose prose-invert prose-sm prose-indigo max-w-none">
+                        <ReactMarkdown 
+                          components={{
+                            // Surcharge du composant "a" (lien) pour intercepter le format #card-
+                            a: ({ href, children, ...props }) => {
+                              // Si le lien commence par #card-, c'est notre marqueur spécial
+                              if (href?.startsWith('#card-')) {
+                                // On décode le nom pour l'affichage
+                                const cardName = decodeURIComponent(href.replace('#card-', ''));
+                                // On retourne notre composant Tooltip qui est un SPAN (non cliquable)
+                                return <CardTooltip name={cardName} />;
+                              }
+                              // Sinon, c'est un lien normal qui doit fonctionner
+                              return (
+                                <a href={href} {...props} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
+                                  {children}
+                                </a>
+                              );
+                            }
+                          }}
+                        >
+                          {cleanSummary(selectedArticle.summary)}
+                        </ReactMarkdown>
+                      </div>
+
+                      {selectedArticle.mentioned_cards && (
+                        <div className="mt-10 pt-8 border-t border-slate-800">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 flex items-center gap-2 tracking-widest">
+                            <Gem size={14} className="text-indigo-500" /> Mentioned Cards
+                          </h4>
+                          <div className="flex flex-wrap gap-3">
+                            {parsePostgresArray(selectedArticle.mentioned_cards).map((approxName: string, idx: number) => {
+                              const officialName = officialCardNames[approxName] || approxName;
+                              return (
+                                <button key={idx} onClick={() => setZoomedCard(officialName)} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
+                                  <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
+                                    alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
+                                    onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
+                                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
+                                    <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
