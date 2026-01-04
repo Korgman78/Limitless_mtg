@@ -7,6 +7,7 @@ import { FORMAT_OPTIONS, RARITY_STYLES } from '../../constants';
 import { useDebounce } from '../../hooks/useDebounce';
 import { extractColors, normalizeRarity, getCardImage } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
+import { ComparisonRowSkeleton } from '../Common/Skeleton';
 
 export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet }) => {
   const [data, setData] = useState<any[]>([]);
@@ -286,7 +287,9 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
       <div className="space-y-3 pb-32">
         {loading ? (
-          <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div></div>
+          <div className="space-y-3">
+            {[...Array(8)].map((_, i) => <ComparisonRowSkeleton key={i} />)}
+          </div>
         ) : visibleData.length === 0 ? (
           <div className="text-center py-20 text-slate-500 font-bold italic border border-dashed border-slate-800 rounded-xl">Aucune donnée trouvée.</div>
         ) : (
@@ -310,8 +313,10 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
               };
 
               return (
-                <div key={`${item.card_name || item.filter_context}-${idx}`} onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
-                  className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left active:scale-[0.98] ${compareMode === 'cards' ? 'cursor-zoom-in' : ''}`}>
+                <motion.div key={`${item.card_name || item.filter_context}-${idx}`}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
+                  className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left ${compareMode === 'cards' ? 'cursor-zoom-in' : ''}`}>
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     {compareMode === 'cards' ? (
                       <div className="relative shrink-0">
@@ -356,7 +361,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                         {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawB.toFixed(1)}%</span>}
                       </div>
                     </div>
-                    <div className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}
+                    <div className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'} ${Math.abs(item.diff) > 5 ? (item.diff >= 0 ? 'shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'shadow-[0_0_12px_rgba(239,68,68,0.4)]') : ''}`}
                       title={getShiftTooltip(item.diff)} onClick={(e) => handleStatClick(e, getShiftTooltip(item.diff))}>
                       <span className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
                       <span className={`text-lg md:text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -364,7 +369,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                       </span>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
             {visibleCount < processedData.length && (

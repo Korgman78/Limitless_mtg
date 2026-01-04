@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper
+  X, Repeat, Newspaper, ArrowUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from './supabase';
@@ -17,7 +17,7 @@ import { useDebounce } from './hooks/useDebounce';
 import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage } from './utils/helpers';
 
 // Components
-import { ManaIcons, ErrorBanner } from './components/Common';
+import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton } from './components/Common';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay } from './components/Overlays';
 import { FormatComparison, PressReview } from './components/Features';
@@ -52,6 +52,10 @@ export default function MTGLimitedApp(): React.ReactElement {
   // --- Lazy Loading States ---
   const [visibleCardsCount, setVisibleCardsCount] = useState<number>(40);
   const cardsObserverTarget = React.useRef<HTMLDivElement | null>(null);
+
+  // --- Scroll to Top FAB ---
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+  const mainRef = React.useRef<HTMLElement | null>(null);
 
   // Auto-dismiss error after 5 seconds
   useEffect(() => {
@@ -229,6 +233,22 @@ export default function MTGLimitedApp(): React.ReactElement {
     return () => { if (cardsObserverTarget.current) observer.unobserve(cardsObserverTarget.current); };
   }, [filteredCards, activeTab]);
 
+  // Scroll to top FAB visibility
+  useEffect(() => {
+    const mainEl = mainRef.current;
+    if (!mainEl) return;
+
+    const handleScroll = () => {
+      setShowScrollTop(mainEl.scrollTop > window.innerHeight * 2);
+    };
+
+    mainEl.addEventListener('scroll', handleScroll);
+    return () => mainEl.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const Sidebar = () => (
     <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
@@ -311,10 +331,10 @@ export default function MTGLimitedApp(): React.ReactElement {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pb-32 md:pb-8 md:px-6 md:pt-6 scroll-smooth">
+        <main ref={mainRef} className="flex-1 overflow-y-auto pb-32 md:pb-8 md:px-6 md:pt-6 scroll-smooth">
           {loading && activeTab === 'cards' && (
-            <div className="flex justify-center py-10">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+            <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
+              {[...Array(12)].map((_, i) => <CardSkeleton key={i} />)}
             </div>
           )}
 
@@ -352,8 +372,9 @@ export default function MTGLimitedApp(): React.ReactElement {
                 {filteredDecks.map((deck, idx) => (
                   <motion.button
                     initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
+                    whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
                     key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
-                    className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all active:scale-[0.99] group shadow-sm md:shadow-md"
+                    className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
                   >
                     <div className="flex items-center gap-3">
                       <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
@@ -449,6 +470,8 @@ export default function MTGLimitedApp(): React.ReactElement {
                     )}
                   </div>
 
+                  <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
+
                   <div className="flex gap-2 flex-1 md:flex-none">
                     <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                       GIH <ArrowUpDown size={10} />
@@ -463,7 +486,9 @@ export default function MTGLimitedApp(): React.ReactElement {
               <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
                 {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
                   <motion.button
-                    layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} key={card.id} onClick={() => setSelectedCard(card)}
+                    layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                    whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+                    key={card.id} onClick={() => setSelectedCard(card)}
                     className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md"
                   >
                     <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
@@ -510,6 +535,22 @@ export default function MTGLimitedApp(): React.ReactElement {
 
         </main>
       </div>
+
+      {/* FAB Scroll to Top - Mobile only */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={scrollToTop}
+            className="md:hidden fixed right-4 bottom-20 z-40 w-12 h-12 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-lg shadow-indigo-500/30 flex items-center justify-center border border-indigo-400/30"
+          >
+            <ArrowUp size={20} strokeWidth={2.5} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <nav className="md:hidden bg-slate-900 border-t border-slate-800 px-4 py-2 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
         <button onClick={() => setActiveTab('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Decks</span></button>
