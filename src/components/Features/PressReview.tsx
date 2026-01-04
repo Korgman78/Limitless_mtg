@@ -6,29 +6,82 @@ import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
 
+// --- COMPOSANT TOOLTIP (Affichage simple au survol, sans lien) ---
+const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
+  const [show, setShow] = useState(false);
+  // URL de l'image via Scryfall
+  const imageUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}&format=image&version=border_crop`;
+
+  return (
+    <span 
+      className="relative inline-block text-indigo-400 font-bold border-b border-indigo-500/30 cursor-help"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={(e) => e.preventDefault()} // Sécurité supplémentaire anti-clic
+    >
+      {name}
+      <AnimatePresence>
+        {show && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="fixed z-[9999] bottom-24 left-1/2 -translate-x-1/2 md:absolute md:bottom-full md:left-1/2 md:mb-2 w-56 pointer-events-none"
+          >
+            <img 
+              src={imageUrl} 
+              alt={name} 
+              className="rounded-xl shadow-2xl border-2 border-slate-700 bg-slate-900 w-full h-auto"
+            />
+            {/* Petite flèche décorative */}
+            <div className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 -mt-2 border-8 border-transparent border-t-slate-700"></div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </span>
+  );
+};
+
 export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [activeSetsOptions, setActiveSetsOptions] = useState<any[]>([]);
   
-  // States de chargement
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   
-  // Navigation & Filtres
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentSetFilter, setCurrentSetFilter] = useState<string>('All');
   const [zoomedCard, setZoomedCard] = useState<string | null>(null);
   
-  // Pagination / Lazy Load
   const [hasMore, setHasMore] = useState<boolean>(true);
+
+  // Mapping des noms officiels
+  const [officialCardNames, setOfficialCardNames] = useState<Record<string, string>>({});
 
   // --- Helpers ---
   const cleanSummary = (text: string | null | undefined): string => {
     if (!text) return "";
     let content = text.split('{')[0];
-    return content.replace(/```[\s\S]*?$/g, '').replace(/`{1,3}/g, '').replace(/[-_*]{3,}/g, '').replace(/\s+$/g, '').trim();
+    content = content.replace(/```[\s\S]*?$/g, '').replace(/`{1,3}/g, '').replace(/[-_*]{3,}/g, '').replace(/\s+$/g, '').trim();
+    
+    // Remplacement intelligent avec format d'ancre sûr
+    const mappings = Object.entries(officialCardNames);
+    if (mappings.length > 0) {
+      mappings.sort((a, b) => b[0].length - a[0].length);
+      const pattern = mappings.map(([approx]) => approx.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+      const regex = new RegExp(`\\b(${pattern})\\b`, 'gi');
+
+      content = content.replace(regex, (match) => {
+        const entry = mappings.find(([approx]) => approx.toLowerCase() === match.toLowerCase());
+        const officialName = entry ? entry[1] : match;
+        // Utilisation de #card- au lieu de card:// pour éviter le nettoyage par Markdown
+        return `[${officialName}](#card-${encodeURIComponent(officialName)})`;
+      });
+    }
+    return content;
   };
 
   const parsePostgresArray = (pgArray: string | string[] | null | undefined): string[] => {
@@ -52,7 +105,31 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
   // --- Data Fetching ---
 
-  // 1. Fetch Sets (Une seule fois)
+  useEffect(() => {
+    if (!selectedArticle || !selectedArticle.mentioned_cards) return;
+
+    async function fetchOfficialNames() {
+      const names = parsePostgresArray(selectedArticle?.mentioned_cards);
+      const newMappings: Record<string, string> = {};
+
+      await Promise.all(names.map(async (approxName) => {
+        try {
+          const res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(approxName)}`);
+          if (res.ok) {
+            const data = await res.json();
+            newMappings[approxName] = data.name;
+          }
+        } catch (err) {
+          console.error("Scryfall fetch error:", err);
+        }
+      }));
+
+      setOfficialCardNames(prev => ({ ...prev, ...newMappings }));
+    }
+
+    fetchOfficialNames();
+  }, [selectedArticle]);
+
   useEffect(() => {
     async function fetchActiveSets() {
       try {
@@ -63,15 +140,13 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     fetchActiveSets();
   }, []);
 
-  // 2. Fetch Initial Articles (Last 15 Days OR Reset)
   useEffect(() => {
     async function fetchInitialArticles() {
       setLoading(true);
       setFetchError(null);
-      setHasMore(true); // Reset du statut "plus d'articles"
+      setHasMore(true);
 
       try {
-        // Calcul date il y a 15 jours
         const dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - 15);
         const dateLimitISO = dateLimit.toISOString();
@@ -85,8 +160,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
             query = query.eq('set_tag', currentSetFilter);
         }
 
-        // On charge initialement UNIQUEMENT les 15 derniers jours
-        // Si filtre par Set, on garde cette logique (ou on l'enlève si tu veux voir tout l'historique d'un set)
         query = query.gte('published_at', dateLimitISO);
 
         const { data, error } = await query;
@@ -95,8 +168,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
         
         if (data) {
           setArticles(data);
-          // S'il y a moins de 5 articles récents, on pourrait vouloir en charger plus automatiquement, 
-          // mais pour l'instant on laisse l'utilisateur décider.
         }
       } catch (err) {
         console.error("Error fetching articles:", err);
@@ -107,21 +178,19 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     fetchInitialArticles();
   }, [currentSetFilter]);
 
-  // 3. Load More Function (Archives)
   const loadMoreArticles = async () => {
     if (loadingMore || !hasMore || articles.length === 0) return;
 
     setLoadingMore(true);
     try {
-      // On prend la date du dernier article chargé comme curseur
       const lastArticleDate = articles[articles.length - 1].published_at;
 
       let query = supabase
         .from('press_articles')
         .select('*')
         .order('published_at', { ascending: false })
-        .lt('published_at', lastArticleDate) // Plus vieux que le dernier
-        .limit(20); // On charge par paquet de 20 (Batch size)
+        .lt('published_at', lastArticleDate)
+        .limit(20);
 
       if (currentSetFilter !== 'All') {
         query = query.eq('set_tag', currentSetFilter);
@@ -133,7 +202,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
       if (data) {
         if (data.length < 20) {
-          setHasMore(false); // Plus rien à charger après ça
+          setHasMore(false);
         }
         setArticles(prev => [...prev, ...data]);
       }
@@ -143,7 +212,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     setLoadingMore(false);
   };
 
-  // --- Filtering (Client Side Tags) ---
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
     if (selectedTags.length === 0) return articles;
@@ -184,7 +252,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       </AnimatePresence>
 
       <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
-        
         {/* Header & Filters */}
         <div className="flex flex-col gap-6 mb-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -218,7 +285,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
           </div>
         </div>
 
-        {/* Loading State */}
+        {/* Loading & Articles List */}
         {loading ? (
           <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div></div>
         ) : filteredArticles.length === 0 ? (
@@ -246,7 +313,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                       <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
                       <span className="text-[9px] font-bold uppercase text-slate-500">{(article as any).channel_name}</span>
                       
-                      {/* FIX TAGS: Sort by selected -> Limit 4 */}
                       {article.tags
                         ?.sort((a, b) => {
                             const aSelected = selectedTags.includes(a);
@@ -298,13 +364,11 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
         )}
       </div>
 
-      {/* Detail Overlay (Inchangé dans la logique, mais présent) */}
       <AnimatePresence>
         {selectedArticle && (
           <SwipeableOverlay onClose={() => setSelectedArticle(null)}>
-            {/* ... Le contenu de ton overlay inchangé ... */}
-            {/* Je remets le code de l'overlay pour que le fichier soit complet si tu copies/colles */}
              <div className="flex flex-col h-full md:flex-row bg-slate-950">
+              {/* Left Column (Video & Actions) */}
               <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
                 <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl border border-slate-700 group shrink-0">
                   <img src={getYouTubeThumbnail(selectedArticle)} className="w-full h-full object-cover" alt="vid" />
@@ -323,6 +387,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                 </a>
               </div>
 
+              {/* Right Column (Content) */}
               <div className="flex-1 overflow-y-auto p-5 md:p-12 bg-slate-950">
                 <div className="max-w-2xl mx-auto pb-20 md:pb-0">
                   <div className="md:hidden mb-6">
@@ -344,8 +409,30 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                     )}
                   </div>
 
+                  {/* CUSTOM MARKDOWN WITH HOVER TOOLTIP */}
                   <div className="prose prose-invert prose-sm prose-indigo max-w-none">
-                    <ReactMarkdown>{cleanSummary(selectedArticle.summary)}</ReactMarkdown>
+                    <ReactMarkdown 
+                      components={{
+                        // Surcharge du composant "a" (lien) pour intercepter le format #card-
+                        a: ({ href, children, ...props }) => {
+                          // Si le lien commence par #card-, c'est notre marqueur spécial
+                          if (href?.startsWith('#card-')) {
+                            // On décode le nom pour l'affichage
+                            const cardName = decodeURIComponent(href.replace('#card-', ''));
+                            // On retourne notre composant Tooltip qui est un SPAN (non cliquable)
+                            return <CardTooltip name={cardName} />;
+                          }
+                          // Sinon, c'est un lien normal qui doit fonctionner
+                          return (
+                            <a href={href} {...props} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
+                              {children}
+                            </a>
+                          );
+                        }
+                      }}
+                    >
+                      {cleanSummary(selectedArticle.summary)}
+                    </ReactMarkdown>
                   </div>
 
                   {selectedArticle.mentioned_cards && (
@@ -354,16 +441,19 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                         <Gem size={14} className="text-indigo-500" /> Mentioned Cards
                       </h4>
                       <div className="flex flex-wrap gap-3">
-                        {parsePostgresArray(selectedArticle.mentioned_cards).map((cardName: string, idx: number) => (
-                          <button key={idx} onClick={() => setZoomedCard(cardName)} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
-                            <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}&format=image&version=border_crop`}
-                              alt={cardName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
-                              onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
-                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
-                              <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
-                            </div>
-                          </button>
-                        ))}
+                        {parsePostgresArray(selectedArticle.mentioned_cards).map((approxName: string, idx: number) => {
+                          const officialName = officialCardNames[approxName] || approxName;
+                          return (
+                            <button key={idx} onClick={() => setZoomedCard(officialName)} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
+                              <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
+                                alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
+                                onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
+                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
