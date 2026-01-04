@@ -214,8 +214,10 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
         {/* Dashboard Compact Header */}
         <div className="bg-slate-900/50 p-4 md:pb-8 md:px-6 flex flex-col border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
           <div className="flex flex-row md:flex-col items-center gap-4 md:gap-0">
-            {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
-            <div className="w-1/3 md:w-full flex-shrink-0">
+            
+            {/* Image Thumbnail (Mobile) / Card Image (Desktop) - AJUSTÉ ICI */}
+            <div className="w-[40%] md:w-full flex-shrink-0"> 
+              {/* Changement de w-1/3 à w-[40%] pour une image plus grande sur mobile */}
               <motion.img
                 layoutId={`img-${card.id}`}
                 src={getCardImage(card.name)}
@@ -225,9 +227,6 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
             {/* Information & Stats Panel */}
             <div className="flex-1 md:w-full flex flex-col justify-center pl-3 md:pl-0">
-              {/* justify-center ici est crucial pour l'alignement vertical face à l'image */}
-
-              {/* Header: Title + Badges on same line or tightly stacked */}
               <div className="mb-3">
                 <h1 className="text-base md:text-2xl font-black text-left md:text-center text-white leading-tight mb-1 line-clamp-2">
                   {card.name}
@@ -236,23 +235,18 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                   <span className={`text-[9px] px-1.5 py-0.5 rounded border border-white/10 font-black tracking-wide ${RARITY_STYLES[rCode]}`}>
                     {rCode}
                   </span>
-                  {/* J'ai ajouté border-white/10 pour un fini plus premium */}
                   <ManaIcons colors={card.colors} size="sm" />
                 </div>
               </div>
 
               {/* Responsive Stats Grid - Cleaner Look */}
               <div className="grid grid-cols-2 gap-2 w-full">
-                {/* Box 1: WR */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  {/* J'ai allégé le background et la bordure, et aligné à gauche (items-start) pour faire moins "bouton centré" */}
                   <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
                   <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)} leading-none`}>
                     {card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%
                   </div>
                 </div>
-
-                {/* Box 2: ALSA */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
                   <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
                   <div className="text-lg md:text-3xl font-black text-white leading-none">
