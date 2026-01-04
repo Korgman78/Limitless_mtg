@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, ChevronRight, Gem, AlertTriangle, Newspaper, ExternalLink, Play } from 'lucide-react';
+import { Search, Zap, ChevronRight, Gem, AlertTriangle, Newspaper, ExternalLink, Play, Clock, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
@@ -9,23 +9,26 @@ import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
 export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [activeSetsOptions, setActiveSetsOptions] = useState<any[]>([]);
+  
+  // States de chargement
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  
+  // Navigation & Filtres
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
-
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentSetFilter, setCurrentSetFilter] = useState<string>('All');
   const [zoomedCard, setZoomedCard] = useState<string | null>(null);
+  
+  // Pagination / Lazy Load
+  const [hasMore, setHasMore] = useState<boolean>(true);
 
+  // --- Helpers ---
   const cleanSummary = (text: string | null | undefined): string => {
     if (!text) return "";
     let content = text.split('{')[0];
-    return content
-      .replace(/```[\s\S]*?$/g, '')
-      .replace(/`{1,3}/g, '')
-      .replace(/[-_*]{3,}/g, '')
-      .replace(/\s+$/g, '')
-      .trim();
+    return content.replace(/```[\s\S]*?$/g, '').replace(/`{1,3}/g, '').replace(/[-_*]{3,}/g, '').replace(/\s+$/g, '').trim();
   };
 
   const parsePostgresArray = (pgArray: string | string[] | null | undefined): string[] => {
@@ -34,33 +37,113 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     return pgArray.replace(/{|}/g, '').split(',').map((item: string) => item.trim().replace(/^"|"$/g, ''));
   };
 
+  const getYouTubeThumbnail = (article: Article | null): string => {
+    if (!article || !article.video_url) return article?.thumbnail_url || "";
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = article.video_url.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
+    return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : article.thumbnail_url || '';
+  };
+
+  const formatDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  // --- Data Fetching ---
+
+  // 1. Fetch Sets (Une seule fois)
   useEffect(() => {
     async function fetchActiveSets() {
       try {
-        const { data, error } = await supabase.from('sets').select('code, name').eq('active', true).order('start_date', { ascending: false });
-        if (error) { console.error("Error fetching sets:", error); return; }
+        const { data } = await supabase.from('sets').select('code, name').eq('active', true).order('start_date', { ascending: false });
         if (data) setActiveSetsOptions(data);
       } catch (err) { console.error("Error fetching sets:", err); }
     }
     fetchActiveSets();
   }, []);
 
+  // 2. Fetch Initial Articles (Last 15 Days OR Reset)
   useEffect(() => {
-    async function fetchArticles() {
+    async function fetchInitialArticles() {
       setLoading(true);
       setFetchError(null);
+      setHasMore(true); // Reset du statut "plus d'articles"
+
       try {
-        let query = supabase.from('press_articles').select('*').order('published_at', { ascending: false });
-        if (currentSetFilter !== 'All') query = query.eq('set_tag', currentSetFilter);
-        const { data, error } = await query.limit(50);
-        if (error) { console.error("Error fetching articles:", error); setFetchError('Failed to load articles'); }
-        else if (data) setArticles(data);
-      } catch (err) { console.error("Error fetching articles:", err); setFetchError('Failed to load articles'); }
+        // Calcul date il y a 15 jours
+        const dateLimit = new Date();
+        dateLimit.setDate(dateLimit.getDate() - 15);
+        const dateLimitISO = dateLimit.toISOString();
+
+        let query = supabase
+          .from('press_articles')
+          .select('*')
+          .order('published_at', { ascending: false });
+
+        if (currentSetFilter !== 'All') {
+            query = query.eq('set_tag', currentSetFilter);
+        }
+
+        // On charge initialement UNIQUEMENT les 15 derniers jours
+        // Si filtre par Set, on garde cette logique (ou on l'enlève si tu veux voir tout l'historique d'un set)
+        query = query.gte('published_at', dateLimitISO);
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+        
+        if (data) {
+          setArticles(data);
+          // S'il y a moins de 5 articles récents, on pourrait vouloir en charger plus automatiquement, 
+          // mais pour l'instant on laisse l'utilisateur décider.
+        }
+      } catch (err) {
+        console.error("Error fetching articles:", err);
+        setFetchError('Failed to load articles');
+      }
       setLoading(false);
     }
-    fetchArticles();
+    fetchInitialArticles();
   }, [currentSetFilter]);
 
+  // 3. Load More Function (Archives)
+  const loadMoreArticles = async () => {
+    if (loadingMore || !hasMore || articles.length === 0) return;
+
+    setLoadingMore(true);
+    try {
+      // On prend la date du dernier article chargé comme curseur
+      const lastArticleDate = articles[articles.length - 1].published_at;
+
+      let query = supabase
+        .from('press_articles')
+        .select('*')
+        .order('published_at', { ascending: false })
+        .lt('published_at', lastArticleDate) // Plus vieux que le dernier
+        .limit(20); // On charge par paquet de 20 (Batch size)
+
+      if (currentSetFilter !== 'All') {
+        query = query.eq('set_tag', currentSetFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      if (data) {
+        if (data.length < 20) {
+          setHasMore(false); // Plus rien à charger après ça
+        }
+        setArticles(prev => [...prev, ...data]);
+      }
+    } catch (err) {
+      console.error("Error loading more:", err);
+    }
+    setLoadingMore(false);
+  };
+
+  // --- Filtering (Client Side Tags) ---
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
     if (selectedTags.length === 0) return articles;
@@ -75,19 +158,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
   const toggleTag = (tag: string): void => {
     setSelectedTags((prev: string[]) => prev.includes(tag) ? prev.filter((t: string) => t !== tag) : [...prev, tag]);
-  };
-
-  const getYouTubeThumbnail = (article: Article | null): string => {
-    if (!article || !article.video_url) return article?.thumbnail_url || "";
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = article.video_url.match(regExp);
-    const videoId = (match && match[2].length === 11) ? match[2] : null;
-    return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : article.thumbnail_url || '';
-  };
-
-  const formatDate = (dateString: string | null | undefined): string => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
   return (
@@ -114,6 +184,8 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       </AnimatePresence>
 
       <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
+        
+        {/* Header & Filters */}
         <div className="flex flex-col gap-6 mb-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex flex-col gap-1">
@@ -146,10 +218,13 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
           </div>
         </div>
 
+        {/* Loading State */}
         {loading ? (
           <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div></div>
         ) : filteredArticles.length === 0 ? (
-          <div className="text-center text-slate-500 py-20 bg-slate-900 rounded-xl border border-slate-800">No articles found matching filters.</div>
+          <div className="text-center text-slate-500 py-20 bg-slate-900 rounded-xl border border-slate-800">
+             No articles found in the last 15 days matching your filters.
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {filteredArticles.map((article: Article) => (
@@ -163,7 +238,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                         <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg cursor-help">
                           <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
                         </div>
-                        <div className="absolute left-0 top-full mt-1.5 hidden group-hover/score:block bg-slate-900 text-slate-200 text-[9px] font-bold px-2 py-1 rounded border border-slate-700 shadow-xl whitespace-nowrap z-20">Strategic Score</div>
                       </div>
                     )}
                   </div>
@@ -171,9 +245,23 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                     <div className="flex flex-wrap gap-2 mb-2 items-center">
                       <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
                       <span className="text-[9px] font-bold uppercase text-slate-500">{(article as any).channel_name}</span>
-                      {article.tags?.slice(0, 3).map((t: string) => (
-                        <span key={t} className={`text-[9px] font-bold border px-2 py-0.5 rounded ${selectedTags.includes(t) ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'text-slate-500 border-slate-800'}`}>{t}</span>
+                      
+                      {/* FIX TAGS: Sort by selected -> Limit 4 */}
+                      {article.tags
+                        ?.sort((a, b) => {
+                            const aSelected = selectedTags.includes(a);
+                            const bSelected = selectedTags.includes(b);
+                            if (aSelected && !bSelected) return -1;
+                            if (!aSelected && bSelected) return 1;
+                            return 0;
+                        })
+                        .slice(0, 4)
+                        .map((t: string) => (
+                        <span key={t} className={`text-[9px] font-bold border px-2 py-0.5 rounded ${selectedTags.includes(t) ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'text-slate-500 border-slate-800'}`}>
+                          {t}
+                        </span>
                       ))}
+                      {(article.tags?.length || 0) > 5 && <span className="text-[9px] text-slate-600">+{article.tags!.length - 5}</span>}
                     </div>
                     <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1 group-hover:text-indigo-300 transition-colors line-clamp-1">{article.title}</h3>
                     <p className="text-slate-400 text-xs line-clamp-2 italic leading-relaxed">{cleanSummary(article.summary)}</p>
@@ -184,12 +272,39 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
             ))}
           </div>
         )}
+
+        {/* Load More Button */}
+        {!loading && hasMore && articles.length > 0 && (
+            <div className="flex justify-center pt-4 pb-8">
+                <button 
+                    onClick={loadMoreArticles}
+                    disabled={loadingMore}
+                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-full font-bold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700"
+                >
+                    {loadingMore ? (
+                        <>
+                            <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                            Loading Archives...
+                        </>
+                    ) : (
+                        <>
+                            <Clock size={14} />
+                            Load Older Articles
+                            <ChevronDown size={14} />
+                        </>
+                    )}
+                </button>
+            </div>
+        )}
       </div>
 
+      {/* Detail Overlay (Inchangé dans la logique, mais présent) */}
       <AnimatePresence>
         {selectedArticle && (
           <SwipeableOverlay onClose={() => setSelectedArticle(null)}>
-            <div className="flex flex-col h-full md:flex-row bg-slate-950">
+            {/* ... Le contenu de ton overlay inchangé ... */}
+            {/* Je remets le code de l'overlay pour que le fichier soit complet si tu copies/colles */}
+             <div className="flex flex-col h-full md:flex-row bg-slate-950">
               <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
                 <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl border border-slate-700 group shrink-0">
                   <img src={getYouTubeThumbnail(selectedArticle)} className="w-full h-full object-cover" alt="vid" />
@@ -225,7 +340,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                     {selectedArticle.strategic_score && (
                       <div className="relative group/score-detail">
                         <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">Score: {selectedArticle.strategic_score}/10</span>
-                        <div className="absolute right-0 top-full mt-1 hidden group-hover/score-detail:block bg-slate-800 text-slate-200 text-[9px] p-2 rounded border border-slate-700 w-24 text-center shadow-xl z-20">Strategic Score</div>
                       </div>
                     )}
                   </div>
@@ -245,7 +359,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                             <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}&format=image&version=border_crop`}
                               alt={cardName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
                               onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
+                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
                               <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
                             </div>
                           </button>
