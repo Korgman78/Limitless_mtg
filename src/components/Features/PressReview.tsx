@@ -311,8 +311,20 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
 
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
-    
+
     let filtered = articles;
+
+    // Déduplication par video_url (idempotence) - garde le plus ancien pour préserver les votes
+    const videoUrlToKeep = new Map<string, Article>();
+    filtered.forEach((article: Article) => {
+      if (article.video_url) {
+        videoUrlToKeep.set(article.video_url, article); // Écrase, donc garde le dernier (plus ancien car tri DESC)
+      }
+    });
+    filtered = filtered.filter((article: Article) => {
+      if (!article.video_url) return true;
+      return videoUrlToKeep.get(article.video_url) === article;
+    });
 
     if (selectedTags.length > 0) {
         filtered = filtered.filter((article: Article) => selectedTags.every((tag: string) => article.tags?.includes(tag)));
