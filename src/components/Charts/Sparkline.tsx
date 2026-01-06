@@ -3,11 +3,10 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { SparklineProps } from '../../types';
 import { Tooltip } from '../Common/Tooltip';
 
-export const Sparkline: React.FC<SparklineProps & { width?: number; height?: number; simpleTooltip?: boolean }> = ({
+export const Sparkline: React.FC<SparklineProps & { width?: number; height?: number }> = ({
   data,
   width = 40,
-  height = 20,
-  simpleTooltip = false
+  height = 20
 }) => {
   const safeData: number[] = (data && data.length > 0) ? data : [0, 0];
 
@@ -26,7 +25,6 @@ export const Sparkline: React.FC<SparklineProps & { width?: number; height?: num
   const delta = last - first;
   const isRising = delta > 0;
   const isFalling = delta < 0;
-  const isStable = delta === 0;
   const days = safeData.length;
 
   const colorClass = isRising ? 'text-emerald-400' : isFalling ? 'text-red-400' : 'text-slate-400';
@@ -50,8 +48,6 @@ export const Sparkline: React.FC<SparklineProps & { width?: number; height?: num
     </div>
   );
 
-  const nativeTooltipText = `${isRising ? '+' : ''}${delta.toFixed(1)}% over ${days} days`;
-
   const svgElement = (
     <svg width={width} height={height} className="overflow-visible pointer-events-none">
       <polyline
@@ -65,20 +61,6 @@ export const Sparkline: React.FC<SparklineProps & { width?: number; height?: num
     </svg>
   );
 
-  // Simple native tooltip for mobile in App.tsx
-  if (simpleTooltip) {
-    return (
-      <div
-        className="relative flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-help"
-        style={{ width, height }}
-        title={nativeTooltipText}
-      >
-        {svgElement}
-      </div>
-    );
-  }
-
-  // Rich tooltip for desktop and overlays
   return (
     <Tooltip content={tooltipContent}>
       <div

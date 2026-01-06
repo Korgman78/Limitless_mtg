@@ -4,10 +4,9 @@ import { Tooltip } from '../Common/Tooltip';
 
 interface TrendIndicatorProps {
   history: number[] | null | undefined;
-  simpleTooltip?: boolean;
 }
 
-export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history, simpleTooltip = false }) => {
+export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history }) => {
   if (!history || history.length < 2) return null;
 
   const first = history[0];
@@ -39,8 +38,6 @@ export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history, simpleT
     </div>
   );
 
-  const nativeTooltipText = `${isPositive ? '+' : ''}${delta.toFixed(1)}% over 14 days`;
-
   const iconElement = (
     <div
       className={`flex items-center justify-center w-6 h-6 rounded-full bg-slate-900/80 border border-white/10 ${colorClass} hover:bg-slate-800 hover:border-white/20 transition-all shadow-lg ${bgGlow}`}
@@ -49,16 +46,6 @@ export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history, simpleT
     </div>
   );
 
-  // Simple native tooltip for mobile in App.tsx
-  if (simpleTooltip) {
-    return (
-      <div className="cursor-help" title={nativeTooltipText}>
-        {iconElement}
-      </div>
-    );
-  }
-
-  // Rich tooltip for desktop and overlays
   return (
     <Tooltip content={tooltipContent} position="left">
       <div className="cursor-help">

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, ReactNode } from 'react';
+import React, { useState, useRef, useEffect, useCallback, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -8,11 +8,17 @@ interface TooltipProps {
   position?: 'top' | 'left'; // Position relative to trigger
 }
 
+const LONG_PRESS_DELAY = 350; // ms before showing tooltip on mobile
+
 export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: positionProp = 'top' }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [placement, setPlacement] = useState<'top' | 'bottom' | 'left'>('top');
   const triggerRef = useRef<HTMLDivElement>(null);
+
+  // Long press detection
+  const longPressTimerRef = useRef<number | null>(null);
+  const isLongPressRef = useRef(false);
 
   useEffect(() => {
     if (isVisible && triggerRef.current) {
@@ -45,6 +51,15 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
     }
   }, [isVisible, positionProp]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
   const getTooltipStyle = (): React.CSSProperties => {
     let transform = '';
 
@@ -62,13 +77,50 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
       top: coords.y,
       transform,
       zIndex: 9999,
-      pointerEvents: 'none', // Tooltip doesn't capture mouse events
+      pointerEvents: 'none',
     };
   };
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
+  // Touch handlers for long press detection
+  const handleTouchStart = useCallback(() => {
+    isLongPressRef.current = false;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      isLongPressRef.current = true;
+      setIsVisible(true);
+    }, LONG_PRESS_DELAY);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    // Clear the timer if touch ends before long press
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // If it was a long press, hide tooltip after delay
+    if (isLongPressRef.current) {
+      setTimeout(() => setIsVisible(false), 1500);
+    }
+  }, []);
+
+  const handleTouchMove = useCallback(() => {
+    // Cancel long press if user moves finger
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  // Click handler - only stop propagation if it was a long press
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (isLongPressRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    // Reset for next interaction
+    isLongPressRef.current = false;
+  }, []);
 
   return (
     <>
@@ -78,8 +130,9 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
         onClick={handleClick}
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
-        onTouchStart={() => setIsVisible(true)}
-        onTouchEnd={() => setTimeout(() => setIsVisible(false), 1500)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
       >
         {children}
       </div>

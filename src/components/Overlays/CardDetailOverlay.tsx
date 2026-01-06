@@ -6,6 +6,7 @@ import { supabase } from '../../supabase';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
+import { Tooltip } from '../Common/Tooltip';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 
@@ -361,8 +362,19 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                           </div>
                           <span className={`text-xs font-bold ${getDeltaStyle(perf.cardWr, perf.deckWr)}`}>{perf.cardWr.toFixed(1)}%</span>
                         </div>
-                        <div className="relative h-1.5 bg-slate-800 rounded-full w-full mt-2 overflow-hidden">
-                          <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-slate-600 z-10"></div>
+                        <div className="relative h-1.5 bg-slate-800 rounded-full w-full mt-2">
+                          {/* Center dot with deck WR tooltip */}
+                          <Tooltip
+                            content={
+                              <div className="text-center whitespace-nowrap">
+                                <div className="text-[10px] text-slate-400 mb-0.5">Deck Win Rate</div>
+                                <div className="text-sm font-black text-white">{perf.deckWr.toFixed(1)}%</div>
+                              </div>
+                            }
+                          >
+                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-600 hover:bg-slate-500 rounded-full border-2 border-slate-800 z-20 cursor-help transition-colors" />
+                          </Tooltip>
+                          {/* Delta bar */}
                           <div className={`absolute top-0 bottom-0 ${perf.cardWr >= perf.deckWr ? 'bg-emerald-500 left-1/2 rounded-r-full' : 'bg-red-500 right-1/2 rounded-l-full'}`}
                             style={{ width: `${Math.min(Math.abs(perf.cardWr - perf.deckWr) * 4, 50)}%` }}></div>
                         </div>

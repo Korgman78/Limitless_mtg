@@ -14,7 +14,6 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 import { useDebounce } from './hooks/useDebounce';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
-import { useIsMobile } from './hooks/useIsMobile';
 
 // Utils
 import { haptics } from './utils/haptics';
@@ -66,8 +65,6 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const mainRef = React.useRef<HTMLElement | null>(null);
 
-  // --- Mobile Detection ---
-  const isMobile = useIsMobile();
 
   // Auto-dismiss error after 5 seconds
   useEffect(() => {
@@ -499,7 +496,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                       </div>
                       <div className="flex flex-col items-end min-w-[5.5rem]">
                         <div className="flex items-center gap-2">
-                          <Sparkline data={deck.history} simpleTooltip={isMobile} />
+                          <Sparkline data={deck.history} />
                           <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                             {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
                           </span>
@@ -630,7 +627,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   >
                     {/* TrendIndicator - top right corner */}
                     <div className="absolute top-1.5 right-1.5 md:top-2 md:right-2">
-                      <TrendIndicator history={(card as any).win_rate_history} simpleTooltip={isMobile} />
+                      <TrendIndicator history={(card as any).win_rate_history} />
                     </div>
 
                     <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
