@@ -7,7 +7,9 @@ import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { SwipeableOverlay } from './SwipeableOverlay';
+import { Sparkline } from '../Charts/Sparkline';
 
+// --- BLOC D'ÉVALUATION ---
 const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card, allCards }) => {
   if (!card.gih_wr) return null;
 
@@ -20,8 +22,10 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
 
   const peersRarity = allCards.filter((c: Card) => normalizeRarity(c.rarity) === normalizeRarity(card.rarity));
   const peersColor = peersRarity.filter((c: Card) => areColorsEqual(extractColors(c.colors), extractColors(card.colors)));
+  
   const rankWrRarity = getRank(peersRarity, 'gih_wr', card.gih_wr, false);
   const rankWrColor = getRank(peersColor, 'gih_wr', card.gih_wr, false);
+  
   const hasAlsa = !!card.alsa;
   const rankAlsaRarity = hasAlsa ? getRank(peersRarity, 'alsa', card.alsa, true) : null;
   const rankAlsaColor = hasAlsa ? getRank(peersColor, 'alsa', card.alsa, true) : null;
@@ -131,6 +135,7 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
   );
 };
 
+// --- COMPOSANT PRINCIPAL ---
 export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose }) => {
   const rCode = normalizeRarity(card.rarity);
   const [crossPerf, setCrossPerf] = useState<CrossPerformance[]>([]);
@@ -215,9 +220,8 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
         <div className="bg-slate-900/50 p-4 md:pb-8 md:px-6 flex flex-col border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
           <div className="flex flex-row md:flex-col items-center gap-4 md:gap-0">
             
-            {/* Image Thumbnail (Mobile) / Card Image (Desktop) - AJUSTÉ ICI */}
+            {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
             <div className="w-[40%] md:w-full flex-shrink-0"> 
-              {/* Changement de w-1/3 à w-[40%] pour une image plus grande sur mobile */}
               <motion.img
                 layoutId={`img-${card.id}`}
                 src={getCardImage(card.name)}
@@ -239,19 +243,55 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                 </div>
               </div>
 
-              {/* Responsive Stats Grid - Cleaner Look */}
+              {/* Responsive Stats Grid - 3 BLOCS */}
               <div className="grid grid-cols-2 gap-2 w-full">
+                {/* 1. GIH BLOCK */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
                   <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
                   <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(card.gih_wr, 55)} leading-none`}>
                     {card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%
                   </div>
                 </div>
+                
+                {/* 2. ALSA BLOCK */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
                   <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
                   <div className="text-lg md:text-3xl font-black text-white leading-none">
                     {card.alsa ? card.alsa.toFixed(2) : '--'}
                   </div>
+                </div>
+
+                {/* 3. TREND BLOCK (Full Width for Better Readability) */}
+{/* 3. TREND BLOCK (Full Width & Centered) */}
+                <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative overflow-hidden group">
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
+                  
+                  {/* Container centré sans scale */}
+                  <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
+                    {(() => {
+                        let history = (card as any).win_rate_history || [];
+                        
+                        // LOGIQUE "FLAT LINE"
+                        if (history.length === 0 && card.gih_wr) {
+                            history = [card.gih_wr, card.gih_wr];
+                        } else if (history.length === 1) {
+                            history = [history[0], history[0]];
+                        }
+                        
+                        return history.length > 1 ? (
+                            // On passe width=60 et height=30 pour l'agrandir proprement (1.5x)
+                            // sans déformer le tooltip
+                            <div className="opacity-80 group-hover:opacity-100 transition-opacity">
+                                <Sparkline data={history} width={60} height={30} />
+                            </div>
+                        ) : (
+                            <span className="text-xs text-slate-600 italic">Not enough data yet</span>
+                        );
+                    })()}
+                  </div>
+                  
+                  {/* Subtle Background Decoration */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent pointer-events-none"></div>
                 </div>
               </div>
             </div>

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from './supabase';
@@ -23,6 +23,7 @@ import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardI
 
 // Components
 import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton } from './components/Common';
+import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay } from './components/Overlays';
 import { FormatComparison, PressReview } from './components/Features';
@@ -143,7 +144,13 @@ export default function MTGLimitedApp(): React.ReactElement {
         const { data: globalDeck, error: globalError } = await supabase.from('archetype_stats').select('win_rate').eq('set_code', activeSet).eq('format', activeFormat).eq('archetype_name', 'All Decks').single();
         if (!globalError && globalDeck && globalDeck.win_rate) setGlobalMeanWR(globalDeck.win_rate);
 
-        const { data, error: cardsError } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('filter_context', archetypeFilter).eq('format', activeFormat);
+        const { data, error: cardsError } = await supabase
+          .from('card_stats')
+          .select('*')
+          .eq('set_code', activeSet)
+          .eq('filter_context', archetypeFilter)
+          .eq('format', activeFormat);
+
         if (cardsError) {
           console.error('Error loading cards:', cardsError);
           setError('Failed to load card data');
@@ -151,7 +158,16 @@ export default function MTGLimitedApp(): React.ReactElement {
           return;
         }
         if (data) {
-          const formattedCards = data.map((c: any) => ({ id: c.id, name: c.card_name, rarity: c.rarity, colors: c.colors, gih_wr: c.gih_wr, alsa: c.alsa, img_count: c.img_count }));
+          const formattedCards = data.map((c: any) => ({
+            id: c.id,
+            name: c.card_name,
+            rarity: c.rarity,
+            colors: c.colors,
+            gih_wr: c.gih_wr,
+            alsa: c.alsa,
+            img_count: c.img_count,
+            win_rate_history: c.win_rate_history
+          }));
           setCards(formattedCards);
         } else { setCards([]); }
       } catch (err) {
@@ -204,8 +220,21 @@ export default function MTGLimitedApp(): React.ReactElement {
     }
 
     res.sort((a: Card, b: Card) => {
+      // TRI PAR NOM
       if (sortConfig.key === 'name') return sortConfig.dir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
 
+      // TRI PAR TENDANCE (TREND)
+      if (sortConfig.key === 'trend') {
+        const getTrend = (c: any) => {
+          if (!c.win_rate_history || c.win_rate_history.length < 2) return 0;
+          return c.win_rate_history[c.win_rate_history.length - 1] - c.win_rate_history[0];
+        };
+        const trendA = getTrend(a);
+        const trendB = getTrend(b);
+        return sortConfig.dir === 'asc' ? trendA - trendB : trendB - trendA;
+      }
+
+      // TRI PAR DEFAUT (GIH ou ALSA)
       const valA = sortConfig.key === 'alsa' ? a.alsa : a.gih_wr;
       const valB = sortConfig.key === 'alsa' ? b.alsa : b.gih_wr;
 
@@ -263,7 +292,16 @@ export default function MTGLimitedApp(): React.ReactElement {
       setLoading(true);
       const { data } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('filter_context', archetypeFilter).eq('format', activeFormat);
       if (data) {
-        setCards(data.map((c: any) => ({ id: c.id, name: c.card_name, rarity: c.rarity, colors: c.colors, gih_wr: c.gih_wr, alsa: c.alsa, img_count: c.img_count })));
+        setCards(data.map((c: any) => ({
+          id: c.id,
+          name: c.card_name,
+          rarity: c.rarity,
+          colors: c.colors,
+          gih_wr: c.gih_wr,
+          alsa: c.alsa,
+          img_count: c.img_count,
+          win_rate_history: c.win_rate_history
+        })));
       }
       setLoading(false);
     } else if (activeTab === 'decks') {
@@ -416,166 +454,185 @@ export default function MTGLimitedApp(): React.ReactElement {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
                 className="p-4 md:p-0 space-y-4 md:space-y-6">
-              <div className="flex justify-end">
-                <div className="relative w-full md:w-64">
-                  <select value={deckTypeFilter} onChange={(e) => setDeckTypeFilter(e.target.value)}
-                    className="appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-4 pr-10 rounded-xl text-sm font-bold focus:border-indigo-500 focus:outline-none shadow-sm w-full cursor-pointer hover:border-slate-500 transition-colors">
-                    <option>Two colors</option>
-                    <option>Two colors + splash</option>
-                    <option>Three colors</option>
-                    <option>More than 3 colors</option>
-                  </select>
-                  <ChevronRight size={14} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
+                <div className="flex justify-end">
+                  <div className="relative w-full md:w-64">
+                    <select value={deckTypeFilter} onChange={(e) => setDeckTypeFilter(e.target.value)}
+                      className="appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-4 pr-10 rounded-xl text-sm font-bold focus:border-indigo-500 focus:outline-none shadow-sm w-full cursor-pointer hover:border-slate-500 transition-colors">
+                      <option>Two colors</option>
+                      <option>Two colors + splash</option>
+                      <option>Three colors</option>
+                      <option>More than 3 colors</option>
+                    </select>
+                    <ChevronRight size={14} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className={`${chartMode === 'meta' ? 'block' : 'hidden'} lg:block h-64`}>
-                  <MetagamePieChart decks={decks} totalGames={totalGames} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className={`${chartMode === 'meta' ? 'block' : 'hidden'} lg:block h-64`}>
+                    <MetagamePieChart decks={decks} totalGames={totalGames} />
+                  </div>
+                  <div className={`${chartMode === 'pairs' ? 'block' : 'hidden'} lg:block h-64`}>
+                    <PairBreakdownChart decks={decks} />
+                  </div>
+                  <div className="lg:hidden flex justify-end">
+                    <button onClick={() => setChartMode(prev => prev === 'meta' ? 'pairs' : 'meta')} className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20">
+                      <Repeat size={10} /> Switch Chart
+                    </button>
+                  </div>
                 </div>
-                <div className={`${chartMode === 'pairs' ? 'block' : 'hidden'} lg:block h-64`}>
-                  <PairBreakdownChart decks={decks} />
-                </div>
-                <div className="lg:hidden flex justify-end">
-                  <button onClick={() => setChartMode(prev => prev === 'meta' ? 'pairs' : 'meta')} className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20">
-                    <Repeat size={10} /> Switch Chart
-                  </button>
-                </div>
-              </div>
 
-              <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredDecks.map((deck, idx) => (
-                  <motion.button
-                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
-                    whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-                    key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
-                    className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
-                      <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{deck.name}</h3></div>
-                    </div>
-                    <div className="flex flex-col items-end min-w-[5.5rem]">
-                      <div className="flex items-center gap-2">
-                        <Sparkline data={deck.history} />
-                        <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
-                          {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
+                <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredDecks.map((deck, idx) => (
+                    <motion.button
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
+                      whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+                      key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
+                      className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
+                        <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{deck.name}</h3></div>
+                      </div>
+                      <div className="flex flex-col items-end min-w-[5.5rem]">
+                        <div className="flex items-center gap-2">
+                          <Sparkline data={deck.history} />
+                          <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
+                            {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-medium tabular-nums">
+                          {(deck.games / totalGames * 100).toFixed(1)}% Meta
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-500 font-medium tabular-nums">
-                        {(deck.games / totalGames * 100).toFixed(1)}% Meta
-                      </span>
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 2. CARD RATINGS TAB */}
+            {activeTab === 'cards' && (
+              <motion.div
+                key="cards-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col min-h-full">
+                <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
+                  {/* LIGNE 1: Archetype + Search */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1 md:max-w-xs">
+                      <select
+                        value={archetypeFilter}
+                        onChange={(e) => setArchetypeFilter(e.target.value)}
+                        className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-3 pr-8 rounded-lg text-xs font-bold cursor-pointer hover:border-slate-500 focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="Global">Global Stats</option>
+                        <option disabled className="bg-slate-950 text-slate-500 font-black">--- Two Colors ---</option>
+                        {PAIRS.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                        <option disabled className="bg-slate-950 text-slate-500 font-black">--- Three Colors ---</option>
+                        {TRIOS.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
+                      </select>
+                      <ChevronRight size={12} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
                     </div>
-                  </motion.button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* 2. CARD RATINGS TAB (WITH LAZY LOADING) */}
-          {activeTab === 'cards' && (
-            <motion.div
-              key="cards-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col min-h-full">
-              <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
-                <div className="flex gap-2">
-                  <div className="relative flex-1 md:max-w-xs">
-                    <select
-                      value={archetypeFilter}
-                      onChange={(e) => setArchetypeFilter(e.target.value)}
-                      className="w-full appearance-none bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-3 pr-8 rounded-lg text-xs font-bold cursor-pointer hover:border-slate-500 focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="Global">Global Stats</option>
-
-                      <option disabled className="bg-slate-950 text-slate-500 font-black">--- Two Colors ---</option>
-                      {PAIRS.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
-
-                      <option disabled className="bg-slate-950 text-slate-500 font-black">--- Three Colors ---</option>
-                      {TRIOS.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
-                    </select>
-                    <ChevronRight size={12} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
+                    <div className="relative flex-1">
+                      <input type="text" placeholder="Search card..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-8 pr-3 rounded-lg text-xs font-bold focus:border-indigo-500 focus:outline-none" />
+                      <Search size={12} className="absolute left-2.5 top-2.5 text-slate-500 pointer-events-none" />
+                    </div>
                   </div>
-                  <div className="relative flex-1">
-                    <input type="text" placeholder="Search card..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-8 pr-3 rounded-lg text-xs font-bold focus:border-indigo-500 focus:outline-none" />
-                    <Search size={12} className="absolute left-2.5 top-2.5 text-slate-500 pointer-events-none" />
+
+                  {/* LIGNE 2 & 3 (Desktop merged / Mobile stacked) */}
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 pb-1">
+
+                    {/* Colors & Rarities (Merged row on Mobile) */}
+                    <div className="flex items-center gap-2">
+                      {/* Colors */}
+                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
+                        {['W', 'U', 'B', 'R', 'G'].map(c => (
+                          <button key={c} onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
+                            style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
+                            <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
+                          </button>
+                        ))}
+                        <div className="w-[1px] h-4 bg-slate-700 mx-1"></div>
+                        <button onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
+                          className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
+                        <button onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
+                          className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
+                      </div>
+
+                      {/* AJOUT DU SÉPARATEUR ICI */}
+                      <div className="w-[1px] h-6 bg-slate-800 mx-1"></div>
+
+                      {/* Rarities */}
+                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+                        {['M', 'R', 'U', 'C'].map((r) => {
+                          const isActive = rarityFilter.includes(r);
+                          return (
+                            <button key={r} onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
+                              className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>
+                              {r}
+                            </button>
+                          );
+                        })}
+                        {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>}
+                      </div>
+                    </div>
+
+                    <div className="hidden md:block w-[1px] h-6 bg-slate-800 mx-2"></div>
+
+                    {/* STATS FILTERS (Row 3 on Mobile) */}
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        GIH
+                        {sortConfig.key === 'gih_wr' ? (
+                          <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
+                        ) : (
+                          <ArrowUpDown size={10} />
+                        )}
+                      </button>
+
+                      <button onClick={() => handleSort('alsa')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        ALSA
+                        {sortConfig.key === 'alsa' ? (
+                          <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
+                        ) : (
+                          <ArrowUpDown size={10} />
+                        )}
+                      </button>
+
+                      <button onClick={() => handleSort('trend')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'trend' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        TREND
+                        {sortConfig.key === 'trend' ? (
+                          sortConfig.dir === 'asc' ? <TrendingDown size={10} /> : <TrendingUp size={10} />
+                        ) : (
+                          <TrendingUp size={10} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 pb-1">
-                  <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800 mr-auto md:mr-0">
-                    {['W', 'U', 'B', 'R', 'G'].map(c => (
-                      <button key={c} onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
-                        style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
-                        <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
-                      </button>
-                    ))}
-                    <div className="w-[1px] h-4 bg-slate-700 mx-1"></div>
-                    <button onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
-                      className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
-                    <button onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
-                      className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
-                  </div>
-
-                  <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
-
-                  <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
-                    {['M', 'R', 'U', 'C'].map((r) => {
-                      const isActive = rarityFilter.includes(r);
-                      return (
-                        <button
-                          key={r}
-                          onClick={() => {
-                            setRarityFilter(prev =>
-                              prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r]
-                            );
-                          }}
-                          className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive
-                            ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg`
-                            : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'
-                            }`}
-                        >
-                          {r}
-                        </button>
-                      );
-                    })}
-                    {rarityFilter.length > 0 && (
-                      <button onClick={() => setRarityFilter([])} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors" title="Clear filter">
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
-
-                  <div className="flex gap-2 flex-1 md:flex-none">
-                    <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                      GIH <ArrowUpDown size={10} />
-                    </button>
-                    <button onClick={() => handleSort('alsa')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                      ALSA <ArrowUpDown size={10} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
-                {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
+                <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
+                  {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
                   <motion.button
                     layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
                     key={card.id} onClick={() => setSelectedCard(card)}
-                    className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md"
+                    className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md relative"
                   >
+                    {/* TrendIndicator - top right corner */}
+                    <div className="absolute top-1.5 right-1.5 md:top-2 md:right-2">
+                      <TrendIndicator history={(card as any).win_rate_history} />
+                    </div>
+
                     <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
                     <div className="flex-1 min-w-0 text-left flex flex-col justify-center h-full">
                       <div className="flex justify-between items-start mb-1">
-                        <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base">{card.name}</motion.span>
+                        <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base pr-8">{card.name}</motion.span>
                       </div>
                       <div className="flex justify-between items-end mt-auto">
                         <div className="flex flex-col gap-1">
@@ -593,42 +650,29 @@ export default function MTGLimitedApp(): React.ReactElement {
                     </div>
                   </motion.button>
                 ))}
+                  {/* Scroll sentinel */}
+                  {!loading && visibleCardsCount < filteredCards.length && (
+                    <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
+                      <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
-                {/* Scroll sentinel for infinite loading */}
-                {!loading && visibleCardsCount < filteredCards.length && (
-                  <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
-                    <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
+            {/* 3. FORMAT COMPARISON TAB */}
+            {activeTab === 'compare' && (
+              <motion.div key="compare-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                <FormatComparison activeSet={activeSet} />
+              </motion.div>
+            )}
 
-          {/* 3. FORMAT COMPARISON TAB */}
-          {activeTab === 'compare' && (
-            <motion.div
-              key="compare-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              <FormatComparison activeSet={activeSet} />
-            </motion.div>
-          )}
-
-          {/* 4. PRESS REVIEW TAB */}
-          {activeTab === 'press' && (
-            <motion.div
-              key="press-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              <PressReview activeSet={activeSet} />
-            </motion.div>
-          )}
+            {/* 4. PRESS REVIEW TAB */}
+            {activeTab === 'press' && (
+              <motion.div key="press-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                <PressReview activeSet={activeSet} />
+              </motion.div>
+            )}
           </AnimatePresence>
 
         </main>

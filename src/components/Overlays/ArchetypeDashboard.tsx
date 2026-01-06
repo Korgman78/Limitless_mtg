@@ -5,6 +5,7 @@ import { supabase } from '../../supabase';
 import { extractColors, getDeltaStyle, getCardImage, normalizeRarity } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { SwipeableOverlay } from './SwipeableOverlay';
+import { Sparkline } from '../Charts/Sparkline';
 
 export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, activeFormat, activeSet, globalMeanWR, totalGames, onClose, onCardClick }) => {
   const [archCards, setArchCards] = useState<any[]>([]);
@@ -150,17 +151,56 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
               <div className="transform scale-125 filter drop-shadow-lg"><ManaIcons colors={deck.colors.split(' +')[0]} size="lg" /></div>
               <h2 className="text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">{deck.name}</h2>
             </div>
-            <div className="flex w-full max-w-xs gap-4">
-              <div className="flex-1 bg-black/40 rounded-xl p-3 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Win Rate</span>
-                <span className={`text-3xl font-black ${getDeltaStyle(deck.wr, globalMeanWR)}`}>{deck.wr}%</span>
-              </div>
-              <div className="flex-1 bg-black/40 rounded-xl p-3 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Metagame</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-white">{(deck.games / totalGames * 100).toFixed(1)}</span>
-                  <span className="text-xs text-white/60">%</span>
+            <div className="flex flex-col w-full max-w-xs gap-3">
+              {/* Mobile: 3 blocs en ligne / Desktop: 2 + 1 */}
+              <div className="flex gap-2 md:gap-4">
+                <div className="flex-1 bg-black/40 rounded-xl p-2 md:p-3 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
+                  <span className="text-[8px] md:text-[9px] uppercase font-bold text-slate-400 mb-0.5 md:mb-1">Win Rate</span>
+                  <span className={`text-xl md:text-3xl font-black ${getDeltaStyle(deck.wr, globalMeanWR)}`}>{deck.wr}%</span>
                 </div>
+                <div className="flex-1 bg-black/40 rounded-xl p-2 md:p-3 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
+                  <span className="text-[8px] md:text-[9px] uppercase font-bold text-slate-400 mb-0.5 md:mb-1">Metagame</span>
+                  <div className="flex items-baseline gap-0.5 md:gap-1">
+                    <span className="text-xl md:text-2xl font-bold text-white">{(deck.games / totalGames * 100).toFixed(1)}</span>
+                    <span className="text-[10px] md:text-xs text-white/60">%</span>
+                  </div>
+                </div>
+                {/* TREND Block - Mobile: inline / Desktop: full width below */}
+                <div className="flex-1 md:hidden bg-black/40 rounded-xl p-2 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg relative overflow-hidden group">
+                  <span className="text-[8px] uppercase font-bold text-slate-400 mb-0.5 z-10">Trend</span>
+                  <div className="h-6 flex items-center justify-center relative z-10">
+                    {(() => {
+                      let history = deck.history || [];
+                      if (history.length === 0 && deck.wr) history = [deck.wr, deck.wr];
+                      else if (history.length === 1) history = [history[0], history[0]];
+                      return history.length > 1 ? (
+                        <Sparkline data={history} width={50} height={24} />
+                      ) : (
+                        <span className="text-[9px] text-slate-600 italic">--</span>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* TREND Block - Desktop only: full width */}
+              <div className="hidden md:flex bg-black/40 rounded-xl p-3 border border-white/10 backdrop-blur-md flex-col items-center justify-center shadow-lg relative overflow-hidden group">
+                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1 z-10">Trend (14 days)</span>
+                <div className="w-full h-10 flex items-center justify-center relative z-10">
+                  {(() => {
+                    let history = deck.history || [];
+                    if (history.length === 0 && deck.wr) history = [deck.wr, deck.wr];
+                    else if (history.length === 1) history = [history[0], history[0]];
+                    return history.length > 1 ? (
+                      <div className="opacity-80 group-hover:opacity-100 transition-opacity">
+                        <Sparkline data={history} width={80} height={32} />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-600 italic">Not enough data</span>
+                    );
+                  })()}
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent pointer-events-none"></div>
               </div>
             </div>
           </div>

@@ -98,7 +98,6 @@ def fetch_data_safe(url, context_name="Données"):
 # ==============================================================================
 
 def get_active_sets():
-    """Récupère la liste des sets à mettre à jour depuis Supabase"""
     url = f"{SUPABASE_URL}/rest/v1/sets?active=eq.true&select=code,start_date"
     try:
         r = requests.get(url, headers=HEADERS_SUPABASE)
@@ -112,20 +111,34 @@ def get_active_sets():
         return []
 
 def get_existing_histories(set_code, fmt):
-    """
-    Récupère l'historique actuel pour ne pas l'écraser.
-    Retourne un dictionnaire : { 'Colors': [55.2, 56.1, ...] }
-    """
+    """Pour les Decks (Archetypes)"""
     url = f"{SUPABASE_URL}/rest/v1/archetype_stats?select=colors,win_rate_history&set_code=eq.{set_code}&format=eq.{fmt}"
     try:
         r = requests.get(url, headers=HEADERS_SUPABASE)
         if r.status_code == 200:
             data = r.json()
-            # On transforme la liste en dictionnaire pour accès rapide par couleurs
-            history_map = {row['colors']: row.get('win_rate_history', []) for row in data}
-            return history_map
+            return {row['colors']: row.get('win_rate_history', []) for row in data}
         return {}
     except Exception:
+        return {}
+
+def get_existing_card_histories(set_code, fmt, context):
+    """
+    Pour les Cartes : Récupère l'historique WIN RATE par nom de carte
+    pour un set, un format et un contexte de couleur donnés.
+    """
+    # Attention à l'encodage URL si le context contient des caractères spéciaux, 
+    # mais ici "Global", "WU", etc. passent bien.
+    url = f"{SUPABASE_URL}/rest/v1/card_stats?select=card_name,win_rate_history&set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.{context}"
+    try:
+        r = requests.get(url, headers=HEADERS_SUPABASE)
+        if r.status_code == 200:
+            data = r.json()
+            # Dictionnaire : { "Card Name": [55.2, 56.1, ...], ... }
+            return {row['card_name']: row.get('win_rate_history', []) for row in data}
+        return {}
+    except Exception as e:
+        print(f"⚠️ Erreur récupération historique cartes: {e}")
         return {}
 
 # ==============================================================================
@@ -138,7 +151,6 @@ def ingest_decks(set_code, start_date):
     for fmt in ALL_FORMATS:
         print(f" 👉 Format: {fmt}")
         
-        # 1. Récupération de l'historique existant AVANT traitement
         existing_histories = get_existing_histories(set_code, fmt)
         
         url = f"https://www.17lands.com/color_ratings/data?expansion={set_code}&event_type={fmt}&start_date={start_date}&end_date={END_DATE}&combine_splash=false"
@@ -166,17 +178,11 @@ def ingest_decks(set_code, start_date):
                 current_wr = round(wr, 1)
 
                 # --- GESTION DE L'HISTORIQUE ---
-                # On récupère l'ancien tableau ou vide
                 history = existing_histories.get(final_code_colors)
-                if history is None: 
-                    history = []
+                if history is None: history = []
                 
-                # On ajoute la nouvelle valeur à la fin
                 history.append(current_wr)
-                
-                # On garde seulement les 14 dernières valeurs (Rolling Window)
-                if len(history) > 14:
-                    history = history[-14:]
+                if len(history) > 14: history = history[-14:]
                 # -------------------------------
 
                 record = {
@@ -185,7 +191,7 @@ def ingest_decks(set_code, start_date):
                     "colors": final_code_colors,
                     "format": fmt,
                     "win_rate": current_wr,
-                    "win_rate_history": history, # Nouvelle colonne
+                    "win_rate_history": history,
                     "games_count": games,
                 }
                 unique_batch[f"{fmt}_{final_code_colors}"] = record
@@ -197,11 +203,11 @@ def ingest_decks(set_code, start_date):
             try:
                 resp = requests.post(api_url, json=records, headers=HEADERS_SUPABASE)
                 if resp.status_code >= 400: print(f"      ❌ Erreur Supabase: {resp.text}")
-                else: print(f"      ✅ {len(records)} decks sauvegardés (avec historique).")
+                else: print(f"      ✅ {len(records)} decks sauvegardés.")
             except Exception as e: print(f"      ❌ Exception POST: {e}")
 
 # ==============================================================================
-# 5. INGESTION DES CARTES (Dynamique) - Inchangé
+# 5. INGESTION DES CARTES (Avec Win Rate History)
 # ==============================================================================
 
 def ingest_cards(set_code, start_date):
@@ -213,7 +219,9 @@ def ingest_cards(set_code, start_date):
         for color in COLORS:
             context = color if color else "Global"
             
-            # Gestion intelligente du Splash pour le Sealed
+            # 1. Récupération de l'historique existant pour ce set/format/context
+            existing_card_histories = get_existing_card_histories(set_code, fmt, context)
+            
             is_sealed = "Sealed" in fmt
             splash_param = "true" if is_sealed else "false"
             
@@ -241,6 +249,22 @@ def ingest_cards(set_code, start_date):
                     gih = get_gih_strict(row)
                     alsa = safe_float(row.get('avg_seen'))
                     img_count = row.get('game_count') or 0
+                    
+                    current_wr = round(gih, 2) if gih is not None else None
+
+                    # --- GESTION HISTORIQUE CARTES ---
+                    # Récupération ancien historique ou vide
+                    history = existing_card_histories.get(name)
+                    if history is None: history = []
+
+                    # On ajoute la nouvelle valeur SI elle existe (pas None)
+                    if current_wr is not None:
+                        history.append(current_wr)
+                        
+                        # Rolling Window de 14 jours
+                        if len(history) > 14: 
+                            history = history[-14:]
+                    # ----------------------------------
 
                     record = {
                         "set_code": set_code,
@@ -249,9 +273,10 @@ def ingest_cards(set_code, start_date):
                         "colors": row.get('color', ''),
                         "filter_context": context,
                         "format": fmt,
-                        "gih_wr": round(gih, 2) if gih is not None else None, 
+                        "gih_wr": current_wr, 
                         "alsa": alsa,
-                        "img_count": img_count
+                        "img_count": img_count,
+                        "win_rate_history": history # Nouvelle donnée
                     }
                     unique_batch[f"{fmt}_{name}_{context}"] = record
                 except Exception: continue
@@ -279,12 +304,9 @@ if __name__ == "__main__":
         
     print("🌍 Démarrage de l'ETL Multi-Set...")
     
-    # 1. Récupérer TOUS les sets actifs depuis la base
     all_active_sets = get_active_sets()
     
-    # 2. Filtrage selon la configuration TARGET_SET_CODE
     sets_to_process = []
-    
     if TARGET_SET_CODE:
         sets_to_process = [s for s in all_active_sets if s['code'] == TARGET_SET_CODE]
         if not sets_to_process:
@@ -297,7 +319,6 @@ if __name__ == "__main__":
     else:
         print(f"📋 Sets à traiter : {[s['code'] for s in sets_to_process]}")
 
-        # 3. Boucle principale de traitement
         for s in sets_to_process:
             set_code = s['code']
             start_date = s['start_date']
