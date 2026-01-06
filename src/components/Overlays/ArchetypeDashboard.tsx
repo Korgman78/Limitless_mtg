@@ -166,7 +166,7 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
                   </div>
                 </div>
                 {/* TREND Block - Mobile: inline / Desktop: full width below */}
-                <div className="flex-1 md:hidden bg-black/40 rounded-xl p-2 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg relative overflow-hidden group">
+                <div className="flex-1 md:hidden bg-black/40 rounded-xl p-2 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg relative group">
                   <span className="text-[8px] uppercase font-bold text-slate-400 mb-0.5 z-10">Trend</span>
                   <div className="h-6 flex items-center justify-center relative z-10">
                     {(() => {
@@ -184,7 +184,7 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
               </div>
 
               {/* TREND Block - Desktop only: full width */}
-              <div className="hidden md:flex bg-black/40 rounded-xl p-3 border border-white/10 backdrop-blur-md flex-col items-center justify-center shadow-lg relative overflow-hidden group">
+              <div className="hidden md:flex bg-black/40 rounded-xl p-3 border border-white/10 backdrop-blur-md flex-col items-center justify-center shadow-lg relative group">
                 <span className="text-[9px] uppercase font-bold text-slate-400 mb-1 z-10">Trend (14 days)</span>
                 <div className="w-full h-10 flex items-center justify-center relative z-10">
                   {(() => {
