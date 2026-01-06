@@ -14,6 +14,7 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 import { useDebounce } from './hooks/useDebounce';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
+import { useIsMobile } from './hooks/useIsMobile';
 
 // Utils
 import { haptics } from './utils/haptics';
@@ -64,6 +65,9 @@ export default function MTGLimitedApp(): React.ReactElement {
   // --- Scroll to Top FAB ---
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const mainRef = React.useRef<HTMLElement | null>(null);
+
+  // --- Mobile Detection ---
+  const isMobile = useIsMobile();
 
   // Auto-dismiss error after 5 seconds
   useEffect(() => {
@@ -166,10 +170,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             gih_wr: c.gih_wr,
             alsa: c.alsa,
             img_count: c.img_count,
-            // BOUCHON TEST - À SUPPRIMER
-            win_rate_history: c.card_name === 'Allies at Last'
-              ? [52.1, 53.4, 54.2, 55.8, 57.3] // Fake trend +5.2%
-              : c.win_rate_history
+            win_rate_history: c.win_rate_history
           }));
           setCards(formattedCards);
         } else { setCards([]); }
@@ -498,7 +499,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                       </div>
                       <div className="flex flex-col items-end min-w-[5.5rem]">
                         <div className="flex items-center gap-2">
-                          <Sparkline data={deck.history} />
+                          <Sparkline data={deck.history} simpleTooltip={isMobile} />
                           <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                             {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
                           </span>
@@ -550,38 +551,38 @@ export default function MTGLimitedApp(): React.ReactElement {
                   <div className="flex flex-col md:flex-row md:items-center gap-2 pb-1">
 
                     {/* Colors & Rarities (Merged row on Mobile) */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 md:gap-2">
                       {/* Colors */}
-                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
+                      <div className="flex items-center gap-0.5 md:gap-1 p-0.5 md:p-1 bg-slate-900 rounded-full border border-slate-800">
                         {['W', 'U', 'B', 'R', 'G'].map(c => (
                           <button key={c} onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
+                            className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
                             style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
                             <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
                           </button>
                         ))}
-                        <div className="w-[1px] h-4 bg-slate-700 mx-1"></div>
+                        <div className="w-[1px] h-3 md:h-4 bg-slate-700 mx-0.5 md:mx-1"></div>
                         <button onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
-                          className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
+                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
                         <button onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
-                          className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
+                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
                       </div>
 
-                      {/* AJOUT DU SÉPARATEUR ICI */}
-                      <div className="w-[1px] h-6 bg-slate-800 mx-1"></div>
+                      {/* Séparateur */}
+                      <div className="w-[1px] h-5 md:h-6 bg-slate-800"></div>
 
                       {/* Rarities */}
-                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+                      <div className="flex items-center gap-0.5 md:gap-1 p-0.5 md:p-1 bg-slate-900 rounded-lg border border-slate-800">
                         {['M', 'R', 'U', 'C'].map((r) => {
                           const isActive = rarityFilter.includes(r);
                           return (
                             <button key={r} onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
-                              className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>
+                              className={`w-5 h-5 md:w-7 md:h-7 rounded flex items-center justify-center text-[9px] md:text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>
                               {r}
                             </button>
                           );
                         })}
-                        {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>}
+                        {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="p-0.5 md:p-1 text-slate-500 hover:text-white transition-colors"><X size={12} /></button>}
                       </div>
                     </div>
 
@@ -629,7 +630,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   >
                     {/* TrendIndicator - top right corner */}
                     <div className="absolute top-1.5 right-1.5 md:top-2 md:right-2">
-                      <TrendIndicator history={(card as any).win_rate_history} />
+                      <TrendIndicator history={(card as any).win_rate_history} simpleTooltip={isMobile} />
                     </div>
 
                     <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />

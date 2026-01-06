@@ -22,21 +22,17 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
       const padding = 10;
 
       if (positionProp === 'left') {
-        // Position tooltip to the LEFT of trigger - aggressively left
         setPlacement('left');
         setCoords({
-          x: rect.left - padding - 70, // Push much further left
+          x: rect.left - padding - 70,
           y: rect.top + rect.height / 2
         });
       } else {
-        // Position tooltip ABOVE or BELOW trigger
         const spaceAbove = rect.top;
         const newPlacement = spaceAbove < tooltipHeight + padding ? 'bottom' : 'top';
         setPlacement(newPlacement);
 
         const centerX = rect.left + rect.width / 2;
-
-        // Clamp X to keep tooltip on screen
         const minX = tooltipWidth / 2 + 10;
         const maxX = window.innerWidth - tooltipWidth / 2 - 10;
         const clampedX = Math.max(minX, Math.min(maxX, centerX));
@@ -53,12 +49,10 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
     let transform = '';
 
     if (placement === 'left') {
-      // Tooltip to the left of trigger
       transform = 'translateX(-100%) translateY(-50%)';
     } else if (placement === 'top') {
       transform = 'translateX(-50%) translateY(-100%)';
     } else {
-      // bottom
       transform = 'translateX(-50%)';
     }
 
@@ -68,39 +62,12 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
       top: coords.y,
       transform,
       zIndex: 9999,
+      pointerEvents: 'none', // Tooltip doesn't capture mouse events
     };
   };
 
-  const getArrowStyle = (): React.CSSProperties => {
-    if (placement === 'left') {
-      // Arrow pointing right
-      return {
-        position: 'absolute',
-        left: '100%',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: 0,
-        height: 0,
-        borderTop: '6px solid transparent',
-        borderBottom: '6px solid transparent',
-        borderLeft: '6px solid rgba(30, 41, 59, 0.95)',
-      };
-    }
-
-    // Arrow pointing down (top) or up (bottom)
-    return {
-      position: 'absolute',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      width: 0,
-      height: 0,
-      borderLeft: '6px solid transparent',
-      borderRight: '6px solid transparent',
-      ...(placement === 'top'
-        ? { top: '100%', borderTop: '6px solid rgba(30, 41, 59, 0.95)' }
-        : { bottom: '100%', borderBottom: '6px solid rgba(30, 41, 59, 0.95)' }
-      ),
-    };
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
   };
 
   return (
@@ -108,6 +75,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
       <div
         ref={triggerRef}
         className="inline-flex"
+        onClick={handleClick}
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
         onTouchStart={() => setIsVisible(true)}
@@ -120,16 +88,15 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
         <AnimatePresence>
           {isVisible && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.1 }}
               style={getTooltipStyle()}
             >
               <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40">
                 {content}
               </div>
-              <div style={getArrowStyle()} />
             </motion.div>
           )}
         </AnimatePresence>,

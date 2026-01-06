@@ -3,10 +3,11 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { SparklineProps } from '../../types';
 import { Tooltip } from '../Common/Tooltip';
 
-export const Sparkline: React.FC<SparklineProps & { width?: number; height?: number }> = ({
+export const Sparkline: React.FC<SparklineProps & { width?: number; height?: number; simpleTooltip?: boolean }> = ({
   data,
   width = 40,
-  height = 20
+  height = 20,
+  simpleTooltip = false
 }) => {
   const safeData: number[] = (data && data.length > 0) ? data : [0, 0];
 
@@ -49,27 +50,42 @@ export const Sparkline: React.FC<SparklineProps & { width?: number; height?: num
     </div>
   );
 
+  const nativeTooltipText = `${isRising ? '+' : ''}${delta.toFixed(1)}% over ${days} days`;
+
+  const svgElement = (
+    <svg width={width} height={height} className="overflow-visible pointer-events-none">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+
+  // Simple native tooltip for mobile in App.tsx
+  if (simpleTooltip) {
+    return (
+      <div
+        className="relative flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-help"
+        style={{ width, height }}
+        title={nativeTooltipText}
+      >
+        {svgElement}
+      </div>
+    );
+  }
+
+  // Rich tooltip for desktop and overlays
   return (
     <Tooltip content={tooltipContent}>
       <div
         className="relative flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-help"
-        style={{
-          width: width + 16,
-          height: height + 12,
-          padding: '6px 8px',
-          margin: '-6px -8px',
-        }}
+        style={{ width, height, padding: 8 }}
       >
-        <svg width={width} height={height} className="overflow-visible">
-          <polyline
-            points={points}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {svgElement}
       </div>
     </Tooltip>
   );
