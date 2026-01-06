@@ -261,9 +261,8 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                   </div>
                 </div>
 
-                {/* 3. TREND BLOCK (Full Width for Better Readability) */}
-{/* 3. TREND BLOCK (Full Width & Centered) */}
-                <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative overflow-hidden group">
+                {/* 3. TREND BLOCK (Full Width & Centered) */}
+                <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative group">
                   <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
                   
                   {/* Container centré sans scale */}

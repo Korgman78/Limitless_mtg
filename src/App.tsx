@@ -166,7 +166,10 @@ export default function MTGLimitedApp(): React.ReactElement {
             gih_wr: c.gih_wr,
             alsa: c.alsa,
             img_count: c.img_count,
-            win_rate_history: c.win_rate_history
+            // BOUCHON TEST - À SUPPRIMER
+            win_rate_history: c.card_name === 'Allies at Last'
+              ? [52.1, 53.4, 54.2, 55.8, 57.3] // Fake trend +5.2%
+              : c.win_rate_history
           }));
           setCards(formattedCards);
         } else { setCards([]); }
