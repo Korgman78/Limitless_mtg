@@ -303,9 +303,9 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
               const getShiftTooltip = (val: number): string => {
                 const absVal = Math.abs(val).toFixed(1);
                 const fA = getFormatLabel(formatA); const fB = getFormatLabel(formatB);
-                if (compareMode === 'cards') return `This card ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} of ${absVal}%`;
-                if (metricMode === 'winrate') return `This archetype ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} of ${absVal}%`;
-                return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} of ${absVal} points`;
+                if (compareMode === 'cards') return `This card ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
+                if (metricMode === 'winrate') return `This archetype ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
+                return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} by ${absVal} points`;
               };
               const handleStatClick = (e: React.MouseEvent, text: string): void => {
                 e.stopPropagation();
