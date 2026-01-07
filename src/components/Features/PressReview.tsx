@@ -332,10 +332,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
             {filteredArticles.map((article: Article) => {
                 const sentiment = getSentimentData(article);
                 return (
-                  <button key={article.id} onClick={() => {
-                    setSelectedArticle(article);
-                    if (article.mentioned_cards) setIsResolvingCardNames(true);
-                  }}
+                  <button key={article.id} onClick={() => setSelectedArticle(article)}
                     className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99] relative"
                   >
                     <div className="md:flex">
