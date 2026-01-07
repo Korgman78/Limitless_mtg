@@ -65,7 +65,7 @@ export function useArticles(setFilter: string) {
 }
 
 // Fetch a single article (for refresh on open)
-export function useArticle(articleId: number | null) {
+export function useArticle(articleId: string | number | null) {
   return useQuery({
     queryKey: queryKeys.article(articleId || 0),
     queryFn: async () => {

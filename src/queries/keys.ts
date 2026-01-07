@@ -10,5 +10,5 @@ export const queryKeys = {
   formatComparison: (set: string, mode: string) =>
     ['formatComparison', set, mode] as const,
   articles: (setFilter: string) => ['articles', setFilter] as const,
-  article: (id: number) => ['article', id] as const,
+  article: (id: string | number) => ['article', id] as const,
 }
