@@ -16,7 +16,7 @@ INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
 
 # ✅ VARIABLE DE CIBLAGE
-TARGET_SET_CODE = ""
+TARGET_SET_CODE = "TLA"
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
