@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair } from 'lucide-react';
-import type { CardDetailOverlayProps, Card, Deck, CrossPerformance } from '../../types';
-import { supabase } from '../../supabase';
+import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { Tooltip } from '../Common/Tooltip';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
+import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 
 // --- BLOC D'ÉVALUATION ---
 const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card, allCards }) => {
@@ -139,88 +139,13 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
 // --- COMPOSANT PRINCIPAL ---
 export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose }) => {
   const rCode = normalizeRarity(card.rarity);
-  const [crossPerf, setCrossPerf] = useState<CrossPerformance[]>([]);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<string>('synergy');
 
-  // Global stats for display (always show global GIH, not filtered)
-  const [globalStats, setGlobalStats] = useState<{ gih_wr: number | null; alsa: number | null; win_rate_history: number[] | null }>({
-    gih_wr: null,
-    alsa: null,
-    win_rate_history: null
-  });
-
-  useEffect(() => {
-    async function fetchCrossData() {
-      setFetchError(null);
-      try {
-        // Fetch global stats for display
-        const { data: globalStat, error: globalError } = await supabase
-          .from('card_stats')
-          .select('gih_wr, alsa, win_rate_history')
-          .eq('set_code', activeSet)
-          .eq('card_name', card.name)
-          .eq('filter_context', 'Global')
-          .eq('format', activeFormat)
-          .single();
-
-        if (globalError && globalError.code !== 'PGRST116') {
-          console.error('Error fetching global stat:', globalError);
-        }
-
-        // Store global stats for display
-        if (globalStat) {
-          setGlobalStats({
-            gih_wr: globalStat.gih_wr,
-            alsa: globalStat.alsa,
-            win_rate_history: globalStat.win_rate_history
-          });
-        }
-
-        const avgCardWr = globalStat?.gih_wr || 55.0;
-
-        const { data, error: dataError } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('card_name', card.name).eq('format', activeFormat);
-        if (dataError) {
-          console.error('Error fetching cross data:', dataError);
-          setFetchError('Failed to load card data');
-          return;
-        }
-
-        if (data && decks.length > 0) {
-          const minGames = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
-
-          const perfs = data
-            .filter((d: any) => d.filter_context !== 'Global')
-            .map((d: any) => {
-              if (!d.gih_wr || d.img_count < minGames) return null;
-              const deck = decks.find((dk: Deck) => areColorsEqual(extractColors(dk.colors), d.filter_context));
-
-              if (deck) {
-                if (deck.type !== 'Two colors' && deck.type !== 'Three colors') return null;
-              } else {
-                if (d.filter_context.length !== 2 && d.filter_context.length !== 3) return null;
-              }
-
-              return {
-                deckName: deck ? deck.name : `${d.filter_context} Deck`,
-                deckColors: d.filter_context,
-                deckWr: deck ? deck.wr : 55.0,
-                cardWr: d.gih_wr,
-                avgCardWr: avgCardWr
-              };
-            })
-            .filter(Boolean)
-            .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => (t.deckName === v.deckName)) === i);
-
-          setCrossPerf(perfs as CrossPerformance[]);
-        }
-      } catch (err) {
-        console.error('Error fetching cross data:', err);
-        setFetchError('Failed to load card data');
-      }
-    }
-    fetchCrossData();
-  }, [card, activeFormat, activeSet, decks]);
+  // React Query for cross-performance data
+  const { data, error } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
+  const globalStats = data?.globalStats || { gih_wr: null, alsa: null, win_rate_history: null };
+  const crossPerf = data?.crossPerf || [];
+  const fetchError = error ? 'Failed to load card data' : null;
 
   const sortedPerf = useMemo(() => {
     return [...crossPerf].sort((a: CrossPerformance, b: CrossPerformance) => {

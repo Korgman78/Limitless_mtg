@@ -1,57 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Star, Gem, AlertTriangle } from 'lucide-react';
-import type { ArchetypeDashboardProps, Card } from '../../types';
-import { supabase } from '../../supabase';
+import type { ArchetypeDashboardProps } from '../../types';
 import { extractColors, getDeltaStyle, getCardImage, normalizeRarity } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
+import { useArchetypeCards } from '../../queries/useArchetypeCards';
 
 export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, activeFormat, activeSet, globalMeanWR, totalGames, onClose, onCardClick }) => {
-  const [archCards, setArchCards] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchArchetypeData() {
-      setLoading(true);
-      setFetchError(null);
-      const baseColor = extractColors(deck.colors);
-      if (!baseColor || baseColor.length > 3) { setArchCards([]); setLoading(false); return; }
-      const chars = baseColor.split('');
-      const permutations: string[] = [];
-      if (chars.length === 2) { permutations.push(chars[0] + chars[1], chars[1] + chars[0]); }
-      else if (chars.length === 3) {
-        const [a, b, c] = chars;
-        permutations.push(a + b + c, a + c + b, b + a + c, b + c + a, c + a + b, c + b + a);
-      } else { permutations.push(baseColor); }
-
-      try {
-        const { data: deckData, error: deckError } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('format', activeFormat.trim()).in('filter_context', permutations).range(0, 5000);
-        const { data: globalData, error: globalError } = await supabase.from('card_stats').select('card_name, gih_wr, alsa').eq('set_code', activeSet).eq('filter_context', 'Global').eq('format', activeFormat.trim());
-
-        if (deckError || globalError) {
-          console.error('Error fetching archetype data:', deckError || globalError);
-          setFetchError('Failed to load archetype data');
-          setLoading(false);
-          return;
-        }
-
-        if (deckData && deckData.length > 0) {
-          const merged = deckData.map((dc: any) => {
-            const gc = globalData ? globalData.find((g: any) => g.card_name === dc.card_name) : null;
-            return { ...dc, name: dc.card_name, global_wr: gc ? gc.gih_wr : null, global_alsa: gc ? gc.alsa : null };
-          });
-          setArchCards(merged.sort((a: any, b: any) => (b.gih_wr || 0) - (a.gih_wr || 0)));
-        } else { setArchCards([]); }
-      } catch (err) {
-        console.error('Error fetching archetype data:', err);
-        setFetchError('Failed to load archetype data');
-      }
-      setLoading(false);
-    }
-    fetchArchetypeData();
-  }, [deck, activeFormat, activeSet]);
+  const { data: archCards = [], isLoading: loading, error } = useArchetypeCards(deck?.colors || '', activeFormat, activeSet);
+  const fetchError = error ? 'Failed to load archetype data' : null;
 
   if (!deck) return null;
 

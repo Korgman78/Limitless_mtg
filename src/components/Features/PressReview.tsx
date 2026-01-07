@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
+import { useActiveSets, useArticles, useArticle, useScryfallCardNames } from '../../queries/useArticles';
 
 // --- COMPOSANT TOOLTIP (Version Portal Robuste) ---
 const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
@@ -83,24 +84,50 @@ const getSentimentData = (article: Article) => {
 };
 
 export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [activeSetsOptions, setActiveSetsOptions] = useState<any[]>([]);
-  
-  const [loading, setLoading] = useState<boolean>(true);
-  const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentSetFilter, setCurrentSetFilter] = useState<string>('All');
-  
   const [qualityFilter, setQualityFilter] = useState<'All' | 'Top'>('All');
-
   const [zoomedCard, setZoomedCard] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState<boolean>(true);
-  const [officialCardNames, setOfficialCardNames] = useState<Record<string, string>>({});
-  const [isResolvingCardNames, setIsResolvingCardNames] = useState<boolean>(false);
   const [hasVoted, setHasVoted] = useState<boolean>(false);
+
+  // React Query hooks
+  const { data: activeSetsOptions = [] } = useActiveSets();
+  const {
+    data: articlesData,
+    isLoading: loading,
+    error: articlesError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage: loadingMore,
+  } = useArticles(currentSetFilter);
+
+  // Flatten pages into single array
+  const articles = useMemo(() => {
+    return articlesData?.pages.flat() || [];
+  }, [articlesData]);
+
+  const fetchError = articlesError ? 'Failed to load articles' : null;
+  const hasMore = hasNextPage ?? false;
+
+  // Fetch fresh article data when opening
+  const { data: freshArticleData } = useArticle(selectedArticle?.id || null);
+
+  // Parse mentioned cards for Scryfall lookup
+  const parsePostgresArray = (pgArray: string | string[] | null | undefined): string[] => {
+    if (!pgArray) return [];
+    if (Array.isArray(pgArray)) return pgArray;
+    return pgArray.replace(/{|}/g, '').split(',').map((item: string) => item.trim().replace(/^"|"$/g, ''));
+  };
+
+  const mentionedCards = useMemo(() => {
+    return selectedArticle ? parsePostgresArray(selectedArticle.mentioned_cards) : [];
+  }, [selectedArticle]);
+
+  const { data: officialCardNames = {}, isLoading: isResolvingCardNames } = useScryfallCardNames(
+    mentionedCards,
+    !!selectedArticle && mentionedCards.length > 0
+  );
 
   // --- Helpers ---
   const cleanSummary = (text: string | null | undefined): string => {
@@ -123,12 +150,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
     return content;
   };
 
-  const parsePostgresArray = (pgArray: string | string[] | null | undefined): string[] => {
-    if (!pgArray) return [];
-    if (Array.isArray(pgArray)) return pgArray;
-    return pgArray.replace(/{|}/g, '').split(',').map((item: string) => item.trim().replace(/^"|"$/g, ''));
-  };
-
   const getYouTubeThumbnail = (article: Article | null): string => {
     if (!article || !article.video_url) return article?.thumbnail_url || "";
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -145,7 +166,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
   // --- Voting Logic ---
   const handleVote = async (type: 'yes' | 'meh' | 'no') => {
     if (!selectedArticle || hasVoted) return;
-  
+
     const column = `votes_${type}`;
 
     // Optimistic Update
@@ -154,159 +175,37 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
         [column]: ((selectedArticle as any)[column] || 0) + 1
     };
     setSelectedArticle(updatedArticle);
-    
-    // Update global list
-    setArticles(prevArticles => 
-      prevArticles.map(a => a.id === selectedArticle.id ? updatedArticle : a)
-    );
 
     setHasVoted(true);
     localStorage.setItem(`voted-${selectedArticle.id}`, 'true');
-    
+
     // Server Update
-    await supabase.rpc('increment_article_vote', { 
-      row_id: selectedArticle.id, 
-      col_name: column 
+    await supabase.rpc('increment_article_vote', {
+      row_id: selectedArticle.id,
+      col_name: column
     });
   };
 
-  // --- Data Fetching ---
-
-  // RECHARGEMENT DES DONNÉES À L'OUVERTURE DE L'ARTICLE (CRITIQUE POUR HISTORIQUE)
+  // Check vote status when article is selected
   useEffect(() => {
     if (selectedArticle?.id) {
       const voted = localStorage.getItem(`voted-${selectedArticle.id}`);
       setHasVoted(!!voted);
-
-      const fetchFreshArticleData = async () => {
-          const { data, error } = await supabase
-            .from('press_articles')
-            .select('*')
-            .eq('id', selectedArticle.id)
-            .single();
-          
-          if (data && !error) {
-              setSelectedArticle(prev => prev ? { ...prev, ...data } : data);
-              setArticles(prev => prev.map(a => a.id === data.id ? { ...a, ...data } : a));
-          }
-      };
-      
-      fetchFreshArticleData();
     }
-  }, [selectedArticle?.id]); 
+  }, [selectedArticle?.id]);
 
-  // SCRYFALL FETCHING
+  // Sync fresh article data from React Query
   useEffect(() => {
-    if (!selectedArticle) return;
-
-    if (!selectedArticle.mentioned_cards) {
-        setIsResolvingCardNames(false);
-        return;
+    if (freshArticleData && selectedArticle) {
+      setSelectedArticle(prev => prev ? { ...prev, ...freshArticleData } : freshArticleData);
     }
+  }, [freshArticleData]);
 
-    async function fetchOfficialNames() {
-      const names = parsePostgresArray(selectedArticle?.mentioned_cards);
-      const newMappings: Record<string, string> = {};
-
-      await Promise.all(names.map(async (approxName) => {
-        try {
-          const res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(approxName)}`);
-          if (res.ok) {
-            const data = await res.json();
-            newMappings[approxName] = data.name;
-          }
-        } catch (err) {
-          console.error("Scryfall fetch error:", err);
-        }
-      }));
-
-      setOfficialCardNames(prev => ({ ...prev, ...newMappings }));
-      setIsResolvingCardNames(false);
+  // Load more articles handler
+  const loadMoreArticles = () => {
+    if (!loadingMore && hasMore) {
+      fetchNextPage();
     }
-
-    fetchOfficialNames();
-  }, [selectedArticle]);
-
-  useEffect(() => {
-    async function fetchActiveSets() {
-      try {
-        const { data } = await supabase.from('sets').select('code, name').eq('active', true).order('start_date', { ascending: false });
-        if (data) setActiveSetsOptions(data);
-      } catch (err) { console.error("Error fetching sets:", err); }
-    }
-    fetchActiveSets();
-  }, []);
-
-  useEffect(() => {
-    async function fetchInitialArticles() {
-      setLoading(true);
-      setFetchError(null);
-      setHasMore(true);
-
-      try {
-        const dateLimit = new Date();
-        dateLimit.setDate(dateLimit.getDate() - 15);
-        const dateLimitISO = dateLimit.toISOString();
-
-        let query = supabase
-          .from('press_articles')
-          .select('*')
-          .order('published_at', { ascending: false });
-
-        if (currentSetFilter !== 'All') {
-            query = query.eq('set_tag', currentSetFilter);
-        }
-
-        query = query.gte('published_at', dateLimitISO);
-
-        const { data, error } = await query;
-
-        if (error) throw error;
-        
-        if (data) {
-          setArticles(data);
-        }
-      } catch (err) {
-        console.error("Error fetching articles:", err);
-        setFetchError('Failed to load articles');
-      }
-      setLoading(false);
-    }
-    fetchInitialArticles();
-  }, [currentSetFilter]);
-
-  const loadMoreArticles = async () => {
-    if (loadingMore || !hasMore || articles.length === 0) return;
-
-    setLoadingMore(true);
-    try {
-      const lastArticleDate = articles[articles.length - 1].published_at;
-
-      let query = supabase
-        .from('press_articles')
-        .select('*')
-        .order('published_at', { ascending: false })
-        .lt('published_at', lastArticleDate)
-        .limit(20);
-
-      if (currentSetFilter !== 'All') {
-        query = query.eq('set_tag', currentSetFilter);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      if (data) {
-        if (data.length < 20) {
-          setHasMore(false);
-        }
-        setArticles(prev => [...prev, ...data]);
-      }
-    } catch (err) {
-      console.error("Error loading more:", err);
-    }
-    setLoadingMore(false);
   };
 
   const filteredArticles = useMemo(() => {

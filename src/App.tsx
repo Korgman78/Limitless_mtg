@@ -1,14 +1,18 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
   X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from './supabase';
 import type { Deck, Card, SortConfig } from './types';
 
 // Constants
 import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
+
+// React Query hooks
+import { useSets } from './queries/useSets';
+import { useDecks } from './queries/useDecks';
+import { useCards } from './queries/useCards';
 
 // Hooks
 import { useDebounce } from './hooks/useDebounce';
@@ -38,13 +42,21 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [archetypeFilter, setArchetypeFilter] = useLocalStorage<string>('limitless-archetype', 'Global');
   const [sortConfig, setSortConfig] = useLocalStorage<SortConfig>('limitless-sort', { key: 'gih_wr', dir: 'desc' });
 
+  // --- React Query Data ---
+  const { data: availableSets = [], error: setsError } = useSets();
+  const { data: decksData, isLoading: decksLoading, error: decksError, refetch: refetchDecks } = useDecks(activeSet, activeFormat);
+  const { data: cardsData, isLoading: cardsLoading, error: cardsError, refetch: refetchCards } = useCards(activeSet, activeFormat, archetypeFilter);
+
+  const decks = decksData?.decks || [];
+  const totalGames = decksData?.totalGames || 1;
+  const cards = cardsData?.cards || [];
+  const globalMeanWR = cardsData?.globalMeanWR || 55.0;
+  const loading = cardsLoading;
+
+  // Combine errors from all queries
+  const queryError = setsError || decksError || cardsError;
+
   // --- Non-persisted State ---
-  const [availableSets, setAvailableSets] = useState<any[]>([]);
-  const [decks, setDecks] = useState<Deck[]>([]);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [totalGames, setTotalGames] = useState<number>(1);
-  const [globalMeanWR, setGlobalMeanWR] = useState<number>(55.0);
   const [chartMode, setChartMode] = useState<string>('meta');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebounce<string>(searchTerm, 300);
@@ -66,6 +78,13 @@ export default function MTGLimitedApp(): React.ReactElement {
   const mainRef = React.useRef<HTMLElement | null>(null);
 
 
+  // Sync query errors to local error state for auto-dismiss
+  useEffect(() => {
+    if (queryError) {
+      setError('Failed to load data');
+    }
+  }, [queryError]);
+
   // Auto-dismiss error after 5 seconds
   useEffect(() => {
     if (error) {
@@ -73,112 +92,6 @@ export default function MTGLimitedApp(): React.ReactElement {
       return () => clearTimeout(timer);
     }
   }, [error]);
-
-  useEffect(() => {
-    async function fetchSets() {
-      try {
-        const { data, error: supabaseError } = await supabase.from('sets').select('code').eq('active', true).order('start_date', { ascending: false });
-        if (supabaseError) {
-          console.error('Error fetching sets:', supabaseError);
-          setError('Failed to load available sets');
-          return;
-        }
-        if (data && data.length > 0) { setAvailableSets(data); }
-      } catch (err) {
-        console.error('Error fetching sets:', err);
-        setError('Failed to load available sets');
-      }
-    }
-    fetchSets();
-  }, []);
-
-  useEffect(() => {
-    async function loadDecks() {
-      if (!activeSet) return;
-      try {
-        const { data, error: supabaseError } = await supabase.from('archetype_stats').select('*').eq('set_code', activeSet).eq('format', activeFormat).order('win_rate', { ascending: false });
-        if (supabaseError) {
-          console.error('Error loading decks:', supabaseError);
-          setError('Failed to load deck data');
-          return;
-        }
-        if (data) {
-          const validDecks = data.filter((d: any) => !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(d.archetype_name));
-          const total = validDecks.reduce((acc: number, curr: any) => acc + (curr.games_count || 0), 0);
-          setTotalGames(total || 1);
-          const formattedDecks = validDecks.map((d: any) => {
-            let type = "Other";
-            const code = d.colors || "";
-            const isSplash = code.includes("Splash");
-            const baseColors = code.replace(' + Splash', '').replace(/[^WUBRG]/g, '');
-            const count = baseColors.length;
-            if (count === 1) type = "Mono-color";
-            else if (count === 2 && !isSplash) type = "Two colors";
-            else if (count === 2 && isSplash) type = "Two colors + splash";
-            else if (count === 3 && !isSplash) type = "Three colors";
-            else if (count >= 3) type = "More than 3 colors";
-            return {
-              id: d.id,
-              name: d.archetype_name,
-              colors: d.colors,
-              wr: d.win_rate,
-              games: d.games_count,
-              type: type,
-              history: (d.win_rate_history && d.win_rate_history.length > 1) ? d.win_rate_history : [d.win_rate, d.win_rate]
-            };
-          });
-          setDecks(formattedDecks);
-        } else { setDecks([]); setTotalGames(1); }
-      } catch (err) {
-        console.error('Error loading decks:', err);
-        setError('Failed to load deck data');
-      }
-    }
-    loadDecks();
-  }, [activeFormat, activeSet]);
-
-  useEffect(() => {
-    async function loadCards() {
-      if (!activeSet) return;
-      setLoading(true);
-      try {
-        const { data: globalDeck, error: globalError } = await supabase.from('archetype_stats').select('win_rate').eq('set_code', activeSet).eq('format', activeFormat).eq('archetype_name', 'All Decks').single();
-        if (!globalError && globalDeck && globalDeck.win_rate) setGlobalMeanWR(globalDeck.win_rate);
-
-        const { data, error: cardsError } = await supabase
-          .from('card_stats')
-          .select('*')
-          .eq('set_code', activeSet)
-          .eq('filter_context', archetypeFilter)
-          .eq('format', activeFormat);
-
-        if (cardsError) {
-          console.error('Error loading cards:', cardsError);
-          setError('Failed to load card data');
-          setLoading(false);
-          return;
-        }
-        if (data) {
-          const formattedCards = data.map((c: any) => ({
-            id: c.id,
-            name: c.card_name,
-            rarity: c.rarity,
-            colors: c.colors,
-            gih_wr: c.gih_wr,
-            alsa: c.alsa,
-            img_count: c.img_count,
-            win_rate_history: c.win_rate_history
-          }));
-          setCards(formattedCards);
-        } else { setCards([]); }
-      } catch (err) {
-        console.error('Error loading cards:', err);
-        setError('Failed to load card data');
-      }
-      setLoading(false);
-    }
-    loadCards();
-  }, [archetypeFilter, activeFormat, activeSet]);
 
   const filteredDecks = useMemo((): Deck[] => {
     if (!decks || decks.length === 0) return [];
@@ -288,37 +201,13 @@ export default function MTGLimitedApp(): React.ReactElement {
   };
 
   // Refresh data function for pull-to-refresh
-  const refreshData = useCallback(async () => {
+  const refreshData = async () => {
     if (activeTab === 'cards') {
-      setLoading(true);
-      const { data } = await supabase.from('card_stats').select('*').eq('set_code', activeSet).eq('filter_context', archetypeFilter).eq('format', activeFormat);
-      if (data) {
-        setCards(data.map((c: any) => ({
-          id: c.id,
-          name: c.card_name,
-          rarity: c.rarity,
-          colors: c.colors,
-          gih_wr: c.gih_wr,
-          alsa: c.alsa,
-          img_count: c.img_count,
-          win_rate_history: c.win_rate_history
-        })));
-      }
-      setLoading(false);
+      await refetchCards();
     } else if (activeTab === 'decks') {
-      const { data } = await supabase.from('archetype_stats').select('*').eq('set_code', activeSet).eq('format', activeFormat).order('win_rate', { ascending: false });
-      if (data) {
-        const validDecks = data.filter((d: any) => !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(d.archetype_name));
-        const total = validDecks.reduce((acc: number, curr: any) => acc + (curr.games_count || 0), 0);
-        setTotalGames(total || 1);
-        setDecks(validDecks.map((d: any) => ({
-          id: d.id, name: d.archetype_name, colors: d.colors, wr: d.win_rate, games: d.games_count,
-          type: (() => { const code = d.colors || ""; const isSplash = code.includes("Splash"); const baseColors = code.replace(' + Splash', '').replace(/[^WUBRG]/g, ''); const count = baseColors.length; if (count === 1) return "Mono-color"; if (count === 2 && !isSplash) return "Two colors"; if (count === 2 && isSplash) return "Two colors + splash"; if (count === 3 && !isSplash) return "Three colors"; return "More than 3 colors"; })(),
-          history: (d.win_rate_history && d.win_rate_history.length > 1) ? d.win_rate_history : [d.win_rate, d.win_rate]
-        })));
-      }
+      await refetchDecks();
     }
-  }, [activeTab, activeSet, activeFormat, archetypeFilter]);
+  };
 
   // Pull-to-refresh hook
   const { pullDistance, isRefreshing, handlers: pullHandlers } = usePullToRefresh({

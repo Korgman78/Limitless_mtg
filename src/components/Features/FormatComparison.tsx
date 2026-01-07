@@ -2,21 +2,20 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Zap, ArrowUpDown, AlertTriangle, PieChart as PieChartIcon, Repeat, HelpCircle, Trophy, X } from 'lucide-react';
 import type { FormatComparisonProps, FormatOption } from '../../types';
-import { supabase } from '../../supabase';
 import { FORMAT_OPTIONS, RARITY_STYLES } from '../../constants';
 import { useDebounce } from '../../hooks/useDebounce';
 import { extractColors, normalizeRarity, getCardImage } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { ComparisonRowSkeleton } from '../Common/Skeleton';
+import { useFormatComparison } from '../../queries/useFormatComparison';
 
 export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet }) => {
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
   const [formatA, setFormatA] = useState<string>('PremierDraft');
   const [formatB, setFormatB] = useState<string>('ArenaDirect_Sealed');
   const [compareMode, setCompareMode] = useState<string>('archetypes');
+
+  const { data = [], isLoading: loading, error } = useFormatComparison(activeSet, compareMode);
+  const fetchError = error ? 'Failed to load comparison data' : null;
   const [metricMode, setMetricMode] = useState<string>('winrate');
   const [mobileShowFormatB, setMobileShowFormatB] = useState<boolean>(false);
   const [mobileTooltip, setMobileTooltip] = useState<string | null>(null);
@@ -43,33 +42,10 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
     }
   }, [mobileTooltip]);
 
+  // Reset visible count when data changes
   useEffect(() => {
-    async function fetchComparison() {
-      setLoading(true);
-      setFetchError(null);
-      try {
-        let query;
-        if (compareMode === 'archetypes') {
-          query = supabase.from('archetype_comparison_pivot').select('*').eq('set_code', activeSet);
-        } else {
-          query = supabase.from('comparison_pivot_v1_3').select('*').eq('set_code', activeSet).eq('filter_context', 'Global');
-        }
-        const { data: pivotData, error } = await query;
-        if (error) {
-          console.error("Supabase Error:", error);
-          setFetchError('Failed to load comparison data');
-        } else if (pivotData) {
-          setData(pivotData);
-          setVisibleCount(30);
-        }
-      } catch (err) {
-        console.error("Fetch error:", err);
-        setFetchError('Failed to load comparison data');
-      }
-      setLoading(false);
-    }
-    fetchComparison();
-  }, [activeSet, compareMode]);
+    setVisibleCount(30);
+  }, [data]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(

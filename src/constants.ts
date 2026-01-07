@@ -1,5 +1,11 @@
 import type { FormatOption, ColorPair } from './types';
 
+// Sets under 17lands embargo (data is scraped but hidden in prod)
+// Remove a set code from this list to make it visible
+export const EMBARGOED_SETS: string[] = [
+  // 'INR',  // Example: Innistrad Remastered
+];
+
 export const FORMAT_OPTIONS: FormatOption[] = [
   { label: 'Premier Draft', value: 'PremierDraft', short: 'PD' },
   { label: 'Trad. Draft', value: 'TradDraft', short: 'TD' },
