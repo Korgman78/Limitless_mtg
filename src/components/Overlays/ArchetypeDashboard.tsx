@@ -24,15 +24,26 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
   const thresholdIndex = Math.floor(allWrValues.length * 0.25);
   const top25Threshold = allWrValues.length > 0 ? allWrValues[thresholdIndex] : 100.0;
 
+  // 1. D'abord on calcule les Tops Communs et Uncos (pour pouvoir filtrer les gems ensuite)
+  const commons = archCards.filter((c: any) => normalizeRarity(c.rarity) === 'C' && c.gih_wr).sort((a: any, b: any) => b.gih_wr - a.gih_wr).slice(0, 5);
+  const uncommons = archCards.filter((c: any) => normalizeRarity(c.rarity) === 'U' && c.gih_wr).sort((a: any, b: any) => b.gih_wr - a.gih_wr).slice(0, 5);
+  const bestCard = commons[0] || uncommons[0];
+
+  // 2. Ensuite les Gems (avec exclusion des cartes déjà affichées)
   const gems = archCards
     .filter((c: any) => c.gih_wr && c.global_wr)
     .filter((c: any) => c.gih_wr >= globalMeanWR)
     .filter((c: any) => isSealed || (c.alsa && c.alsa > 4.0))
     .filter((c: any) => c.gih_wr > c.global_wr + 1.0)
+    // Condition Puissance vs Deck (Strict en Sealed, Tolérance -1.0 en Draft)
+    .filter((c: any) => isSealed ? c.gih_wr > deck.wr : c.gih_wr > (deck.wr - 1.0))
+    // On retire si présent dans commons OU uncommons
+    .filter((c: any) => !commons.some(com => com.card_name === c.card_name) && !uncommons.some(unc => unc.card_name === c.card_name))
     .map((c: any) => ({ ...c, score: (c.gih_wr - c.global_wr) }))
     .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 5);
 
+  // 3. Enfin les Traps
   const traps = archCards
     .filter((c: any) => c.gih_wr && c.global_wr)
     .filter((c: any) => {
@@ -42,12 +53,10 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
     .filter((c: any) => c.gih_wr < top25Threshold)
     .filter((c: any) => isSealed || (c.alsa && c.alsa <= 4.0))
     .filter((c: any) => c.gih_wr < c.global_wr - 1.0)
+    // Condition Faiblesse vs Deck (Strict en Sealed, Tolérance +1.0 en Draft)
+    .filter((c: any) => isSealed ? c.gih_wr < deck.wr : c.gih_wr < (deck.wr + 1.0))
     .sort((a: any, b: any) => a.gih_wr - b.gih_wr)
     .slice(0, 5);
-
-  const commons = archCards.filter((c: any) => normalizeRarity(c.rarity) === 'C' && c.gih_wr).sort((a: any, b: any) => b.gih_wr - a.gih_wr).slice(0, 5);
-  const uncommons = archCards.filter((c: any) => normalizeRarity(c.rarity) === 'U' && c.gih_wr).sort((a: any, b: any) => b.gih_wr - a.gih_wr).slice(0, 5);
-  const bestCard = commons[0] || uncommons[0];
 
   const Section: React.FC<{ title: string; icon: any; cards: any[]; colorClass: string }> = ({ title, icon: Icon, cards, colorClass }) => (
     <section className="mb-6 bg-slate-900/50 p-4 rounded-xl border border-slate-800/50">
@@ -110,7 +119,6 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
               <h2 className="text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">{normalizeArchetypeName(deck.name)}</h2>
             </div>
             <div className="flex flex-col w-full max-w-xs gap-3">
-              {/* Mobile: 3 blocs en ligne / Desktop: 2 + 1 */}
               <div className="flex gap-2 md:gap-4">
                 <div className="flex-1 bg-black/40 rounded-xl p-2 md:p-3 border border-white/10 backdrop-blur-md flex flex-col items-center justify-center shadow-lg">
                   <span className="text-[8px] md:text-[9px] uppercase font-bold text-slate-400 mb-0.5 md:mb-1">Win Rate</span>
