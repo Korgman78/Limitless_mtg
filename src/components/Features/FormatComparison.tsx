@@ -4,15 +4,20 @@ import { Search, Zap, ArrowUpDown, AlertTriangle, PieChart as PieChartIcon, Repe
 import type { FormatComparisonProps, FormatOption } from '../../types';
 import { FORMAT_OPTIONS, RARITY_STYLES } from '../../constants';
 import { useDebounce } from '../../hooks/useDebounce';
-import { extractColors, normalizeRarity, getCardImage } from '../../utils/helpers';
+import { useCoachMarks } from '../../hooks/useCoachMarks';
+import { extractColors, normalizeRarity, getCardImage, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { ComparisonRowSkeleton } from '../Common/Skeleton';
+import { CoachMarkWrapper } from '../Common/CoachMark';
 import { useFormatComparison } from '../../queries/useFormatComparison';
 
 export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet }) => {
   const [formatA, setFormatA] = useState<string>('PremierDraft');
   const [formatB, setFormatB] = useState<string>('ArenaDirect_Sealed');
   const [compareMode, setCompareMode] = useState<string>('archetypes');
+
+  // Coach marks for onboarding
+  const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
 
   const { data = [], isLoading: loading, error } = useFormatComparison(activeSet, compareMode);
   const fetchError = error ? 'Failed to load comparison data' : null;
@@ -238,14 +243,23 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                     <option value="splash">2 Col. + Splash</option>
                     <option value="3color">3 Colors</option>
                   </select>
-                  <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-shrink-0">
-                    <button onClick={() => setMetricMode('winrate')} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                      <Trophy size={9} /> WR
-                    </button>
-                    <button onClick={() => setMetricMode('meta')} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                      <PieChartIcon size={9} /> META
-                    </button>
-                  </div>
+                  <CoachMarkWrapper
+                    id="format-metric-mode"
+                    message={getMessage('format-metric-mode')}
+                    isUnseen={isUnseen('format-metric-mode')}
+                    onMarkSeen={() => markAsSeen('format-metric-mode')}
+                    position="bottom"
+                    delay={1500}
+                  >
+                    <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-shrink-0">
+                      <button onClick={() => { setMetricMode('winrate'); markAsSeen('format-metric-mode'); }} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                        <Trophy size={9} /> WR
+                      </button>
+                      <button onClick={() => { setMetricMode('meta'); markAsSeen('format-metric-mode'); }} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
+                        <PieChartIcon size={9} /> META
+                      </button>
+                    </div>
+                  </CoachMarkWrapper>
                   <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-2 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0" title={sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}>
                     <ArrowUpDown size={14} />
                   </button>
@@ -253,15 +267,43 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
               )}
             </div>
             {compareMode === 'archetypes' && (
-              <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black flex items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest ml-auto">
-                <SortButtonContent />
-              </button>
+              <CoachMarkWrapper
+                id="format-sort-direction"
+                message={getMessage('format-sort-direction')}
+                isUnseen={isUnseen('format-sort-direction')}
+                onMarkSeen={() => markAsSeen('format-sort-direction')}
+                position="left"
+                delay={2000}
+                className="hidden md:block ml-auto"
+              >
+                <button onClick={() => { setSortDir(p => p === 'desc' ? 'asc' : 'desc'); markAsSeen('format-sort-direction'); }} className="flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest">
+                  <SortButtonContent />
+                </button>
+              </CoachMarkWrapper>
             )}
           </div>
         </div>
       </div>
 
       <div className="space-y-3 pb-32">
+        {/* Mobile tip for tapping stats */}
+        <AnimatePresence>
+          {isUnseen('format-tap-stats') && !loading && visibleData.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="md:hidden bg-indigo-900/30 border border-indigo-500/30 rounded-lg p-2.5 flex items-center gap-2"
+            >
+              <HelpCircle size={14} className="text-indigo-400 flex-shrink-0" />
+              <p className="text-[11px] text-indigo-200 flex-1">{getMessage('format-tap-stats')}</p>
+              <button onClick={() => markAsSeen('format-tap-stats')} className="text-indigo-400 hover:text-white p-1">
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {loading ? (
           <div className="space-y-3">
             {[...Array(8)].map((_, i) => <ComparisonRowSkeleton key={i} />)}
@@ -300,10 +342,11 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                       </div>
                     ) : (
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2 bg-slate-950 rounded-full border border-slate-800 shadow-inner shrink-0 flex items-center justify-center">
-                          <ManaIcons colors={extractColors(item.filter_context)} size="lg" />
-                        </div>
-                        <span className="font-black text-xs md:text-sm text-slate-100 truncate tracking-tight pt-0.5">{item.filter_context}</span>
+                        <ManaIcons colors={extractColors(item.filter_context)} size="lg" />
+                        <span className="font-black text-xs md:text-sm text-slate-100 truncate tracking-tight pt-0.5">
+                          <span className="md:hidden">{getArchetypeAcronym(item.filter_context)}</span>
+                          <span className="hidden md:inline">{normalizeArchetypeName(item.filter_context)}</span>
+                        </span>
                       </div>
                     )}
                     {compareMode === 'cards' && (
@@ -313,10 +356,27 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                     )}
                   </div>
                   <div className="flex flex-row items-center gap-2 md:gap-3 flex-shrink-0">
-                    <button onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); }}
-                      className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90" aria-label="Switch format view">
-                      <Repeat size={16} />
-                    </button>
+                    {idx === 0 ? (
+                      <CoachMarkWrapper
+                        id="format-toggle-mobile"
+                        message={getMessage('format-toggle-mobile')}
+                        isUnseen={isUnseen('format-toggle-mobile')}
+                        onMarkSeen={() => markAsSeen('format-toggle-mobile')}
+                        position="left"
+                        delay={1000}
+                        className="md:hidden"
+                      >
+                        <button onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); markAsSeen('format-toggle-mobile'); }}
+                          className="p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90" aria-label="Switch format view">
+                          <Repeat size={16} />
+                        </button>
+                      </CoachMarkWrapper>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); }}
+                        className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90" aria-label="Switch format view">
+                        <Repeat size={16} />
+                      </button>
+                    )}
                     <div className="flex flex-row gap-8 items-center">
                       <div className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
                         title={getStatsTooltip(getFormatLabel(formatA), item.valA)} onClick={(e) => handleStatClick(e, getStatsTooltip(getFormatLabel(formatA), item.valA))}>

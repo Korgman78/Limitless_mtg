@@ -18,12 +18,12 @@ export const PAIRS: ColorPair[] = [
   { code: 'UB', name: 'Dimir (UB)' },
   { code: 'BR', name: 'Rakdos (BR)' },
   { code: 'RG', name: 'Gruul (RG)' },
-  { code: 'WG', name: 'Selesnya (GW)' },
+  { code: 'WG', name: 'Selesnya (WG)' },
   { code: 'WB', name: 'Orzhov (WB)' },
   { code: 'UR', name: 'Izzet (UR)' },
   { code: 'BG', name: 'Golgari (BG)' },
-  { code: 'WR', name: 'Boros (RW)' },
-  { code: 'UG', name: 'Simic (GU)' }
+  { code: 'WR', name: 'Boros (WR)' },
+  { code: 'UG', name: 'Simic (UG)' }
 ];
 
 export const TRIOS: ColorPair[] = [

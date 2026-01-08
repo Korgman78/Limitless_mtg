@@ -47,3 +47,47 @@ export const calculateGrade = (cardArchWr: number | null | undefined, deckMeanWr
 
 export const getCardImage = (name: string): string =>
   `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=border_crop`;
+
+// Sort colors in WUBRG order
+export const sortColorsWUBRG = (colors: string): string => {
+  const order = ['W', 'U', 'B', 'R', 'G'];
+  const colorChars = colors.replace(/[^WUBRG]/g, '').split('');
+  return colorChars.sort((a, b) => order.indexOf(a) - order.indexOf(b)).join('');
+};
+
+// Normalize archetype name to have colors in WUBRG order
+// "Simic (GU)" → "Simic (UG)", "Boros (RW)" → "Boros (WR)"
+// Also handles "WU + Splash" → "WU + Splash" and "GU + Splash" → "UG + Splash"
+export const normalizeArchetypeName = (name: string): string => {
+  // Match pattern like "Name (XX)" or "Name (XXX)" with optional suffix
+  const matchWithName = name.match(/^(.+?)\s*\(([WUBRG]+)\)(.*)$/);
+  if (matchWithName) {
+    const [, prefix, colors, suffix] = matchWithName;
+    return `${prefix.trim()} (${sortColorsWUBRG(colors)})${suffix}`;
+  }
+
+  // Match pattern like "WU + Splash" or "GU + Splash"
+  const matchSplash = name.match(/^([WUBRG]+)\s*\+\s*Splash$/i);
+  if (matchSplash) {
+    return `${sortColorsWUBRG(matchSplash[1])} + Splash`;
+  }
+
+  // If it's just colors like "WU", "GU", "WUB", etc.
+  if (/^[WUBRG]{2,5}$/.test(name.trim())) {
+    return sortColorsWUBRG(name);
+  }
+
+  return name;
+};
+
+// Extract acronym from archetype name in WUBRG order
+// "Simic (GU)" → "UG", "WU" → "WU"
+export const getArchetypeAcronym = (name: string): string => {
+  const match = name.match(/\(([WUBRG]+)\)/);
+  if (match) {
+    return sortColorsWUBRG(match[1]);
+  }
+  // If it's just colors, sort them
+  const colors = name.replace(/[^WUBRG]/g, '');
+  return sortColorsWUBRG(colors);
+};

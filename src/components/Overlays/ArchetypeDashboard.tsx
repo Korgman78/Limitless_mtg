@@ -1,7 +1,7 @@
 import React from 'react';
 import { Star, Gem, AlertTriangle } from 'lucide-react';
 import type { ArchetypeDashboardProps } from '../../types';
-import { extractColors, getDeltaStyle, getCardImage, normalizeRarity } from '../../utils/helpers';
+import { extractColors, getDeltaStyle, getCardImage, normalizeRarity, normalizeArchetypeName } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
@@ -107,7 +107,7 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 mb-2">Archetype Analysis</span>
             <div className="flex items-center gap-3 mb-6 flex-col md:flex-row">
               <div className="transform scale-125 filter drop-shadow-lg"><ManaIcons colors={deck.colors.split(' +')[0]} size="lg" /></div>
-              <h2 className="text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">{deck.name}</h2>
+              <h2 className="text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">{normalizeArchetypeName(deck.name)}</h2>
             </div>
             <div className="flex flex-col w-full max-w-xs gap-3">
               {/* Mobile: 3 blocs en ligne / Desktop: 2 + 1 */}

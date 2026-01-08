@@ -18,15 +18,16 @@ import { useCards } from './queries/useCards';
 import { useDebounce } from './hooks/useDebounce';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
+import { useCoachMarks } from './hooks/useCoachMarks';
 
 // Utils
 import { haptics } from './utils/haptics';
 
 // Helpers
-import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage } from './utils/helpers';
+import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName } from './utils/helpers';
 
 // Components
-import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton } from './components/Common';
+import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay } from './components/Overlays';
@@ -34,6 +35,9 @@ import { FormatComparison, PressReview } from './components/Features';
 
 
 export default function MTGLimitedApp(): React.ReactElement {
+  // --- Coach Marks for Onboarding ---
+  const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
+
   // --- Persisted State (Smart Defaults) ---
   const [activeTab, setActiveTab] = useLocalStorage<string>('limitless-tab', 'decks');
   const [activeFormat, setActiveFormat] = useLocalStorage<string>('limitless-format', 'PremierDraft');
@@ -381,11 +385,24 @@ export default function MTGLimitedApp(): React.ReactElement {
                     >
                       <div className="flex items-center gap-3">
                         <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
-                        <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{deck.name}</h3></div>
+                        <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{normalizeArchetypeName(deck.name)}</h3></div>
                       </div>
                       <div className="flex flex-col items-end min-w-[5.5rem]">
                         <div className="flex items-center gap-2">
-                          <Sparkline data={deck.history} />
+                          {idx === 0 ? (
+                            <CoachMarkWrapper
+                              id="sparkline-longpress"
+                              message={getMessage('sparkline-longpress')}
+                              isUnseen={isUnseen('sparkline-longpress')}
+                              onMarkSeen={() => markAsSeen('sparkline-longpress')}
+                              position="left"
+                              delay={1500}
+                            >
+                              <Sparkline data={deck.history} />
+                            </CoachMarkWrapper>
+                          ) : (
+                            <Sparkline data={deck.history} />
+                          )}
                           <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                             {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
                           </span>

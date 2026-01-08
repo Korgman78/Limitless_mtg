@@ -4,6 +4,7 @@ import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshai
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
+import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { ManaIcons } from '../Common/ManaIcons';
 import { Tooltip } from '../Common/Tooltip';
 import { SwipeableOverlay } from './SwipeableOverlay';
@@ -140,6 +141,9 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
 export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose }) => {
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
+
+  // Coach marks for onboarding
+  const { isUnseen, markAsSeen } = useCoachMarks();
 
   // React Query for cross-performance data
   const { data, error } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
@@ -297,7 +301,22 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                               </div>
                             }
                           >
-                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-600 hover:bg-slate-500 rounded-full border-2 border-slate-800 z-20 cursor-help transition-colors" />
+                            <motion.div
+                              onClick={() => markAsSeen('deck-wr-point')}
+                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-600 hover:bg-slate-500 rounded-full border-2 border-slate-800 z-20 cursor-help transition-colors"
+                              animate={isUnseen('deck-wr-point') && idx === 0 ? {
+                                boxShadow: [
+                                  '0 0 0 0 rgba(99, 102, 241, 0)',
+                                  '0 0 0 6px rgba(99, 102, 241, 0.4)',
+                                  '0 0 0 0 rgba(99, 102, 241, 0)',
+                                ],
+                              } : {}}
+                              transition={{
+                                duration: 1.5,
+                                repeat: Infinity,
+                                repeatDelay: 0.5,
+                              }}
+                            />
                           </Tooltip>
                           {/* Delta bar */}
                           <div className={`absolute top-0 bottom-0 ${perf.cardWr >= perf.deckWr ? 'bg-emerald-500 left-1/2 rounded-r-full' : 'bg-red-500 right-1/2 rounded-l-full'}`}
