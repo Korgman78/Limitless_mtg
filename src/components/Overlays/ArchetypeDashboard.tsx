@@ -51,10 +51,12 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
       return cColors.split('').every((col: string) => deckBaseColors.includes(col));
     })
     .filter((c: any) => c.gih_wr < top25Threshold)
+    // NOUVELLE CONDITION : On exclut les cartes qui restent très fortes malgré tout
+    .filter((c: any) => c.gih_wr <= globalMeanWR + 4.0)
     .filter((c: any) => isSealed || (c.alsa && c.alsa <= 4.0))
     .filter((c: any) => c.gih_wr < c.global_wr - 1.0)
     // Condition Faiblesse vs Deck (Strict en Sealed, Tolérance +1.0 en Draft)
-    .filter((c: any) => isSealed ? c.gih_wr < deck.wr : c.gih_wr < (deck.wr + 1.0))
+    .filter((c: any) => isSealed ? c.gih_wr < deck.wr : c.gih_wr < (deck.wr + 0.5))
     .sort((a: any, b: any) => a.gih_wr - b.gih_wr)
     .slice(0, 5);
 
@@ -66,7 +68,7 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
       </div>
       <div className="space-y-2">
         {loading ? <div className="text-xs text-slate-500 italic">Loading...</div> :
-          cards.length === 0 ? <div className="text-xs text-slate-500 italic">No data.</div> :
+          cards.length === 0 ? <div className="text-xs text-slate-500 italic">No matching cards found.</div> :
             cards.map((c: any) => (
               <button key={c.id} onClick={() => onCardClick(c)} className="w-full flex items-center gap-3 p-2 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-500 hover:bg-slate-800 transition-all group">
                 <img src={getCardImage(c.card_name)} className="w-8 h-11 rounded object-cover bg-black" loading="lazy" />
