@@ -18,10 +18,15 @@ interface CardEvaluationBlockProps {
   onCardSelect?: (card: Card) => void;
   showPeers: boolean;
   setShowPeers: (show: boolean) => void;
+  displayWR?: number | null;  // WR à afficher (prioritaire sur card.gih_wr)
+  displayALSA?: number | null;  // ALSA à afficher (prioritaire sur card.alsa)
 }
 
-const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers }) => {
-  if (!card.gih_wr) return null;
+const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers, displayWR, displayALSA }) => {
+  // Utiliser les valeurs display si fournies, sinon fallback sur card
+  const effectiveWR = displayWR ?? card.gih_wr;
+  const effectiveALSA = displayALSA ?? card.alsa;
+  if (!effectiveWR) return null;
 
   const getRank = (list: any[], metric: string, val: any, asc: boolean = false): { rank: number; total: number } => {
     const valid = list.filter((c: any) => c[metric] !== null);
@@ -100,7 +105,11 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
   const minALSA = 1.25;
   const maxALSA = 8.75;
 
-  const alsa = card.alsa ?? 0;
+  // For Sealed: use fixed scale based on delta thresholds (+9 top, -8 bottom)
+  const sealedDisplayMinWR = AVG_WR - 8;
+  const sealedDisplayMaxWR = AVG_WR + 9;
+
+  const alsa = effectiveALSA ?? 0;
   let statusText = "Average Card"; let statusColor = "text-slate-400";
 
   if (hasAlsa) {
@@ -121,17 +130,17 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
     const col = alsa < midLeftALSA ? 1 : alsa < AVG_ALSA ? 2 : alsa < midRightALSA ? 3 : 4;
 
     // Déterminer ligne (1-5)
-    const row = card.gih_wr >= wrRow1Threshold ? 1
-              : card.gih_wr >= wrRow2Threshold ? 2
-              : card.gih_wr >= AVG_WR ? 3
-              : card.gih_wr >= wrRow4Threshold ? 4
+    const row = effectiveWR >= wrRow1Threshold ? 1
+              : effectiveWR >= wrRow2Threshold ? 2
+              : effectiveWR >= AVG_WR ? 3
+              : effectiveWR >= wrRow4Threshold ? 4
               : 5;
 
     // Zone centrale PLAYABLE (prioritaire)
-    const isPlayable = Math.abs(card.gih_wr - AVG_WR) <= 0.5 && col >= 2 && col <= 3;
+    const isPlayable = Math.abs(effectiveWR - AVG_WR) <= 0.5 && col >= 2 && col <= 3;
 
     // Règle prioritaire #1 : BOMB si WR >= bestWR - 4
-    const isBombTier = card.gih_wr >= bestWR - 4;
+    const isBombTier = effectiveWR >= bestWR - 4;
 
     if (isBombTier) {
       statusText = "Bomb"; statusColor = "text-purple-400";
@@ -171,34 +180,60 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
       statusText = text; statusColor = color;
     }
   } else {
-    // Sans ALSA (Sealed) : évaluation basée uniquement sur WR
-    // Règle prioritaire : BOMB si WR >= bestWR - 4
-    if (card.gih_wr >= bestWR - 4) { statusText = "Bomb"; statusColor = "text-purple-400"; }
-    else if (card.gih_wr > AVG_WR + 3.0) { statusText = "Top Tier"; statusColor = "text-purple-400"; }
-    else if (card.gih_wr > AVG_WR + 1.0) { statusText = "Very Good"; statusColor = "text-emerald-400"; }
-    else if (card.gih_wr < AVG_WR - 3.0) { statusText = "Avoid"; statusColor = "text-red-400"; }
-    else if (card.gih_wr < AVG_WR - 1.0) { statusText = "Below Average"; statusColor = "text-slate-500"; }
-    else { statusText = "Playable"; statusColor = "text-slate-400"; }
+    // Sans ALSA (Sealed) : évaluation basée sur delta par rapport à la moyenne
+    const delta = effectiveWR - AVG_WR;
+    if (delta >= 9) { statusText = "Bomb"; statusColor = "text-purple-400"; }
+    else if (delta >= 7) { statusText = "Top Tier"; statusColor = "text-purple-400"; }
+    else if (delta >= 5) { statusText = "Very Good"; statusColor = "text-emerald-400"; }
+    else if (delta >= 3) { statusText = "Good"; statusColor = "text-emerald-400"; }
+    else if (delta >= 1) { statusText = "Solid Playable"; statusColor = "text-slate-300"; }
+    else if (delta >= -1) { statusText = "Playable"; statusColor = "text-slate-400"; }
+    else if (delta >= -3) { statusText = "Filler"; statusColor = "text-slate-500"; }
+    else if (delta >= -5) { statusText = "Bad"; statusColor = "text-amber-400"; }
+    else { statusText = "Chaff"; statusColor = "text-red-500"; }
   }
   const xPos = hasAlsa ? ((Math.max(minALSA, Math.min(maxALSA, alsa)) - minALSA) / (maxALSA - minALSA)) * 100 : 50;
-  const yPos = 100 - ((Math.max(minWR, Math.min(maxWR, card.gih_wr)) - minWR) / (maxWR - minWR)) * 100;
   const xAvg = ((AVG_ALSA - minALSA) / (maxALSA - minALSA)) * 100;
-  const yAvg = 100 - ((AVG_WR - minWR) / (maxWR - minWR)) * 100;
+
+  // Use different WR scale for Sealed (fixed delta-based) vs Draft (dynamic)
+  const displayMinWR = hasAlsa ? minWR : sealedDisplayMinWR;
+  const displayMaxWR = hasAlsa ? maxWR : sealedDisplayMaxWR;
+
+  const yAvg = 100 - ((AVG_WR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
+
+  // Calculate Y position, clamping to 2-98% range to keep dots visible
+  const getYPosition = (wr: number) => {
+    const clampedWR = Math.max(displayMinWR, Math.min(displayMaxWR, wr));
+    const y = 100 - ((clampedWR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
+    return Math.max(2, Math.min(98, y));
+  };
+
+  const yPos = getYPosition(effectiveWR);
 
   // Compute peer positions for matrix overlay
   const peerDots = useMemo(() => {
-    if (!showPeers || !hasAlsa) return [];
-    return peersColor
-      .filter((c: Card) => c.name !== card.name && c.gih_wr && c.alsa)
-      .map((c: Card) => ({
-        card: c,
-        name: c.name,
-        wr: c.gih_wr!,
-        alsa: c.alsa!,
-        x: ((Math.max(minALSA, Math.min(maxALSA, c.alsa!)) - minALSA) / (maxALSA - minALSA)) * 100,
-        y: 100 - ((Math.max(minWR, Math.min(maxWR, c.gih_wr!)) - minWR) / (maxWR - minWR)) * 100,
-      }));
-  }, [showPeers, hasAlsa, peersColor, card.name, minWR, maxWR]);
+    if (!showPeers) return [];
+
+    const peers = peersColor.filter((c: Card) => c.name !== card.name && c.gih_wr);
+
+    // For Sealed: distribute dots evenly across width with small jitter
+    const sealedXPositions = peers.map((_, idx) => {
+      const baseX = 10 + (idx / Math.max(1, peers.length - 1)) * 80; // 10% to 90%
+      const jitter = (idx % 3 - 1) * 3; // -3, 0, or +3 for slight variation
+      return Math.max(8, Math.min(92, baseX + jitter));
+    });
+
+    return peers.map((c: Card, idx: number) => ({
+      card: c,
+      name: c.name,
+      wr: c.gih_wr!,
+      alsa: c.alsa ?? null,
+      x: hasAlsa && c.alsa
+        ? ((Math.max(minALSA, Math.min(maxALSA, c.alsa)) - minALSA) / (maxALSA - minALSA)) * 100
+        : sealedXPositions[idx],
+      y: getYPosition(c.gih_wr!),
+    }));
+  }, [showPeers, hasAlsa, peersColor, card.name, displayMinWR, displayMaxWR, minALSA, maxALSA]);
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 mt-6">
@@ -214,7 +249,7 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
             <div className="text-[10px] text-slate-500 leading-relaxed">
               {hasAlsa ? <>Comparing <strong>Pick Order (ALSA)</strong> vs <strong>Win Rate</strong>.<br />High WR + Late Pick = Underrated.</> : <>Based solely on <strong>Games In Hand Win Rate</strong>.</>}
             </div>
-            {hasAlsa && peersColor.length > 1 && (
+            {peersColor.length > 1 && (
               <button
                 onClick={() => setShowPeers(!showPeers)}
                 className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 mt-2 ${
@@ -229,65 +264,125 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
               </button>
             )}
           </div>
-          {hasAlsa && (
-            <div className="flex flex-row items-center gap-2 md:gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
-              <div className="h-32 md:h-44 lg:h-52 xl:h-60 flex items-center justify-center w-4 md:w-5 flex-shrink-0">
-                <span className="-rotate-90 text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Win Rate</span>
-              </div>
-              <div className="flex flex-col gap-2 flex-1 sm:w-48 md:w-56 lg:w-72 xl:w-80">
-                <div className="relative w-full h-32 md:h-44 lg:h-52 xl:h-60 bg-slate-950 rounded-lg md:rounded-xl border border-slate-800 shadow-inner overflow-hidden">
-                  <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-700/50" style={{ left: `${xAvg}%` }}></div>
-                  <div className="absolute left-0 right-0 border-t border-dashed border-slate-700/50" style={{ top: `${yAvg}%` }}></div>
-                  <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-purple-500/50 font-black">TOP TIER</div>
-                  <div className="absolute top-1 right-1 md:top-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-emerald-500/50 font-black">GEM</div>
-                  <div className="absolute bottom-1 left-1 md:bottom-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-red-500/50 font-black">OVERRATED</div>
-                  <div className="absolute bottom-1 right-1 md:bottom-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-slate-600/50 font-black">CHAFF</div>
+          <div className="flex flex-row items-center gap-2 md:gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
+            <div className="h-32 md:h-44 lg:h-52 xl:h-60 flex items-center justify-center w-4 md:w-5 flex-shrink-0">
+              <span className="-rotate-90 text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Win Rate</span>
+            </div>
+            <div className="flex flex-col gap-2 flex-1 sm:w-48 md:w-56 lg:w-72 xl:w-80">
+              <div className="relative w-full h-32 md:h-44 lg:h-52 xl:h-60 bg-slate-950 rounded-lg md:rounded-xl border border-slate-800 shadow-inner overflow-hidden">
+                {/* Moyenne line (always shown) */}
+                <div className="absolute left-0 right-0 border-t border-dashed border-slate-700/50" style={{ top: `${yAvg}%` }}></div>
 
-                  {/* Peer dots with staggered animation */}
-                  {peerDots.map((peer, idx) => (
-                    <Tooltip
-                      key={peer.name}
-                      content={
-                        <div className="text-center whitespace-nowrap">
-                          <div className="text-[10px] font-bold text-white mb-1">{peer.name}</div>
-                          <div className="flex gap-3 text-[9px]">
-                            <span className="text-slate-400">WR: <span className={getDeltaStyle(peer.wr, 55)}>{peer.wr.toFixed(1)}%</span></span>
-                            <span className="text-slate-400">ALSA: <span className="text-white">{peer.alsa.toFixed(2)}</span></span>
-                          </div>
+                {hasAlsa ? (
+                  <>
+                    {/* Draft mode: 2D matrix with ALSA axis */}
+                    <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-700/50" style={{ left: `${xAvg}%` }}></div>
+                    <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-purple-500/50 font-black">TOP TIER</div>
+                    <div className="absolute top-1 right-1 md:top-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-emerald-500/50 font-black">GEM</div>
+                    <div className="absolute bottom-1 left-1 md:bottom-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-red-500/50 font-black">OVERRATED</div>
+                    <div className="absolute bottom-1 right-1 md:bottom-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-slate-600/50 font-black">CHAFF</div>
+                  </>
+                ) : (() => {
+                  // Calculate dynamic positions based on WR scale
+                  // Use displayMinWR/displayMaxWR for consistent scale with dot positions
+                  const wrRange = displayMaxWR - displayMinWR; // 17 points for Sealed (+9 to -8)
+                  const pctPerPoint = 100 / wrRange;
+
+                  // Calculate Y positions for each threshold (delta from average)
+                  const getY = (delta: number) => Math.max(0, Math.min(100, yAvg - (delta * pctPerPoint)));
+
+                  // Threshold positions - with fixed scale, these map exactly to the grid
+                  const y9 = getY(9);   // BOMB threshold = 0%
+                  const y7 = getY(7);   // TOP TIER threshold
+                  const y5 = getY(5);   // VERY GOOD threshold
+                  const y3 = getY(3);   // GOOD threshold
+                  const y1 = getY(1);   // PLAYABLE top
+                  const yM1 = getY(-1); // PLAYABLE bottom
+                  const yM3 = getY(-3); // FILLER threshold
+                  const yM5 = getY(-5); // BAD/CHAFF threshold
+                  const yM8 = getY(-8); // Bottom = 100%
+
+                  return (
+                    <>
+                      {/* Sealed mode: Dynamic horizontal bands based on WR thresholds */}
+                      {/* BOMB zone */}
+                      <div className="absolute left-0 right-0 bg-purple-500/20" style={{ top: 0, height: `${y9}%` }} />
+                      {/* TOP TIER zone */}
+                      <div className="absolute left-0 right-0 bg-purple-500/10" style={{ top: `${y9}%`, height: `${y7 - y9}%` }} />
+                      {/* VERY GOOD zone */}
+                      <div className="absolute left-0 right-0 bg-emerald-500/10" style={{ top: `${y7}%`, height: `${y5 - y7}%` }} />
+                      {/* GOOD zone */}
+                      <div className="absolute left-0 right-0 bg-emerald-500/5" style={{ top: `${y5}%`, height: `${y3 - y5}%` }} />
+                      {/* SOLID PLAYABLE zone */}
+                      <div className="absolute left-0 right-0 bg-slate-500/5" style={{ top: `${y3}%`, height: `${y1 - y3}%` }} />
+                      {/* PLAYABLE zone - centered on average */}
+                      <div className="absolute left-0 right-0 bg-slate-400/10 border-y border-slate-500/20" style={{ top: `${y1}%`, height: `${yM1 - y1}%` }} />
+                      {/* FILLER zone */}
+                      <div className="absolute left-0 right-0 bg-slate-600/5" style={{ top: `${yM1}%`, height: `${yM3 - yM1}%` }} />
+                      {/* BAD zone (-3 to -5) */}
+                      <div className="absolute left-0 right-0 bg-amber-500/10" style={{ top: `${yM3}%`, height: `${yM5 - yM3}%` }} />
+                      {/* CHAFF zone (-5 to bottom) */}
+                      <div className="absolute left-0 right-0 bg-red-500/15" style={{ top: `${yM5}%`, bottom: 0 }} />
+
+                      {/* Labels positioned at zone centers */}
+                      {y9 > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/80 font-black" style={{ top: `${y9 / 2}%`, transform: 'translateY(-50%)' }}>BOMB</div>}
+                      {(y7 - y9) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/60 font-black" style={{ top: `${(y9 + y7) / 2}%`, transform: 'translateY(-50%)' }}>TOP TIER</div>}
+                      {(y5 - y7) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-emerald-400/70 font-black" style={{ top: `${(y7 + y5) / 2}%`, transform: 'translateY(-50%)' }}>VERY GOOD</div>}
+                      {(y3 - y5) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-emerald-400/50 font-black" style={{ top: `${(y5 + y3) / 2}%`, transform: 'translateY(-50%)' }}>GOOD</div>}
+                      {/* PLAYABLE always shown, centered on average */}
+                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-300/80 font-black" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>PLAYABLE</div>
+                      {(yM3 - yM1) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-500/70 font-black" style={{ top: `${(yM1 + yM3) / 2}%`, transform: 'translateY(-50%)' }}>FILLER</div>}
+                      {(100 - yM5) > 6 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-red-400/80 font-black" style={{ top: `${(yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>}
+                    </>
+                  );
+                })()}
+
+                {/* Peer dots with staggered animation */}
+                {peerDots.map((peer, idx) => (
+                  <Tooltip
+                    key={peer.name}
+                    content={
+                      <div className="text-center whitespace-nowrap">
+                        <div className="text-[10px] font-bold text-white mb-1">{peer.name}</div>
+                        <div className="flex gap-3 text-[9px]">
+                          <span className="text-slate-400">WR: <span className={getDeltaStyle(peer.wr, AVG_WR)}>{peer.wr.toFixed(1)}%</span></span>
+                          {peer.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{peer.alsa.toFixed(2)}</span></span>}
                         </div>
-                      }
-                    >
-                      <motion.div
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 400,
-                          damping: 20,
-                          delay: idx * 0.025
-                        }}
-                        onClick={() => onCardSelect?.(peer.card)}
-                        className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 bg-slate-400/70 hover:bg-slate-300 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
-                        style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
-                      />
-                    </Tooltip>
-                  ))}
+                      </div>
+                    }
+                  >
+                    <motion.div
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 400,
+                        damping: 20,
+                        delay: idx * 0.025
+                      }}
+                      onClick={() => onCardSelect?.(peer.card)}
+                      className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 bg-slate-400/70 hover:bg-slate-300 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
+                      style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
+                    />
+                  </Tooltip>
+                ))}
 
-                  {/* Main card dot - always on top */}
-                  <motion.div
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: 'spring', delay: 0.2 }}
-                    className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
-                    style={{ left: `${xPos}%`, top: `${yPos}%` }}
-                  />
-                </div>
-                <div className="text-center">
-                  <span className="text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest">Pick Order (ALSA)</span>
-                </div>
+                {/* Main card dot - always on top */}
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', delay: 0.2 }}
+                  className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${xPos}%`, top: `${yPos}%` }}
+                />
+              </div>
+              <div className="text-center">
+                <span className="text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest">
+                  {hasAlsa ? 'Pick Order (ALSA)' : 'Performance vs Format Average'}
+                </span>
               </div>
             </div>
-          )}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800/50">
           <div className="space-y-2">
@@ -432,7 +527,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} />
+          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
 
           <div>
             <div className="flex justify-between items-center mb-3">

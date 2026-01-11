@@ -10,22 +10,28 @@ export const Sparkline: React.FC<SparklineProps & { width?: number; height?: num
 }) => {
   const safeData: number[] = (data && data.length > 0) ? data : [0, 0];
 
+  const first = safeData[0];
+  const last = safeData[safeData.length - 1];
+  const delta = last - first;
+  const days = safeData.length;
+
+  // Seuil de significativité : entre -0.1 et +0.1 est considéré comme stable
+  const isRising = delta > 0.1;
+  const isFalling = delta < -0.1;
+  const isFlat = !isRising && !isFalling;
+
   const min = Math.min(...safeData);
   const max = Math.max(...safeData);
   const range = max - min || 1;
 
-  const points = safeData.map((d: number, i: number) => {
-    const x = (i / ((safeData.length - 1) || 1)) * width;
-    const y = height - ((d - min) / range) * height;
-    return `${x},${y}`;
-  }).join(' ');
-
-  const first = safeData[0];
-  const last = safeData[safeData.length - 1];
-  const delta = last - first;
-  const isRising = delta > 0;
-  const isFalling = delta < 0;
-  const days = safeData.length;
+  // Si flat, on dessine une ligne horizontale au centre
+  const points = isFlat
+    ? `0,${height / 2} ${width},${height / 2}`
+    : safeData.map((d: number, i: number) => {
+        const x = (i / ((safeData.length - 1) || 1)) * width;
+        const y = height - ((d - min) / range) * height;
+        return `${x},${y}`;
+      }).join(' ');
 
   const colorClass = isRising ? 'text-emerald-400' : isFalling ? 'text-red-400' : 'text-slate-400';
   const strokeColor = isRising ? '#10b981' : isFalling ? '#ef4444' : '#64748b';

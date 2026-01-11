@@ -17,9 +17,34 @@ export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history }) => {
   if (Math.abs(delta) < 0.1) return null;
 
   const isPositive = delta > 0;
-  const colorClass = isPositive ? 'text-emerald-400' : 'text-red-400';
-  const bgGlow = isPositive ? 'shadow-emerald-500/20' : 'shadow-red-500/20';
   const Icon = isPositive ? TrendingUp : TrendingDown;
+
+  // Couleurs et inclinaisons selon l'intensité du mouvement
+  let colorClass: string;
+  let bgGlow: string;
+  let rotation: string;
+
+  if (delta > 0.5) {
+    // Forte hausse → vert foncé, flèche plus verticale
+    colorClass = 'text-emerald-500';
+    bgGlow = 'shadow-emerald-500/30';
+    rotation = '-rotate-12';
+  } else if (delta > 0.1) {
+    // Légère hausse → vert pomme, flèche standard
+    colorClass = 'text-lime-400';
+    bgGlow = 'shadow-lime-400/20';
+    rotation = '';
+  } else if (delta < -0.5) {
+    // Forte baisse → rouge, flèche plus verticale
+    colorClass = 'text-red-400';
+    bgGlow = 'shadow-red-500/20';
+    rotation = 'rotate-12';
+  } else {
+    // Légère baisse → orange, flèche standard
+    colorClass = 'text-amber-400';
+    bgGlow = 'shadow-amber-500/20';
+    rotation = '';
+  }
 
   const tooltipContent = (
     <div className="flex flex-col items-center gap-1 whitespace-nowrap">
@@ -40,7 +65,7 @@ export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history }) => {
 
   const iconElement = (
     <div
-      className={`flex items-center justify-center w-6 h-6 rounded-full bg-slate-900/80 border border-white/10 ${colorClass} hover:bg-slate-800 hover:border-white/20 transition-all shadow-lg ${bgGlow}`}
+      className={`flex items-center justify-center w-6 h-6 rounded-full bg-slate-900/80 border border-white/10 ${colorClass} hover:bg-slate-800 hover:border-white/20 transition-all shadow-lg ${bgGlow} ${rotation}`}
     >
       <Icon size={14} strokeWidth={2.5} />
     </div>

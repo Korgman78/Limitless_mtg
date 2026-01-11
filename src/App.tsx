@@ -332,8 +332,31 @@ export default function MTGLimitedApp(): React.ReactElement {
           </AnimatePresence>
 
           {loading && activeTab === 'cards' && (
-            <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
-              {[...Array(12)].map((_, i) => <CardSkeleton key={i} />)}
+            <div className="p-2 md:p-0 pt-2">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center justify-center gap-2 py-3 mb-2"
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+                />
+                <span className="text-xs text-slate-400">Loading {activeFormat} cards...</span>
+              </motion.div>
+              <div className="space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
+                {[...Array(12)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                  >
+                    <CardSkeleton />
+                  </motion.div>
+                ))}
+              </div>
             </div>
           )}
 
