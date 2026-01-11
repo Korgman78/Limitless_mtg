@@ -122,6 +122,7 @@ export interface CardDetailOverlayProps {
   decks: Deck[];
   cards: Card[];
   onClose: () => void;
+  onCardSelect?: (card: Card) => void;
 }
 
 export interface FormatComparisonProps {

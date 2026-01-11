@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
@@ -12,7 +12,15 @@ import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 
 // --- BLOC D'ÉVALUATION ---
-const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card, allCards }) => {
+interface CardEvaluationBlockProps {
+  card: Card;
+  allCards: Card[];
+  onCardSelect?: (card: Card) => void;
+  showPeers: boolean;
+  setShowPeers: (show: boolean) => void;
+}
+
+const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers }) => {
   if (!card.gih_wr) return null;
 
   const getRank = (list: any[], metric: string, val: any, asc: boolean = false): { rank: number; total: number } => {
@@ -57,25 +65,140 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
     );
   };
 
-  const AVG_WR = 55.0; const AVG_ALSA = 4.5;
+  // Dynamic WR & ALSA stats computed from format data
+  const formatStats = useMemo(() => {
+    const validWRs = allCards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined).map(c => c.gih_wr!).sort((a, b) => a - b);
+    const validALSAs = allCards.filter(c => c.alsa !== null && c.alsa !== undefined).map(c => c.alsa!).sort((a, b) => a - b);
+
+    // WR stats
+    const avgWR = validWRs.length > 0
+      ? validWRs.reduce((sum, wr) => sum + wr, 0) / validWRs.length
+      : 55;
+    const minWRActual = validWRs[0] ?? 45;
+    const maxWRActual = validWRs[validWRs.length - 1] ?? 70;
+
+    // ALSA stats
+    const avgALSA = validALSAs.length > 0
+      ? validALSAs.reduce((sum, a) => sum + a, 0) / validALSAs.length
+      : 4.5;
+
+    return {
+      avgWR,
+      minWR: Math.floor(minWRActual - 1),
+      maxWR: Math.ceil(maxWRActual + 1),
+      bestWR: maxWRActual,
+      avgALSA,
+    };
+  }, [allCards]);
+
+  const AVG_WR = formatStats.avgWR;
+  const minWR = formatStats.minWR;
+  const maxWR = formatStats.maxWR;
+  const bestWR = formatStats.bestWR;
+
+  const AVG_ALSA = formatStats.avgALSA;
+  const minALSA = 1.25;
+  const maxALSA = 8.75;
+
   const alsa = card.alsa ?? 0;
   let statusText = "Average Card"; let statusColor = "text-slate-400";
-  if (hasAlsa) {
-    if (card.gih_wr > AVG_WR + 2.0 && alsa > AVG_ALSA + 0.5) { statusText = "Underrated Gem"; statusColor = "text-emerald-400"; }
-    else if (card.gih_wr > AVG_WR + 2.0 && alsa <= AVG_ALSA + 0.5) { statusText = "Top Tier / Bomb"; statusColor = "text-purple-400"; }
-    else if (card.gih_wr < AVG_WR - 2.0 && alsa <= AVG_ALSA - 0.5) { statusText = "Overrated"; statusColor = "text-red-400"; }
-    else if (card.gih_wr < AVG_WR - 2.0 && alsa > AVG_ALSA - 0.5) { statusText = "Chaff / Filler"; statusColor = "text-slate-500"; }
-  } else {
-    if (card.gih_wr > AVG_WR + 3.0) { statusText = "Top Tier"; statusColor = "text-purple-400"; }
-    else if (card.gih_wr > AVG_WR + 1.0) { statusText = "Very Good"; statusColor = "text-emerald-400"; }
-    else if (card.gih_wr < AVG_WR - 3.0) { statusText = "Avoid / Bad"; statusColor = "text-red-400"; }
-  }
 
-  const minALSA = 1.0; const maxALSA = 8.0; const minWR = 45.0; const maxWR = 68.0;
+  if (hasAlsa) {
+    // Calcul des seuils de colonnes (ALSA)
+    const midLeftALSA = (minALSA + AVG_ALSA) / 2;
+    const midRightALSA = (AVG_ALSA + maxALSA) / 2;
+
+    // Calcul des seuils de lignes (WR)
+    // Au-dessus de AVG_WR : 3 tiers égaux
+    const wrAboveRange = maxWR - AVG_WR;
+    const wrRow1Threshold = AVG_WR + (2 * wrAboveRange / 3);
+    const wrRow2Threshold = AVG_WR + (wrAboveRange / 3);
+    // En-dessous de AVG_WR : 2 moitiés égales
+    const wrBelowRange = AVG_WR - minWR;
+    const wrRow4Threshold = AVG_WR - (wrBelowRange / 2);
+
+    // Déterminer colonne (1-4)
+    const col = alsa < midLeftALSA ? 1 : alsa < AVG_ALSA ? 2 : alsa < midRightALSA ? 3 : 4;
+
+    // Déterminer ligne (1-5)
+    const row = card.gih_wr >= wrRow1Threshold ? 1
+              : card.gih_wr >= wrRow2Threshold ? 2
+              : card.gih_wr >= AVG_WR ? 3
+              : card.gih_wr >= wrRow4Threshold ? 4
+              : 5;
+
+    // Zone centrale PLAYABLE (prioritaire)
+    const isPlayable = Math.abs(card.gih_wr - AVG_WR) <= 0.5 && col >= 2 && col <= 3;
+
+    // Règle prioritaire #1 : BOMB si WR >= bestWR - 4
+    const isBombTier = card.gih_wr >= bestWR - 4;
+
+    if (isBombTier) {
+      statusText = "Bomb"; statusColor = "text-purple-400";
+    } else if (isPlayable) {
+      statusText = "Playable"; statusColor = "text-slate-400";
+    } else {
+      // Grille 5x4 avec labels
+      const labels: Record<string, [string, string]> = {
+        "1-1": ["Bomb", "text-purple-400"],
+        "1-2": ["Underrated Bomb", "text-purple-400"],
+        "1-3": ["Absolute Gem", "text-emerald-400"],
+        "1-4": ["Absolute Gem", "text-emerald-400"],
+        "2-1": ["Top Tier", "text-purple-400"],
+        "2-2": ["Underrated Top Tier", "text-indigo-400"],
+        "2-3": ["Underrated Gem", "text-emerald-400"],
+        "2-4": ["Underrated Gem", "text-emerald-400"],
+        "3-1": ["Overrated Top Tier", "text-amber-400"],
+        "3-2": ["Good Pick", "text-emerald-400"],
+        "3-3": ["Gem", "text-emerald-400"],
+        "3-4": ["Good Filler", "text-slate-400"],
+        "4-1": ["Overhyped Trap", "text-red-400"],
+        "4-2": ["Bait", "text-amber-400"],
+        "4-3": ["Mediocre", "text-slate-500"],
+        "4-4": ["Filler", "text-slate-500"],
+        "5-1": ["Overhyped Trap", "text-red-400"],
+        "5-2": ["Bait", "text-amber-400"],
+        "5-3": ["Chaff", "text-slate-600"],
+        "5-4": ["Unplayable", "text-red-500"],
+      };
+      let [text, color] = labels[`${row}-${col}`] || ["Average Card", "text-slate-400"];
+
+      // Règle #2 : Overrated Top Tier + ALSA >= 2 → Top Tier
+      if (text === "Overrated Top Tier" && alsa >= 2) {
+        text = "Top Tier"; color = "text-purple-400";
+      }
+
+      statusText = text; statusColor = color;
+    }
+  } else {
+    // Sans ALSA (Sealed) : évaluation basée uniquement sur WR
+    // Règle prioritaire : BOMB si WR >= bestWR - 4
+    if (card.gih_wr >= bestWR - 4) { statusText = "Bomb"; statusColor = "text-purple-400"; }
+    else if (card.gih_wr > AVG_WR + 3.0) { statusText = "Top Tier"; statusColor = "text-purple-400"; }
+    else if (card.gih_wr > AVG_WR + 1.0) { statusText = "Very Good"; statusColor = "text-emerald-400"; }
+    else if (card.gih_wr < AVG_WR - 3.0) { statusText = "Avoid"; statusColor = "text-red-400"; }
+    else if (card.gih_wr < AVG_WR - 1.0) { statusText = "Below Average"; statusColor = "text-slate-500"; }
+    else { statusText = "Playable"; statusColor = "text-slate-400"; }
+  }
   const xPos = hasAlsa ? ((Math.max(minALSA, Math.min(maxALSA, alsa)) - minALSA) / (maxALSA - minALSA)) * 100 : 50;
   const yPos = 100 - ((Math.max(minWR, Math.min(maxWR, card.gih_wr)) - minWR) / (maxWR - minWR)) * 100;
   const xAvg = ((AVG_ALSA - minALSA) / (maxALSA - minALSA)) * 100;
   const yAvg = 100 - ((AVG_WR - minWR) / (maxWR - minWR)) * 100;
+
+  // Compute peer positions for matrix overlay
+  const peerDots = useMemo(() => {
+    if (!showPeers || !hasAlsa) return [];
+    return peersColor
+      .filter((c: Card) => c.name !== card.name && c.gih_wr && c.alsa)
+      .map((c: Card) => ({
+        card: c,
+        name: c.name,
+        wr: c.gih_wr!,
+        alsa: c.alsa!,
+        x: ((Math.max(minALSA, Math.min(maxALSA, c.alsa!)) - minALSA) / (maxALSA - minALSA)) * 100,
+        y: 100 - ((Math.max(minWR, Math.min(maxWR, c.gih_wr!)) - minWR) / (maxWR - minWR)) * 100,
+      }));
+  }, [showPeers, hasAlsa, peersColor, card.name, minWR, maxWR]);
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 mt-6">
@@ -91,30 +214,76 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
             <div className="text-[10px] text-slate-500 leading-relaxed">
               {hasAlsa ? <>Comparing <strong>Pick Order (ALSA)</strong> vs <strong>Win Rate</strong>.<br />High WR + Late Pick = Underrated.</> : <>Based solely on <strong>Games In Hand Win Rate</strong>.</>}
             </div>
+            {hasAlsa && peersColor.length > 1 && (
+              <button
+                onClick={() => setShowPeers(!showPeers)}
+                className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 mt-2 ${
+                  showPeers
+                    ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                }`}
+              >
+                <Users size={11} />
+                {showPeers ? 'Hide' : 'Show'} {rarityLabel.toLowerCase()} color peers
+                <span className="text-[9px] opacity-60">({peersColor.length - 1})</span>
+              </button>
+            )}
           </div>
           {hasAlsa && (
-            <div className="flex flex-row items-center gap-2 mt-4 sm:mt-0 w-full sm:w-auto">
-              <div className="h-32 flex items-center justify-center w-4 flex-shrink-0">
-                <span className="-rotate-90 text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Win Rate</span>
+            <div className="flex flex-row items-center gap-2 md:gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
+              <div className="h-32 md:h-44 lg:h-52 xl:h-60 flex items-center justify-center w-4 md:w-5 flex-shrink-0">
+                <span className="-rotate-90 text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Win Rate</span>
               </div>
-              <div className="flex flex-col gap-2 flex-1 sm:w-48">
-                <div className="relative w-full h-32 bg-slate-950 rounded-lg border border-slate-800 shadow-inner overflow-hidden">
+              <div className="flex flex-col gap-2 flex-1 sm:w-48 md:w-56 lg:w-72 xl:w-80">
+                <div className="relative w-full h-32 md:h-44 lg:h-52 xl:h-60 bg-slate-950 rounded-lg md:rounded-xl border border-slate-800 shadow-inner overflow-hidden">
                   <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-700/50" style={{ left: `${xAvg}%` }}></div>
                   <div className="absolute left-0 right-0 border-t border-dashed border-slate-700/50" style={{ top: `${yAvg}%` }}></div>
-                  <div className="absolute top-1 left-1 text-[8px] text-purple-500/50 font-black">BOMB</div>
-                  <div className="absolute top-1 right-1 text-[8px] text-emerald-500/50 font-black">GEM</div>
-                  <div className="absolute bottom-1 left-1 text-[8px] text-red-500/50 font-black">OVERRATED</div>
-                  <div className="absolute bottom-1 right-1 text-[8px] text-slate-600/50 font-black">CHAFF</div>
+                  <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-purple-500/50 font-black">TOP TIER</div>
+                  <div className="absolute top-1 right-1 md:top-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-emerald-500/50 font-black">GEM</div>
+                  <div className="absolute bottom-1 left-1 md:bottom-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-red-500/50 font-black">OVERRATED</div>
+                  <div className="absolute bottom-1 right-1 md:bottom-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-slate-600/50 font-black">CHAFF</div>
+
+                  {/* Peer dots with staggered animation */}
+                  {peerDots.map((peer, idx) => (
+                    <Tooltip
+                      key={peer.name}
+                      content={
+                        <div className="text-center whitespace-nowrap">
+                          <div className="text-[10px] font-bold text-white mb-1">{peer.name}</div>
+                          <div className="flex gap-3 text-[9px]">
+                            <span className="text-slate-400">WR: <span className={getDeltaStyle(peer.wr, 55)}>{peer.wr.toFixed(1)}%</span></span>
+                            <span className="text-slate-400">ALSA: <span className="text-white">{peer.alsa.toFixed(2)}</span></span>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <motion.div
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 400,
+                          damping: 20,
+                          delay: idx * 0.025
+                        }}
+                        onClick={() => onCardSelect?.(peer.card)}
+                        className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 bg-slate-400/70 hover:bg-slate-300 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
+                        style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
+                      />
+                    </Tooltip>
+                  ))}
+
+                  {/* Main card dot - always on top */}
                   <motion.div
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', delay: 0.2 }}
-                    className="absolute w-3 h-3 bg-white rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600"
-                    style={{ left: `calc(${xPos}% - 6px)`, top: `calc(${yPos}% - 6px)` }}
+                    className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${xPos}%`, top: `${yPos}%` }}
                   />
                 </div>
                 <div className="text-center">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Pick Order (ALSA)</span>
+                  <span className="text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest">Pick Order (ALSA)</span>
                 </div>
               </div>
             </div>
@@ -138,9 +307,10 @@ const CardEvaluationBlock: React.FC<{ card: Card; allCards: Card[] }> = ({ card,
 };
 
 // --- COMPOSANT PRINCIPAL ---
-export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose }) => {
+export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose, onCardSelect }) => {
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
+  const [showPeers, setShowPeers] = useState(false);
 
   // Coach marks for onboarding
   const { isUnseen, markAsSeen } = useCoachMarks();
@@ -164,8 +334,16 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
   return (
     <SwipeableOverlay onClose={onClose}>
-      <div className="flex flex-col h-full md:flex-row">
-        {fetchError && (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={card.name}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="flex flex-col h-full md:flex-row"
+        >
+          {fetchError && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
             <AlertTriangle size={16} />
             {fetchError}
@@ -254,7 +432,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-          <CardEvaluationBlock card={card} allCards={allCards} />
+          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} />
 
           <div>
             <div className="flex justify-between items-center mb-3">
@@ -330,7 +508,8 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
             )}
           </div>
         </div>
-      </div>
+        </motion.div>
+      </AnimatePresence>
     </SwipeableOverlay>
   );
 };
