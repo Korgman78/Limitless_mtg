@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
@@ -18,14 +18,140 @@ interface CardEvaluationBlockProps {
   onCardSelect?: (card: Card) => void;
   showPeers: boolean;
   setShowPeers: (show: boolean) => void;
+  showAllRarityPeers: boolean;
+  setShowAllRarityPeers: (show: boolean) => void;
   displayWR?: number | null;  // WR à afficher (prioritaire sur card.gih_wr)
   displayALSA?: number | null;  // ALSA à afficher (prioritaire sur card.alsa)
 }
 
-const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers, displayWR, displayALSA }) => {
+// Mapping des couleurs MTG vers des couleurs CSS
+const getManaColor = (colors: string | string[] | null | undefined): string => {
+  // Normalize to string for extractColors
+  const colorStr = Array.isArray(colors) ? colors.join('') : colors;
+  const colorArr = extractColors(colorStr);
+  if (!colorArr || colorArr.length === 0) return 'bg-slate-400'; // Colorless
+  if (colorArr.length > 1) return 'bg-amber-500'; // Multicolor (gold)
+  const c = colorArr[0].toUpperCase();
+  switch (c) {
+    case 'W': return 'bg-yellow-100';
+    case 'U': return 'bg-blue-500';
+    case 'B': return 'bg-violet-900';
+    case 'R': return 'bg-red-500';
+    case 'G': return 'bg-green-500';
+    default: return 'bg-slate-400';
+  }
+};
+
+const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
   // Utiliser les valeurs display si fournies, sinon fallback sur card
   const effectiveWR = displayWR ?? card.gih_wr;
   const effectiveALSA = displayALSA ?? card.alsa;
+
+  // Zoom & pan state for matrix
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const pinchRef = useRef<{ initialDistance: number; initialScale: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
+  const isDragging = useRef(false);
+
+  // Limit pan based on scale (more zoom = more pan allowed)
+  const limitPan = useCallback((x: number, y: number, currentScale: number) => {
+    const maxPan = (currentScale - 1) * 50; // 50% per zoom level
+    return {
+      x: Math.min(maxPan, Math.max(-maxPan, x)),
+      y: Math.min(maxPan, Math.max(-maxPan, y)),
+    };
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setScale(prev => {
+      const newScale = Math.min(4, Math.max(1, prev + delta));
+      // Reset position if zooming back to 1
+      if (newScale === 1) setPosition({ x: 0, y: 0 });
+      return newScale;
+    });
+  }, []);
+
+  const getTouchDistance = (touches: React.TouchList) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Mouse drag handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (scale <= 1) return;
+    e.preventDefault();
+    isDragging.current = true;
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: position.x,
+      initialY: position.y,
+    };
+  }, [scale, position]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current || !dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const newPos = limitPan(dragRef.current.initialX + dx / 2, dragRef.current.initialY + dy / 2, scale);
+    setPosition(newPos);
+  }, [scale, limitPan]);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+    dragRef.current = null;
+  }, []);
+
+  // Touch handlers (1 finger = pan, 2 fingers = zoom)
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      pinchRef.current = {
+        initialDistance: getTouchDistance(e.touches),
+        initialScale: scale,
+      };
+      isDragging.current = false;
+    } else if (e.touches.length === 1 && scale > 1) {
+      isDragging.current = true;
+      dragRef.current = {
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        initialX: position.x,
+        initialY: position.y,
+      };
+    }
+  }, [scale, position]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const currentDistance = getTouchDistance(e.touches);
+      const scaleChange = currentDistance / pinchRef.current.initialDistance;
+      const newScale = Math.min(4, Math.max(1, pinchRef.current.initialScale * scaleChange));
+      setScale(newScale);
+      if (newScale === 1) setPosition({ x: 0, y: 0 });
+    } else if (e.touches.length === 1 && isDragging.current && dragRef.current) {
+      const dx = e.touches[0].clientX - dragRef.current.startX;
+      const dy = e.touches[0].clientY - dragRef.current.startY;
+      const newPos = limitPan(dragRef.current.initialX + dx / 2, dragRef.current.initialY + dy / 2, scale);
+      setPosition(newPos);
+    }
+  }, [scale, limitPan]);
+
+  const handleTouchEnd = useCallback(() => {
+    pinchRef.current = null;
+    isDragging.current = false;
+    dragRef.current = null;
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
   if (!effectiveWR) return null;
 
   const getRank = (list: any[], metric: string, val: any, asc: boolean = false): { rank: number; total: number } => {
@@ -105,9 +231,9 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
   const minALSA = 1.25;
   const maxALSA = 8.75;
 
-  // For Sealed: use fixed scale based on delta thresholds (+9 top, -8 bottom)
+  // For Sealed: use fixed scale with symmetric margins for BOMB (+9 to +12) and CHAFF (-5 to -8)
   const sealedDisplayMinWR = AVG_WR - 8;
-  const sealedDisplayMaxWR = AVG_WR + 9;
+  const sealedDisplayMaxWR = AVG_WR + 12;
 
   const alsa = effectiveALSA ?? 0;
   let statusText = "Average Card"; let statusColor = "text-slate-400";
@@ -212,9 +338,12 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
 
   // Compute peer positions for matrix overlay
   const peerDots = useMemo(() => {
-    if (!showPeers) return [];
+    if (!showPeers && !showAllRarityPeers) return [];
 
-    const peers = peersColor.filter((c: Card) => c.name !== card.name && c.gih_wr);
+    // Select peers based on mode: color peers or all rarity peers
+    const peers = showAllRarityPeers
+      ? peersRarity.filter((c: Card) => c.name !== card.name && c.gih_wr)
+      : peersColor.filter((c: Card) => c.name !== card.name && c.gih_wr);
 
     // For Sealed: distribute dots evenly across width with small jitter
     const sealedXPositions = peers.map((_, idx) => {
@@ -232,8 +361,9 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
         ? ((Math.max(minALSA, Math.min(maxALSA, c.alsa)) - minALSA) / (maxALSA - minALSA)) * 100
         : sealedXPositions[idx],
       y: getYPosition(c.gih_wr!),
+      colorClass: showAllRarityPeers ? getManaColor(c.colors) : 'bg-slate-400/70',
     }));
-  }, [showPeers, hasAlsa, peersColor, card.name, displayMinWR, displayMaxWR, minALSA, maxALSA]);
+  }, [showPeers, showAllRarityPeers, hasAlsa, peersRarity, peersColor, card.name, displayMinWR, displayMaxWR, minALSA, maxALSA]);
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 mt-6">
@@ -250,18 +380,38 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
               {hasAlsa ? <>Comparing <strong>Pick Order (ALSA)</strong> vs <strong>Win Rate</strong>.<br />High WR + Late Pick = Underrated.</> : <>Based solely on <strong>Games In Hand Win Rate</strong>.</>}
             </div>
             {peersColor.length > 1 && (
-              <button
-                onClick={() => setShowPeers(!showPeers)}
-                className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 mt-2 ${
-                  showPeers
-                    ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
-                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
-                }`}
-              >
-                <Users size={11} />
-                {showPeers ? 'Hide' : 'Show'} {rarityLabel.toLowerCase()} color peers
-                <span className="text-[9px] opacity-60">({peersColor.length - 1})</span>
-              </button>
+              <div className="flex flex-col gap-1.5 mt-2">
+                <button
+                  onClick={() => {
+                    setShowPeers(!showPeers);
+                    if (!showPeers) setShowAllRarityPeers(false);
+                  }}
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${
+                    showPeers
+                      ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                  }`}
+                >
+                  <Users size={11} />
+                  {showPeers ? 'Hide' : 'Show'} {rarityLabel.toLowerCase()} color peers
+                  <span className="text-[9px] opacity-60">({peersColor.length - 1})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAllRarityPeers(!showAllRarityPeers);
+                    if (!showAllRarityPeers) setShowPeers(false);
+                  }}
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${
+                    showAllRarityPeers
+                      ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                  }`}
+                >
+                  <Users size={11} />
+                  {showAllRarityPeers ? 'Hide' : 'Show'} all {rarityLabel.toLowerCase()}
+                  <span className="text-[9px] opacity-60">({peersRarity.length - 1})</span>
+                </button>
+              </div>
             )}
           </div>
           <div className="flex flex-row items-center gap-2 md:gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
@@ -269,7 +419,24 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
               <span className="-rotate-90 text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Win Rate</span>
             </div>
             <div className="flex flex-col gap-2 flex-1 sm:w-48 md:w-56 lg:w-72 xl:w-80">
-              <div className="relative w-full h-32 md:h-44 lg:h-52 xl:h-60 bg-slate-950 rounded-lg md:rounded-xl border border-slate-800 shadow-inner overflow-hidden">
+              {/* Matrix container with zoom & pan */}
+              <div
+                className={`relative w-full h-32 md:h-44 lg:h-52 xl:h-60 bg-slate-950 rounded-lg md:rounded-xl border border-slate-800 shadow-inner overflow-hidden ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onDoubleClick={handleDoubleClick}
+              >
+                {/* Zoomable & pannable content */}
+                <div
+                  className="absolute inset-0 origin-center transition-transform duration-100"
+                  style={{ transform: `translate(${position.x}%, ${position.y}%) scale(${scale})` }}
+                >
                 {/* Moyenne line (always shown) */}
                 <div className="absolute left-0 right-0 border-t border-dashed border-slate-700/50" style={{ top: `${yAvg}%` }}></div>
 
@@ -285,22 +452,36 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
                 ) : (() => {
                   // Calculate dynamic positions based on WR scale
                   // Use displayMinWR/displayMaxWR for consistent scale with dot positions
-                  const wrRange = displayMaxWR - displayMinWR; // 17 points for Sealed (+9 to -8)
+                  const wrRange = displayMaxWR - displayMinWR; // 20 points for Sealed (+12 to -8)
                   const pctPerPoint = 100 / wrRange;
 
                   // Calculate Y positions for each threshold (delta from average)
                   const getY = (delta: number) => Math.max(0, Math.min(100, yAvg - (delta * pctPerPoint)));
 
-                  // Threshold positions - with fixed scale, these map exactly to the grid
-                  const y9 = getY(9);   // BOMB threshold = 0%
+                  // Threshold positions
+                  const y9 = getY(9);   // BOMB threshold
                   const y7 = getY(7);   // TOP TIER threshold
                   const y5 = getY(5);   // VERY GOOD threshold
                   const y3 = getY(3);   // GOOD threshold
                   const y1 = getY(1);   // PLAYABLE top
                   const yM1 = getY(-1); // PLAYABLE bottom
                   const yM3 = getY(-3); // FILLER threshold
-                  const yM5 = getY(-5); // BAD/CHAFF threshold
-                  const yM8 = getY(-8); // Bottom = 100%
+                  const yM5 = getY(-5); // CHAFF threshold
+
+                  // Determine current card's category for dynamic label
+                  const cardDelta = effectiveWR - AVG_WR;
+                  const fixedLabels = ['Bomb', 'Playable', 'Chaff'];
+                  const showDynamicLabel = !fixedLabels.includes(statusText);
+
+                  // Get Y position for dynamic label based on card's category
+                  const getDynamicLabelY = () => {
+                    if (cardDelta >= 7) return (y9 + y7) / 2;      // TOP TIER
+                    if (cardDelta >= 5) return (y7 + y5) / 2;      // VERY GOOD
+                    if (cardDelta >= 3) return (y5 + y3) / 2;      // GOOD
+                    if (cardDelta >= 1) return (y3 + y1) / 2;      // SOLID PLAYABLE
+                    if (cardDelta >= -3) return (yM1 + yM3) / 2;   // FILLER
+                    return (yM3 + yM5) / 2;                        // BAD
+                  };
 
                   return (
                     <>
@@ -324,15 +505,27 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
                       {/* CHAFF zone (-5 to bottom) */}
                       <div className="absolute left-0 right-0 bg-red-500/15" style={{ top: `${yM5}%`, bottom: 0 }} />
 
-                      {/* Labels positioned at zone centers */}
-                      {y9 > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/80 font-black" style={{ top: `${y9 / 2}%`, transform: 'translateY(-50%)' }}>BOMB</div>}
-                      {(y7 - y9) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/60 font-black" style={{ top: `${(y9 + y7) / 2}%`, transform: 'translateY(-50%)' }}>TOP TIER</div>}
-                      {(y5 - y7) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-emerald-400/70 font-black" style={{ top: `${(y7 + y5) / 2}%`, transform: 'translateY(-50%)' }}>VERY GOOD</div>}
-                      {(y3 - y5) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-emerald-400/50 font-black" style={{ top: `${(y5 + y3) / 2}%`, transform: 'translateY(-50%)' }}>GOOD</div>}
-                      {/* PLAYABLE always shown, centered on average */}
+                      {/* Average line with tooltip for GIH WR */}
+                      <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
+                        <div className="absolute left-0 right-0 h-4 cursor-help z-10 flex items-center" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>
+                          <div className="w-full border-t border-dashed border-slate-500/70" />
+                        </div>
+                      </Tooltip>
+
+                      {/* Fixed labels: BOMB (top), PLAYABLE (center), CHAFF (bottom) */}
+                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/80 font-black" style={{ top: `${y9 / 2}%`, transform: 'translateY(-50%)' }}>BOMB</div>
                       <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-300/80 font-black" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>PLAYABLE</div>
-                      {(yM3 - yM1) > 8 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-500/70 font-black" style={{ top: `${(yM1 + yM3) / 2}%`, transform: 'translateY(-50%)' }}>FILLER</div>}
-                      {(100 - yM5) > 6 && <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-red-400/80 font-black" style={{ top: `${(yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>}
+                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-red-400/80 font-black" style={{ top: `${(yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>
+
+                      {/* Dynamic label for current card's category (if not BOMB, PLAYABLE, or CHAFF) */}
+                      {showDynamicLabel && (
+                        <div
+                          className={`absolute right-2 md:right-3 text-[7px] md:text-[9px] font-black ${statusColor}`}
+                          style={{ top: `${getDynamicLabelY()}%`, transform: 'translateY(-50%)' }}
+                        >
+                          {statusText.toUpperCase()}
+                        </div>
+                      )}
                     </>
                   );
                 })()}
@@ -361,20 +554,27 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
                         delay: idx * 0.025
                       }}
                       onClick={() => onCardSelect?.(peer.card)}
-                      className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 bg-slate-400/70 hover:bg-slate-300 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
+                      className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 ${peer.colorClass} hover:brightness-125 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
                       style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
                     />
                   </Tooltip>
                 ))}
 
-                {/* Main card dot - always on top */}
-                <motion.div
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', delay: 0.2 }}
-                  className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${xPos}%`, top: `${yPos}%` }}
-                />
+                        {/* Main card dot - always on top */}
+                        <motion.div
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ type: 'spring', delay: 0.2 }}
+                          className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
+                          style={{ left: `${xPos}%`, top: `${yPos}%` }}
+                        />
+                </div>
+                {/* Zoom level indicator */}
+                {scale > 1 && (
+                  <div className="absolute bottom-1 right-1 text-[8px] text-slate-500 bg-slate-900/80 px-1.5 py-0.5 rounded z-20">
+                    {scale.toFixed(1)}x
+                  </div>
+                )}
               </div>
               <div className="text-center">
                 <span className="text-[9px] md:text-[10px] lg:text-xs font-black text-slate-500 uppercase tracking-widest">
@@ -406,6 +606,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
   const [showPeers, setShowPeers] = useState(false);
+  const [showAllRarityPeers, setShowAllRarityPeers] = useState(false);
 
   // Coach marks for onboarding
   const { isUnseen, markAsSeen } = useCoachMarks();
@@ -527,7 +728,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
+          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
 
           <div>
             <div className="flex justify-between items-center mb-3">
