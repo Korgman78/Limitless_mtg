@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Deck, Card, SortConfig } from './types';
@@ -30,8 +30,8 @@ import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardI
 import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
-import { ArchetypeDashboard, CardDetailOverlay } from './components/Overlays';
-import { FormatComparison, PressReview } from './components/Features';
+import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
+import { FormatComparison, PressReview, FormatBlueprint } from './components/Features';
 
 
 export default function MTGLimitedApp(): React.ReactElement {
@@ -69,6 +69,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [colorFilters, setColorFilters] = useState<string[]>([]);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
 
   // --- Error State ---
   const [error, setError] = useState<string | null>(null);
@@ -278,6 +279,7 @@ export default function MTGLimitedApp(): React.ReactElement {
         {error && <ErrorBanner key="error-banner" message={error} onDismiss={() => setError(null)} />}
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={() => setSelectedDeck(null)} onCardClick={(card) => setSelectedCard(card)} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} onClose={() => setSelectedCard(null)} onCardSelect={(card) => setSelectedCard(card)} />}
+        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={() => setShowMatrixView(false)} onCardSelect={(card) => { setShowMatrixView(false); setSelectedCard(card); }} />}
       </AnimatePresence>
 
       <Sidebar />
@@ -437,6 +439,9 @@ export default function MTGLimitedApp(): React.ReactElement {
                     </motion.button>
                   ))}
                 </div>
+
+                {/* Format Blueprint */}
+                <FormatBlueprint cards={cards} globalMeanWR={globalMeanWR} onCardSelect={(card) => setSelectedCard(card)} />
               </motion.div>
             )}
 
@@ -477,7 +482,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   <div className="flex flex-col md:flex-row md:items-center gap-2 pb-1">
 
                     {/* Colors & Rarities (Merged row on Mobile) */}
-                    <div className="flex items-center gap-1 md:gap-2">
+                    <div className="flex items-center gap-1 md:gap-2 w-full md:w-auto">
                       {/* Colors */}
                       <div className="flex items-center gap-0.5 md:gap-1 p-0.5 md:p-1 bg-slate-900 rounded-full border border-slate-800">
                         {['W', 'U', 'B', 'R', 'G'].map(c => (
@@ -510,6 +515,15 @@ export default function MTGLimitedApp(): React.ReactElement {
                         })}
                         {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="p-0.5 md:p-1 text-slate-500 hover:text-white transition-colors"><X size={12} /></button>}
                       </div>
+
+                      {/* Matrix button - Mobile only (pushed to right) */}
+                      <button
+                        onClick={() => setShowMatrixView(true)}
+                        className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white border border-indigo-400/30 shadow-lg shadow-indigo-500/20"
+                      >
+                        <Grid3X3 size={10} />
+                        MATRIX
+                      </button>
                     </div>
 
                     <div className="hidden md:block w-[1px] h-6 bg-slate-800 mx-2"></div>
@@ -541,6 +555,16 @@ export default function MTGLimitedApp(): React.ReactElement {
                         ) : (
                           <TrendingUp size={10} />
                         )}
+                      </button>
+
+                      {/* Séparateur + Matrix View button - Desktop only */}
+                      <div className="hidden md:block w-[1px] h-6 bg-slate-700 mx-1"></div>
+                      <button
+                        onClick={() => setShowMatrixView(true)}
+                        className="hidden md:flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border border-white/10 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-105 transition-all"
+                      >
+                        <Grid3X3 size={12} />
+                        MATRIX VIEW
                       </button>
                     </div>
                   </div>
