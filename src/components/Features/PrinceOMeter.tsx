@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, Sparkles, Users, X, Info, TrendingUp, Target, Trash2, Gem, Layers, GitBranch } from 'lucide-react';
+import { Crown, Hammer, Scale, X, Info, TrendingUp, Target, Trash2, Gem, Layers, GitBranch } from 'lucide-react';
 import type { Card } from '../../types';
 import { normalizeRarity } from '../../utils/helpers';
 
@@ -37,36 +37,45 @@ const getFormatClassification = (area: number): {
   bgGradient: string;
   description: string;
   emoji: string;
+  leaning?: 'prince' | 'pauper';
 } => {
   // Max theoretical area is ~237.5 (all axes at 10)
   // Prince format (like VOW) ~170, Pauper ~32
-  if (area >= 120) {
+  if (area >= 90) {
     return {
       type: 'PRINCE',
       icon: <Crown className="w-6 h-6" />,
       gradient: 'from-amber-400 via-yellow-500 to-orange-500',
       bgGradient: 'from-amber-500/20 to-orange-500/20',
-      description: 'Bombs reign supreme. First-pick rares aggressively and prioritize premium removal.',
+      description: 'Bombs reign supreme. Play rares aggressively and prioritize premium removal.',
       emoji: '👑'
     };
   }
   if (area >= 60) {
+    // Determine leaning for BALANCED
+    let leaning: 'prince' | 'pauper' | undefined;
+    if (area >= 80 && area < 90) {
+      leaning = 'prince';
+    } else if (area >= 60 && area < 70) {
+      leaning = 'pauper';
+    }
     return {
       type: 'BALANCED',
-      icon: <Users className="w-6 h-6" />,
+      icon: <Scale className="w-6 h-6" />,
       gradient: 'from-indigo-400 via-purple-500 to-pink-500',
       bgGradient: 'from-indigo-500/20 to-purple-500/20',
-      description: 'Healthy equilibrium. Both synergy and raw power matter—adapt to the table.',
-      emoji: '⚖️'
+      description: 'Healthy equilibrium. Both synergy and raw power matter.',
+      emoji: '⚖️',
+      leaning
     };
   }
   return {
     type: 'PAUPER',
-    icon: <Sparkles className="w-6 h-6" />,
+    icon: <Hammer className="w-6 h-6" />,
     gradient: 'from-emerald-400 via-teal-500 to-cyan-500',
     bgGradient: 'from-emerald-500/20 to-teal-500/20',
-    description: 'Commons shine bright. Synergy is king—build around archetypes, not bombs.',
-    emoji: '✨'
+    description: 'Commons and uncos shine bright. Synergy is king—build around archetypes, not bombs.',
+    emoji: '🔨'
   };
 };
 
@@ -151,8 +160,8 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
       },
       {
         key: 'best commons power',
-        label: 'Best Commons Power',
-        shortLabel: 'Best Commons Power',
+        label: 'Top commons Weakness',
+        shortLabel: 'Top commons Weakness',
         score: axis2Score,
         description: `Top 10 commons are ${axis2Delta >= 0 ? '+' : ''}${axis2Delta.toFixed(1)}% above format average`,
         icon: <Layers size={14} />,
@@ -160,8 +169,8 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
       },
       {
         key: 'best uncommons power',
-        label: 'Best Uncommons Power',
-        shortLabel: 'Best uncos Power',
+        label: 'Top Uncos Weakness',
+        shortLabel: 'Top Uncos Weakness',
         score: axis3Score,
         description: `Top 10 uncommons are ${axis3Delta >= 0 ? '+' : ''}${axis3Delta.toFixed(1)}% above format average`,
         icon: <Gem size={14} />,
@@ -228,7 +237,7 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
   // State for hovered point tooltip
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
 
-  // SVG Radar Chart Component
+  // SVG Radar Chart Component (pure SVG, no tooltip inside)
   const RadarChart: React.FC<{ size?: number; animated?: boolean; interactive?: boolean; id?: string }> = ({
     size = 200,
     animated = true,
@@ -250,6 +259,15 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
     // Unique IDs to avoid conflicts between multiple radar instances
     const gradientId = `radarGradient-${id}`;
     const strokeId = `radarStroke-${id}`;
+
+    // Full labels for radar display with line breaks for long ones
+    const radarLabels = [
+      'Bomb Dominance',
+      'Commons Weakness',
+      'Uncos Weakness',
+      'Rarity Gap',
+      'Chaff Ratio'
+    ];
 
     return (
       <svg width={size} height={size} viewBox="0 0 200 200" className="overflow-visible">
@@ -294,99 +312,114 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
           />
         ))}
 
-        {/* Data polygon - no filter for better mobile compatibility */}
-        <motion.path
+        {/* Data polygon - static path, no animation */}
+        <path
           d={dataPath}
           fill={`url(#${gradientId})`}
           stroke={`url(#${strokeId})`}
           strokeWidth={2.5}
-          initial={animated ? { opacity: 0, scale: 0.5 } : false}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-          style={{ transformOrigin: `${center}px ${center}px` }}
         />
 
         {/* Data points with interaction */}
         {analysis.points.map((point, i) => (
-          <g key={i}>
-            <motion.circle
-              cx={point.x}
-              cy={point.y}
-              r={interactive && hoveredPoint === i ? 7 : 5}
-              fill={hoveredPoint === i ? '#fff' : 'white'}
-              stroke={`url(#${strokeId})`}
-              strokeWidth={2}
-              initial={animated ? { opacity: 0, scale: 0 } : false}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.3, delay: animated ? 0.4 + i * 0.1 : 0 }}
-              style={{ cursor: interactive ? 'pointer' : 'default' }}
-              onMouseEnter={() => interactive && setHoveredPoint(i)}
-              onMouseLeave={() => interactive && setHoveredPoint(null)}
-              onTouchStart={() => interactive && setHoveredPoint(hoveredPoint === i ? null : i)}
-            />
-            {/* Tooltip on hover/touch */}
-            {interactive && hoveredPoint === i && (
-              <g>
-                {/* Tooltip background */}
-                <rect
-                  x={point.x - 32}
-                  y={point.y - 38}
-                  width={64}
-                  height={28}
-                  rx={6}
-                  fill="rgba(15, 23, 42, 0.95)"
-                  stroke="rgba(148, 163, 184, 0.3)"
-                  strokeWidth={1}
-                />
-                {/* Tooltip arrow */}
-                <polygon
-                  points={`${point.x - 6},${point.y - 10} ${point.x + 6},${point.y - 10} ${point.x},${point.y - 4}`}
-                  fill="rgba(15, 23, 42, 0.95)"
-                />
-                {/* Tooltip text - axis name */}
-                <text
-                  x={point.x}
-                  y={point.y - 27}
-                  textAnchor="middle"
-                  className="text-[8px] font-medium fill-slate-400"
-                >
-                  {analysis.axes[i].shortLabel}
-                </text>
-                {/* Tooltip text - score */}
-                <text
-                  x={point.x}
-                  y={point.y - 16}
-                  textAnchor="middle"
-                  className="text-[11px] font-bold fill-white"
-                >
-                  {analysis.axes[i].score.toFixed(1)}/10
-                </text>
-              </g>
-            )}
-          </g>
+          <circle
+            key={i}
+            cx={point.x}
+            cy={point.y}
+            r={interactive && hoveredPoint === i ? 7 : 5}
+            fill={hoveredPoint === i ? '#fff' : 'white'}
+            stroke={`url(#${strokeId})`}
+            strokeWidth={2}
+            style={{ cursor: interactive ? 'pointer' : 'default', transition: 'r 0.15s ease' }}
+            onMouseEnter={() => interactive && setHoveredPoint(i)}
+            onMouseLeave={() => interactive && setHoveredPoint(null)}
+            onTouchStart={() => interactive && setHoveredPoint(hoveredPoint === i ? null : i)}
+          />
         ))}
 
-        {/* Axis labels */}
-        {analysis.axes.map((axis, i) => {
+        {/* Axis labels - positioned around the radar */}
+        {radarLabels.map((label, i) => {
           const angle = axisAngles[i];
-          const labelRadius = maxRadius + 18;
-          const x = center + labelRadius * Math.cos(angle);
-          const y = center + labelRadius * Math.sin(angle);
+
+          // Pentagon angles from top going clockwise:
+          // Index 0: top center (12h) - Bomb Dominance
+          // Index 1: upper-right (~2h) - Commons Weakness
+          // Index 2: lower-right (~4h) - Uncos Weakness
+          // Index 3: lower-left (~8h) - Rarity Gap
+          // Index 4: upper-left (~10h) - Chaff Ratio
+
+          let labelRadius = maxRadius + 18;
+          let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+          let dx = 0;
+          let dy = 0;
+
+          if (i === 0) {
+            // Top center
+            labelRadius = maxRadius + 12;
+            textAnchor = 'middle';
+            dy = -4;
+          } else if (i === 1) {
+            // Upper-right
+            labelRadius = maxRadius + 8;
+            textAnchor = 'start';
+            dx = 6;
+            dy = 0;
+          } else if (i === 2) {
+            // Lower-right
+            labelRadius = maxRadius + 8;
+            textAnchor = 'start';
+            dx = 6;
+            dy = 4;
+          } else if (i === 3) {
+            // Lower-left
+            labelRadius = maxRadius + 8;
+            textAnchor = 'end';
+            dx = -6;
+            dy = 4;
+          } else if (i === 4) {
+            // Upper-left
+            labelRadius = maxRadius + 8;
+            textAnchor = 'end';
+            dx = -6;
+            dy = 0;
+          }
+
+          const x = center + labelRadius * Math.cos(angle) + dx;
+          const y = center + labelRadius * Math.sin(angle) + dy;
 
           return (
             <text
-              key={axis.key}
+              key={i}
               x={x}
               y={y}
-              textAnchor="middle"
+              textAnchor={textAnchor}
               dominantBaseline="middle"
-              className="text-[8px] font-bold fill-slate-400"
+              className="text-[8px] font-bold fill-slate-300"
             >
-              {axis.shortLabel}
+              {label}
             </text>
           );
         })}
       </svg>
+    );
+  };
+
+  // Fixed tooltip component displayed outside radar
+  const RadarTooltip: React.FC = () => {
+    if (hoveredPoint === null) return null;
+    const axis = analysis.axes[hoveredPoint];
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 5 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 5 }}
+        className="absolute -right-2 top-1/2 -translate-y-1/2 translate-x-full ml-3 px-3 py-2 rounded-lg bg-slate-800/95 border border-slate-700/50 shadow-xl min-w-[140px]"
+      >
+        <div className="text-[10px] font-medium text-slate-400 mb-1">{axis.label}</div>
+        <div className="text-lg font-black text-white">{axis.score.toFixed(1)}<span className="text-sm text-slate-400">/10</span></div>
+        <div className="text-[9px] text-slate-500 mt-1 leading-tight">{axis.description}</div>
+      </motion.div>
     );
   };
 
@@ -420,6 +453,11 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                 <div className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400">
                   {analysis.area.toFixed(0)} pts
                 </div>
+                {analysis.classification.leaning && (
+                  <span className="text-[10px] font-medium italic text-slate-500">
+                    leaning {analysis.classification.leaning === 'prince' ? 'Prince' : 'Pauper'}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] md:text-xs text-slate-400 leading-relaxed line-clamp-2">
                 {analysis.classification.description}
@@ -474,7 +512,7 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                   </div>
                   <div>
                     <h2 className="text-lg font-black text-white tracking-tight">Prince-O-Meter</h2>
-                    <p className="text-xs text-slate-500">Format Power Analysis</p>
+                    <p className="text-xs text-slate-500">The Prince-Pauper Spectrum</p>
                   </div>
                 </div>
                 <button
@@ -492,8 +530,15 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                   <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50">
                     <span className="text-3xl">{analysis.classification.emoji}</span>
                     <div>
-                      <div className={`text-2xl font-black bg-gradient-to-r ${analysis.classification.gradient} bg-clip-text text-transparent`}>
-                        {analysis.classification.type}
+                      <div className="flex items-center gap-2">
+                        <span className={`text-2xl font-black bg-gradient-to-r ${analysis.classification.gradient} bg-clip-text text-transparent`}>
+                          {analysis.classification.type}
+                        </span>
+                        {analysis.classification.leaning && (
+                          <span className="text-xs font-medium italic text-slate-500">
+                            leaning {analysis.classification.leaning === 'prince' ? 'Prince' : 'Pauper'}
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-slate-400">
                         Area Score: <span className="font-bold text-white">{analysis.area.toFixed(1)}</span>
@@ -503,9 +548,14 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                   </div>
                 </div>
 
-                {/* Radar Chart */}
+                {/* Radar Chart with fixed tooltip */}
                 <div className="flex justify-center">
-                  <RadarChart size={220} animated={true} />
+                  <div className="relative">
+                    <RadarChart size={220} animated={true} interactive={true} id="modal" />
+                    <AnimatePresence>
+                      <RadarTooltip />
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 {/* Axis Details */}
@@ -521,14 +571,44 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.5 + idx * 0.1 }}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
+                      className="p-3 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
                     >
-                      <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center ${axis.color}`}>
-                        {axis.icon}
+                      {/* Desktop: single row layout */}
+                      <div className="hidden sm:flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
+                          {axis.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-200">{axis.label}</span>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                              axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
+                              axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
+                              'bg-emerald-500/20 text-emerald-400'
+                            }`}>
+                              {axis.score.toFixed(1)}/10
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">{axis.description}</p>
+                        </div>
+                        <div className="w-20 h-2 rounded-full bg-slate-700 overflow-hidden flex-shrink-0">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ background: axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444' }}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(axis.score / 10) * 100}%` }}
+                            transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
+                          />
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
+
+                      {/* Mobile: stacked layout */}
+                      <div className="sm:hidden space-y-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-200">{axis.label}</span>
+                          <div className={`w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
+                            {axis.icon}
+                          </div>
+                          <span className="text-sm font-semibold text-slate-200 flex-1">{axis.label}</span>
                           <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                             axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
                             axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
@@ -537,21 +617,16 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                             {axis.score.toFixed(1)}/10
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 truncate">{axis.description}</p>
-                      </div>
-                      {/* Score bar out of 10 */}
-                      <div className="w-20 h-2 rounded-full bg-slate-700 overflow-hidden flex-shrink-0">
-                        <motion.div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500"
-                          style={{
-                            background: `linear-gradient(to right,
-                              ${axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444'},
-                              ${axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444'})`
-                          }}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(axis.score / 10) * 100}%` }}
-                          transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
-                        />
+                        <p className="text-[11px] text-slate-500 leading-relaxed">{axis.description}</p>
+                        <div className="w-full h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ background: axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444' }}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(axis.score / 10) * 100}%` }}
+                            transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
+                          />
+                        </div>
                       </div>
                     </motion.div>
                   ))}

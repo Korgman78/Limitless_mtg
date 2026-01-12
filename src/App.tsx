@@ -256,7 +256,7 @@ export default function MTGLimitedApp(): React.ReactElement {
           </p>
         </div>
         <div className="flex gap-4 px-2 opacity-50 hover:opacity-100 transition-opacity">
-          <span className="text-[9px] text-slate-600">v1.3.0</span>
+          <span className="text-[9px] text-slate-600">v1.4.0</span>
           <span className="text-[9px] text-slate-600 font-mono uppercase tracking-tighter">Updated Daily</span>
         </div>
       </div>

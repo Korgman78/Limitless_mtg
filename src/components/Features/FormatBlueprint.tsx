@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  TrendingUp, ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight,
   Gem, CircleDot, BarChart3, Trophy, Skull, Sparkles, Zap
 } from 'lucide-react';
 import type { Card } from '../../types';
@@ -228,20 +228,38 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalM
           </div>
         </div>
 
-        {/* Key Stats */}
-        <div className="flex items-center gap-4 sm:gap-6 mr-3">
-          <Tooltip content="Format average win rate">
-            <div className="flex items-center gap-2 cursor-help">
-              <TrendingUp size={16} className="text-slate-500" />
-              <span className="text-xs sm:text-sm text-slate-500">Avg:</span>
-              <span className="text-sm sm:text-base font-bold text-slate-300">{globalMeanWR.toFixed(1)}%</span>
+        {/* Key Stats - Premium badge design */}
+        <div className="hidden sm:flex items-center gap-2 mr-2">
+          <Tooltip content={<span className="text-slate-200 text-xs">Format baseline win rate</span>}>
+            <div className="group relative px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 hover:border-indigo-500/40 transition-all cursor-help">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 group-hover:animate-pulse" />
+                <span className="text-[10px] font-medium text-slate-400">WR</span>
+                <span className="text-sm font-bold text-indigo-300">{globalMeanWR.toFixed(1)}%</span>
+              </div>
             </div>
           </Tooltip>
-          <Tooltip content="Overall format variance">
-            <div className="flex items-center gap-2 cursor-help">
-              <BarChart3 size={16} className="text-slate-500" />
-              <span className="text-xs sm:text-sm text-slate-500">Var:</span>
-              <span className="text-sm sm:text-base font-bold text-slate-300">±{stats.overallVariance.toFixed(1)}</span>
+          <Tooltip content={<span className="text-slate-200 text-xs">Win rate standard deviation</span>}>
+            <div className="group relative px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-help">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 group-hover:animate-pulse" />
+                <span className="text-[10px] font-medium text-slate-400">VAR</span>
+                <span className="text-sm font-bold text-amber-300">±{stats.overallVariance.toFixed(1)}</span>
+              </div>
+            </div>
+          </Tooltip>
+        </div>
+
+        {/* Mobile: Compact inline badges with tooltips */}
+        <div className="flex sm:hidden items-center gap-1.5 mr-2">
+          <Tooltip content={<span className="text-slate-200 text-xs">Format baseline win rate</span>}>
+            <div className="px-2 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/20 cursor-help">
+              <span className="text-xs font-bold text-indigo-300">{globalMeanWR.toFixed(1)}%</span>
+            </div>
+          </Tooltip>
+          <Tooltip content={<span className="text-slate-200 text-xs">Win rate standard deviation</span>}>
+            <div className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 cursor-help">
+              <span className="text-xs font-bold text-amber-300">±{stats.overallVariance.toFixed(1)}</span>
             </div>
           </Tooltip>
         </div>
@@ -344,7 +362,7 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalM
                     {statsMode === 'top10' && <span className="text-emerald-400/70 ml-1">(Top 10)</span>}
                     {statsMode === 'bottom10' && <span className="text-red-400/70 ml-1">(Bottom 10)</span>}
                   </span>
-                  <span className="w-14 text-right">WR</span>
+                  <span className="w-14 text-right">GIH</span>
                   <span className="w-14 text-right">Delta</span>
                   <span className="w-16 text-right hidden md:block">Var</span>
                   <span className="w-6"></span>
