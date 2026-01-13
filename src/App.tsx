@@ -70,6 +70,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
+  const [pendingCardView, setPendingCardView] = useState<{ cardName: string; format: string } | null>(null);
 
   // --- Error State ---
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +98,39 @@ export default function MTGLimitedApp(): React.ReactElement {
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  // Handle pending card view from PressReview
+  useEffect(() => {
+    if (pendingCardView && cards.length > 0 && !cardsLoading && activeFormat === pendingCardView.format) {
+      // Normalize name: remove special chars, lowercase, trim
+      const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const searchName = normalize(pendingCardView.cardName);
+
+      // Try normalized match
+      let card = cards.find((c: Card) => normalize(c.name) === searchName);
+      if (!card) {
+        // Try partial match
+        card = cards.find((c: Card) => normalize(c.name).includes(searchName) || searchName.includes(normalize(c.name)));
+      }
+      if (card) {
+        setSelectedCard(card);
+      }
+      // Always clear pending
+      setPendingCardView(null);
+    }
+  }, [pendingCardView, cards, activeFormat, cardsLoading]);
+
+  // Handler for viewing a card in a specific format from PressReview
+  const handleViewCardInFormat = (cardName: string, format: string) => {
+    // Change format first if needed
+    if (format !== activeFormat) {
+      setActiveFormat(format);
+    }
+    // Set pending after a tick to ensure format change is processed
+    setTimeout(() => {
+      setPendingCardView({ cardName, format });
+    }, 0);
+  };
 
   const filteredDecks = useMemo((): Deck[] => {
     if (!decks || decks.length === 0) return [];
@@ -638,7 +672,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             {/* 4. PRESS REVIEW TAB */}
             {activeTab === 'press' && (
               <motion.div key="press-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                <PressReview activeSet={activeSet} />
+                <PressReview activeSet={activeSet} onViewCardInFormat={handleViewCardInFormat} />
               </motion.div>
             )}
           </AnimatePresence>

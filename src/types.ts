@@ -104,6 +104,7 @@ export interface SparklineProps {
 export interface SwipeableOverlayProps {
   onClose: () => void;
   children: React.ReactNode;
+  zIndex?: number;
 }
 
 export interface ArchetypeDashboardProps {
@@ -132,6 +133,7 @@ export interface FormatComparisonProps {
 
 export interface PressReviewProps {
   activeSet: string;
+  onViewCardInFormat?: (cardName: string, format: string) => void;
 }
 
 export interface ErrorBannerProps {

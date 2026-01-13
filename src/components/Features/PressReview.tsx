@@ -83,12 +83,12 @@ const getSentimentData = (article: Article) => {
     }
 };
 
-export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
+export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardInFormat }) => {
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentSetFilter, setCurrentSetFilter] = useState<string>('All');
   const [qualityFilter, setQualityFilter] = useState<'All' | 'Top'>('All');
-  const [zoomedCard, setZoomedCard] = useState<string | null>(null);
+  const [zoomedCard, setZoomedCard] = useState<{ officialName: string; dbName: string } | null>(null);
   const [hasVoted, setHasVoted] = useState<boolean>(false);
 
   // React Query hooks
@@ -264,10 +264,52 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
       <AnimatePresence>
         {zoomedCard && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setZoomedCard(null)} className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out">
-            <motion.img initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
-              src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(zoomedCard)}&format=image&version=border_crop`}
-              className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
+            onClick={() => setZoomedCard(null)} className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-col items-center gap-4 max-w-sm w-full"
+            >
+              <img
+                src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(zoomedCard.officialName)}&format=image&version=border_crop`}
+                alt={zoomedCard.officialName}
+                className="max-h-[50vh] w-auto rounded-2xl shadow-2xl border-2 border-slate-700"
+              />
+
+              {onViewCardInFormat && (
+                <div className="w-full space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">See card detail in</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Premier Draft', value: 'PremierDraft' },
+                      { label: 'Trad. Draft', value: 'TradDraft' },
+                      { label: 'Sealed', value: 'Sealed' },
+                      { label: 'Arena Direct', value: 'ArenaDirect_Sealed' },
+                    ].map((format) => (
+                      <button
+                        key={format.value}
+                        onClick={() => {
+                          onViewCardInFormat(zoomedCard.officialName, format.value);
+                          setZoomedCard(null);
+                        }}
+                        className="py-2.5 px-3 bg-slate-800/80 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all"
+                      >
+                        {format.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => setZoomedCard(null)}
+                className="mt-2 text-xs text-slate-500 hover:text-white transition-colors"
+              >
+                Close
+              </button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -584,7 +626,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet }) => {
                             {parsePostgresArray(selectedArticle.mentioned_cards).map((approxName: string, idx: number) => {
                               const officialName = officialCardNames[approxName] || approxName;
                               return (
-                                <button key={idx} onClick={() => setZoomedCard(officialName)} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
+                                <button key={idx} onClick={() => setZoomedCard({ officialName, dbName: approxName })} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
                                   <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
                                     alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
                                     onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />

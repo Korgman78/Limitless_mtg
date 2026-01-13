@@ -629,7 +629,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
   const minGamesDisplay = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
 
   return (
-    <SwipeableOverlay onClose={onClose}>
+    <SwipeableOverlay onClose={onClose} zIndex={60}>
       <AnimatePresence mode="wait">
         <motion.div
           key={card.name}
