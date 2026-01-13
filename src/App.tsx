@@ -283,7 +283,7 @@ export default function MTGLimitedApp(): React.ReactElement {
       <div className="mt-auto pt-6 border-t border-slate-800 space-y-4">
         <div className="text-[10px] text-slate-500 leading-relaxed px-2">
           <p className="mb-2">
-            <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>.
+            <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>. Don't forget to play with <a href="https://www.17lands.com/getting_started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">their tracker</a> on!
           </p>
           <p className="italic">
             Limitless is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
