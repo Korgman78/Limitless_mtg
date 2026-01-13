@@ -4,6 +4,7 @@ import { Crown, Hammer, Scale, X, Info, TrendingUp, Target, Trash2, Gem, Layers,
 import type { Card } from '../../types';
 import { normalizeRarity } from '../../utils/helpers';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { haptics } from '../../utils/haptics';
 
 interface PrinceOMeterProps {
   cards: Card[];
@@ -440,7 +441,7 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
     <>
       {/* Compact Display - Clickable */}
       <motion.button
-        onClick={() => setIsModalOpen(true)}
+        onClick={() => { haptics.light(); setIsModalOpen(true); }}
         className="w-full group"
         whileHover={{ scale: 1.01 }}
         whileTap={{ scale: 0.99 }}
@@ -511,7 +512,7 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-slate-700/50 shadow-2xl"
+              className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-slate-700/50 shadow-2xl"
             >
               {/* Ambient glow */}
               <div className={`absolute -top-32 -right-32 w-64 h-64 bg-gradient-to-br ${analysis.classification.bgGradient} rounded-full blur-3xl pointer-events-none opacity-50`} />

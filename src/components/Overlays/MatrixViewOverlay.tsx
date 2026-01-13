@@ -78,6 +78,10 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
   const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
   const isDragging = useRef(false);
 
+  // Long press detection for mobile dots
+  const longPressTimerRef = useRef<number | null>(null);
+  const isLongPressRef = useRef(false);
+
   // Detect if format has ALSA (Draft vs Sealed)
   const isDraft = !activeFormat.toLowerCase().includes('sealed');
 
@@ -489,7 +493,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
       </div>
 
       {/* Matrix - Portrait by default on mobile, full screen on desktop or landscape */}
-      <div className="flex-1 p-4 overflow-hidden flex items-center justify-center">
+      <div className="flex-1 p-4 pb-20 md:pb-4 overflow-hidden flex items-center justify-center">
         <div
           className={`relative bg-slate-900 rounded-xl border border-slate-800 overflow-hidden ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'} md:w-full md:h-full portrait:max-md:aspect-[3/4] portrait:max-md:h-full portrait:max-md:w-auto landscape:w-full landscape:h-full`}
           onWheel={handleWheel}
@@ -563,34 +567,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
               const isDimmed = hasSearch && !dot.isMatch;
               const isHighlighted = hasSearch && dot.isMatch;
 
-              const dotElement = (
-                <motion.div
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{
-                    scale: isHighlighted ? 1.8 : 1,
-                    opacity: isDimmed ? 0.15 : 1,
-                  }}
-                  transition={isHighlighted
-                    ? { type: 'spring', stiffness: 300, damping: 15 }
-                    : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Reset zoom before navigating on mobile
-                    if (isMobile && scale > 1) {
-                      setScale(1);
-                      setPosition({ x: 0, y: 0 });
-                    }
-                    onCardSelect?.(dot.card);
-                  }}
-                  onMouseEnter={() => !isMobile && setHoveredCard({ card: dot.card, x: dot.x, y: dot.y })}
-                  onMouseLeave={() => !isMobile && setHoveredCard(null)}
-                  className={`absolute ${isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all ${onCardSelect ? 'cursor-pointer' : ''} border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20 hover:brightness-125 hover:scale-150 hover:z-20'}`}
-                  style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
-                />
-              );
-
-              // Mobile: wrap with Tooltip for proximity display
+              // Mobile: custom touch handlers for long press = tooltip, tap = navigate
               if (isMobile) {
                 return (
                   <Tooltip
@@ -605,13 +582,74 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
                       </div>
                     }
                   >
-                    {dotElement}
+                    <motion.div
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{
+                        scale: isHighlighted ? 1.8 : 1,
+                        opacity: isDimmed ? 0.15 : 1,
+                      }}
+                      transition={isHighlighted
+                        ? { type: 'spring', stiffness: 300, damping: 15 }
+                        : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
+                      }
+                      onTouchStart={() => {
+                        isLongPressRef.current = false;
+                        longPressTimerRef.current = window.setTimeout(() => {
+                          isLongPressRef.current = true;
+                        }, 300);
+                      }}
+                      onTouchEnd={(e) => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        // Only navigate if it was NOT a long press
+                        if (!isLongPressRef.current) {
+                          e.stopPropagation();
+                          if (scale > 1) {
+                            setScale(1);
+                            setPosition({ x: 0, y: 0 });
+                          }
+                          onCardSelect?.(dot.card);
+                        }
+                        isLongPressRef.current = false;
+                      }}
+                      onTouchMove={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
+                      style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                    />
                   </Tooltip>
                 );
               }
 
-              // Desktop: no wrapper, uses fixed panel
-              return <React.Fragment key={`${dot.name}-${idx}`}>{dotElement}</React.Fragment>;
+              // Desktop: hover for fixed panel, click for navigation
+              return (
+                <motion.div
+                  key={`${dot.name}-${idx}`}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{
+                    scale: isHighlighted ? 1.8 : 1,
+                    opacity: isDimmed ? 0.15 : 1,
+                  }}
+                  transition={isHighlighted
+                    ? { type: 'spring', stiffness: 300, damping: 15 }
+                    : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCardSelect?.(dot.card);
+                  }}
+                  onMouseEnter={() => setHoveredCard({ card: dot.card, x: dot.x, y: dot.y })}
+                  onMouseLeave={() => setHoveredCard(null)}
+                  className={`absolute w-2.5 h-2.5 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20 hover:brightness-125 hover:scale-150 hover:z-20'}`}
+                  style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                />
+              );
             })}
           </div>
 

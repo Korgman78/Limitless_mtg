@@ -532,7 +532,7 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                       {/* Matrix button - Mobile only (pushed to right) */}
                       <button
-                        onClick={() => setShowMatrixView(true)}
+                        onClick={() => { haptics.light(); setShowMatrixView(true); }}
                         className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white border border-indigo-400/30 shadow-lg shadow-indigo-500/20"
                       >
                         <Grid3X3 size={10} />
@@ -574,7 +574,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                       {/* Séparateur + Matrix View button - Desktop only */}
                       <div className="hidden md:block w-[1px] h-6 bg-slate-700 mx-1"></div>
                       <button
-                        onClick={() => setShowMatrixView(true)}
+                        onClick={() => { haptics.light(); setShowMatrixView(true); }}
                         className="hidden md:flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border border-white/10 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-105 transition-all"
                       >
                         <Grid3X3 size={12} />
