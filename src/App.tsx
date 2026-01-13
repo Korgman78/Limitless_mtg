@@ -278,8 +278,8 @@ export default function MTGLimitedApp(): React.ReactElement {
       <AnimatePresence>
         {error && <ErrorBanner key="error-banner" message={error} onDismiss={() => setError(null)} />}
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={() => setSelectedDeck(null)} onCardClick={(card) => setSelectedCard(card)} />}
+        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={() => setShowMatrixView(false)} onCardSelect={(card) => setSelectedCard(card)} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} onClose={() => setSelectedCard(null)} onCardSelect={(card) => setSelectedCard(card)} />}
-        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={() => setShowMatrixView(false)} onCardSelect={(card) => { setShowMatrixView(false); setSelectedCard(card); }} />}
       </AnimatePresence>
 
       <Sidebar />
@@ -388,7 +388,7 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className={`${chartMode === 'meta' ? 'block' : 'hidden'} lg:block h-64`}>
-                    <MetagamePieChart decks={decks} totalGames={totalGames} />
+                    <MetagamePieChart decks={decks} totalGames={totalGames} globalMeanWR={globalMeanWR} />
                   </div>
                   <div className={`${chartMode === 'pairs' ? 'block' : 'hidden'} lg:block h-64`}>
                     <PairBreakdownChart decks={decks} />

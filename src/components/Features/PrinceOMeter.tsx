@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Crown, Hammer, Scale, X, Info, TrendingUp, Target, Trash2, Gem, Layers, GitBranch } from 'lucide-react';
 import type { Card } from '../../types';
 import { normalizeRarity } from '../../utils/helpers';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface PrinceOMeterProps {
   cards: Card[];
@@ -81,6 +82,7 @@ const getFormatClassification = (area: number): {
 
 export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const isMobile = useIsMobile(640); // sm breakpoint
 
   const analysis = useMemo(() => {
     const validCards = cards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined);
@@ -387,6 +389,10 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
           const x = center + labelRadius * Math.cos(angle) + dx;
           const y = center + labelRadius * Math.sin(angle) + dy;
 
+          // Split "Commons Weakness" on 2 lines for mobile
+          const needsSplit = i === 1 && isMobile; // Index 1 = Commons Weakness
+          const labelParts = label.split(' ');
+
           return (
             <text
               key={i}
@@ -396,7 +402,14 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
               dominantBaseline="middle"
               className="text-[8px] font-bold fill-slate-300"
             >
-              {label}
+              {needsSplit ? (
+                <>
+                  <tspan x={x} dy="-0.4em">{labelParts[0]}</tspan>
+                  <tspan x={x} dy="1em">{labelParts[1]}</tspan>
+                </>
+              ) : (
+                label
+              )}
             </text>
           );
         })}

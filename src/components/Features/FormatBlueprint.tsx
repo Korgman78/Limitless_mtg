@@ -250,20 +250,6 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalM
           </Tooltip>
         </div>
 
-        {/* Mobile: Compact inline badges with tooltips */}
-        <div className="flex sm:hidden items-center gap-1.5 mr-2">
-          <Tooltip content={<span className="text-slate-200 text-xs">Format baseline win rate</span>}>
-            <div className="px-2 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/20 cursor-help">
-              <span className="text-xs font-bold text-indigo-300">{globalMeanWR.toFixed(1)}%</span>
-            </div>
-          </Tooltip>
-          <Tooltip content={<span className="text-slate-200 text-xs">Win rate standard deviation</span>}>
-            <div className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 cursor-help">
-              <span className="text-xs font-bold text-amber-300">±{stats.overallVariance.toFixed(1)}</span>
-            </div>
-          </Tooltip>
-        </div>
-
         <motion.div
           animate={{ rotate: isExpanded ? 180 : 0 }}
           transition={{ duration: 0.2 }}

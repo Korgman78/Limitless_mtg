@@ -89,6 +89,7 @@ export interface ManaIconsProps {
 export interface MetagamePieChartProps {
   decks: Deck[];
   totalGames: number;
+  globalMeanWR?: number;
 }
 
 export interface PairBreakdownChartProps {

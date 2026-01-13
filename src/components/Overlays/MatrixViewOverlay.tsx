@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Grid3X3, Search, Palette, Diamond } from 'lucide-react';
 import type { Card } from '../../types';
 import { RARITY_STYLES } from '../../constants';
-import { normalizeRarity, getDeltaStyle, extractColors } from '../../utils/helpers';
+import { normalizeRarity, getDeltaStyle, extractColors, getCardImage } from '../../utils/helpers';
 import { Tooltip } from '../Common/Tooltip';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface MatrixViewOverlayProps {
   cards: Card[];
@@ -63,6 +64,12 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 200);
+
+  // Hovered card for desktop panel
+  const [hoveredCard, setHoveredCard] = useState<{ card: Card; x: number; y: number } | null>(null);
+
+  // Mobile detection
+  const isMobile = useIsMobile(768);
 
   // Zoom & pan state
   const [scale, setScale] = useState(1);
@@ -304,107 +311,181 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-800 bg-slate-900/50">
-        {/* Colors */}
-        <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
-          {['W', 'U', 'B', 'R', 'G'].map(c => (
-            <button
-              key={c}
-              onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-              className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
-              style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}
-            >
-              <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
-            </button>
-          ))}
-          <div className="w-[1px] h-4 bg-slate-700 mx-1" />
-          <button
-            onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
-            className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}
-          >M</button>
-          <button
-            onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
-            className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}
-          >C</button>
-        </div>
-
-        <div className="w-[1px] h-6 bg-slate-700" />
-
-        {/* Rarities */}
-        <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
-          {['M', 'R', 'U', 'C'].map(r => {
-            const isActive = rarityFilter.includes(r);
-            return (
+      <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 p-3 border-b border-slate-800 bg-slate-900/50">
+        {/* Line 1: Colors + Search (mobile) / All inline (desktop) */}
+        <div className="flex items-center gap-2">
+          {/* Colors */}
+          <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
+            {['W', 'U', 'B', 'R', 'G'].map(c => (
               <button
-                key={r}
-                onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
-                className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}
+                key={c}
+                onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
+                style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}
               >
-                {r}
+                <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
               </button>
-            );
-          })}
-          {rarityFilter.length > 0 && (
-            <button onClick={() => setRarityFilter([])} className="p-1 text-slate-500 hover:text-white transition-colors">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        <div className="w-[1px] h-6 bg-slate-700" />
-
-        {/* Color mode toggle */}
-        <Tooltip content={<span className="text-[10px]">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
-          <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+            ))}
+            <div className="w-[1px] h-4 bg-slate-700 mx-1" />
             <button
-              onClick={() => setColorMode('mana')}
-              className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Palette size={14} />
-            </button>
+              onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
+              className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}
+            >M</button>
             <button
-              onClick={() => setColorMode('rarity')}
-              className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Diamond size={14} />
-            </button>
+              onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
+              className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}
+            >C</button>
           </div>
-        </Tooltip>
 
-        <div className="w-[1px] h-6 bg-slate-700" />
+          {/* Search - on same line on mobile, after separator on desktop */}
+          <div className="md:hidden relative flex items-center flex-1">
+            <Search size={12} className="absolute left-2 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Find..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-slate-300 text-xs py-1.5 pl-7 pr-7 rounded-lg focus:border-indigo-500 focus:outline-none placeholder:text-slate-600"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 text-slate-500 hover:text-white transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {matchCount > 0 && <span className="md:hidden text-[10px] text-indigo-400 font-bold">{matchCount}</span>}
 
-        {/* Search */}
-        <div className="relative flex items-center">
-          <Search size={12} className="absolute left-2 text-slate-500 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Find card..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-28 md:w-36 bg-slate-900 border border-slate-700 text-slate-300 text-xs py-1.5 pl-7 pr-7 rounded-lg focus:border-indigo-500 focus:outline-none placeholder:text-slate-600"
-          />
-          {searchTerm && (
+          <div className="hidden md:block w-[1px] h-6 bg-slate-700" />
+
+          {/* Rarities - desktop inline */}
+          <div className="hidden md:flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+            {['M', 'R', 'U', 'C'].map(r => {
+              const isActive = rarityFilter.includes(r);
+              return (
+                <button
+                  key={r}
+                  onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
+                  className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}
+                >
+                  {r}
+                </button>
+              );
+            })}
+            {rarityFilter.length > 0 && (
+              <button onClick={() => setRarityFilter([])} className="p-1 text-slate-500 hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          <div className="hidden md:block w-[1px] h-6 bg-slate-700" />
+
+          {/* Color mode toggle - desktop inline */}
+          <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
+            <div className="hidden md:flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+              <button
+                onClick={() => setColorMode('mana')}
+                className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Palette size={14} />
+              </button>
+              <button
+                onClick={() => setColorMode('rarity')}
+                className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Diamond size={14} />
+              </button>
+            </div>
+          </Tooltip>
+
+          <div className="hidden md:block w-[1px] h-6 bg-slate-700" />
+
+          {/* Search - desktop */}
+          <div className="hidden md:flex relative items-center">
+            <Search size={12} className="absolute left-2 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Find card..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-36 bg-slate-900 border border-slate-700 text-slate-300 text-xs py-1.5 pl-7 pr-7 rounded-lg focus:border-indigo-500 focus:outline-none placeholder:text-slate-600"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 text-slate-500 hover:text-white transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {matchCount > 0 && <span className="hidden md:inline text-[10px] text-indigo-400 font-bold">{matchCount} found</span>}
+
+          {/* Reset zoom - desktop */}
+          {scale > 1 && (
             <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2 text-slate-500 hover:text-white transition-colors"
+              onClick={handleDoubleClick}
+              className="hidden md:block ml-auto px-3 py-1.5 text-xs font-bold bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
             >
-              <X size={12} />
+              Reset zoom ({scale.toFixed(1)}x)
             </button>
           )}
         </div>
-        {matchCount > 0 && (
-          <span className="text-[10px] text-indigo-400 font-bold">{matchCount} found</span>
-        )}
 
-        {/* Reset zoom */}
-        {scale > 1 && (
-          <button
-            onClick={handleDoubleClick}
-            className="ml-auto px-3 py-1.5 text-xs font-bold bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
-          >
-            Reset zoom ({scale.toFixed(1)}x)
-          </button>
-        )}
+        {/* Line 2: Rarities + Color mode + Reset zoom (mobile only) */}
+        <div className="flex md:hidden items-center gap-2">
+          {/* Rarities */}
+          <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
+            {['M', 'R', 'U', 'C'].map(r => {
+              const isActive = rarityFilter.includes(r);
+              return (
+                <button
+                  key={r}
+                  onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
+                  className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}
+                >
+                  {r}
+                </button>
+              );
+            })}
+            {rarityFilter.length > 0 && (
+              <button onClick={() => setRarityFilter([])} className="p-1 text-slate-500 hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Color mode toggle */}
+          <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
+            <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+              <button
+                onClick={() => setColorMode('mana')}
+                className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Palette size={14} />
+              </button>
+              <button
+                onClick={() => setColorMode('rarity')}
+                className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Diamond size={14} />
+              </button>
+            </div>
+          </Tooltip>
+
+          {/* Reset zoom */}
+          {scale > 1 && (
+            <button
+              onClick={handleDoubleClick}
+              className="ml-auto px-2 py-1 text-[10px] font-bold bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+            >
+              Reset ({scale.toFixed(1)}x)
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Matrix - Portrait by default on mobile, full screen on desktop or landscape */}
@@ -482,35 +563,55 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
               const isDimmed = hasSearch && !dot.isMatch;
               const isHighlighted = hasSearch && dot.isMatch;
 
-              return (
-                <Tooltip
-                  key={`${dot.name}-${idx}`}
-                  content={
-                    <div className="text-center whitespace-nowrap">
-                      <div className="text-[10px] font-bold text-white mb-1">{dot.name}</div>
-                      <div className="flex gap-3 text-[9px]">
-                        <span className="text-slate-400">WR: <span className={getDeltaStyle(dot.wr, formatStats.avgWR)}>{dot.wr.toFixed(1)}%</span></span>
-                        {dot.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{dot.alsa.toFixed(2)}</span></span>}
-                      </div>
-                    </div>
+              const dotElement = (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{
+                    scale: isHighlighted ? 1.8 : 1,
+                    opacity: isDimmed ? 0.15 : 1,
+                  }}
+                  transition={isHighlighted
+                    ? { type: 'spring', stiffness: 300, damping: 15 }
+                    : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
                   }
-                >
-                  <motion.div
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{
-                      scale: isHighlighted ? 1.8 : 1,
-                      opacity: isDimmed ? 0.15 : 1,
-                    }}
-                    transition={isHighlighted
-                      ? { type: 'spring', stiffness: 300, damping: 15 }
-                      : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Reset zoom before navigating on mobile
+                    if (isMobile && scale > 1) {
+                      setScale(1);
+                      setPosition({ x: 0, y: 0 });
                     }
-                    onClick={() => onCardSelect?.(dot.card)}
-                    className={`absolute w-2 h-2 md:w-2.5 md:h-2.5 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all ${onCardSelect ? 'cursor-pointer' : ''} border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20 hover:brightness-125 hover:scale-150 hover:z-20'}`}
-                    style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
-                  />
-                </Tooltip>
+                    onCardSelect?.(dot.card);
+                  }}
+                  onMouseEnter={() => !isMobile && setHoveredCard({ card: dot.card, x: dot.x, y: dot.y })}
+                  onMouseLeave={() => !isMobile && setHoveredCard(null)}
+                  className={`absolute ${isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all ${onCardSelect ? 'cursor-pointer' : ''} border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20 hover:brightness-125 hover:scale-150 hover:z-20'}`}
+                  style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                />
               );
+
+              // Mobile: wrap with Tooltip for proximity display
+              if (isMobile) {
+                return (
+                  <Tooltip
+                    key={`${dot.name}-${idx}`}
+                    content={
+                      <div className="text-center whitespace-nowrap">
+                        <div className="text-[10px] font-bold text-white mb-1">{dot.name}</div>
+                        <div className="flex gap-3 text-[9px]">
+                          <span className="text-slate-400">WR: <span className={getDeltaStyle(dot.wr, formatStats.avgWR)}>{dot.wr.toFixed(1)}%</span></span>
+                          {dot.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{dot.alsa.toFixed(2)}</span></span>}
+                        </div>
+                      </div>
+                    }
+                  >
+                    {dotElement}
+                  </Tooltip>
+                );
+              }
+
+              // Desktop: no wrapper, uses fixed panel
+              return <React.Fragment key={`${dot.name}-${idx}`}>{dotElement}</React.Fragment>;
             })}
           </div>
 
@@ -535,6 +636,68 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
           )}
         </div>
       </div>
+
+      {/* Desktop: Fixed card preview panel */}
+      <AnimatePresence>
+        {!isMobile && hoveredCard && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.15 }}
+            className="fixed top-24 right-4 z-50 w-48 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden"
+          >
+            {/* Card image */}
+            <img
+              src={getCardImage(hoveredCard.card.name)}
+              alt={hoveredCard.card.name}
+              className="w-full aspect-[488/680] object-cover bg-slate-950"
+              loading="eager"
+            />
+
+            {/* Card info */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="text-sm font-bold text-white leading-tight line-clamp-2 flex-1">
+                  {hoveredCard.card.name}
+                </div>
+                <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black flex-shrink-0 ${RARITY_STYLES[normalizeRarity(hoveredCard.card.rarity)]}`}>
+                  {normalizeRarity(hoveredCard.card.rarity)}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[9px] text-slate-500 uppercase tracking-wider">Win Rate</div>
+                  <div className={`text-lg font-black ${getDeltaStyle(hoveredCard.card.gih_wr!, formatStats.avgWR)}`}>
+                    {hoveredCard.card.gih_wr?.toFixed(1)}%
+                  </div>
+                </div>
+                {isDraft && hoveredCard.card.alsa && (
+                  <div className="text-right">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">ALSA</div>
+                    <div className="text-lg font-black text-white">
+                      {hoveredCard.card.alsa.toFixed(2)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Delta indicator */}
+              <div className="pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500">vs. format avg</span>
+                  <span className={`font-bold ${getDeltaStyle(hoveredCard.card.gih_wr!, formatStats.avgWR)}`}>
+                    {(hoveredCard.card.gih_wr! - formatStats.avgWR) >= 0 ? '+' : ''}
+                    {(hoveredCard.card.gih_wr! - formatStats.avgWR).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </motion.div>
   );
 };
