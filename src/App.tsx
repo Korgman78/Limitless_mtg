@@ -411,7 +411,6 @@ export default function MTGLimitedApp(): React.ReactElement {
                       <h2 className="text-lg md:text-xl font-black text-white tracking-tight">Archetype Breakdown</h2>
                     </div>
                     <div className="flex-1 h-px bg-gradient-to-r from-slate-700/50 to-transparent" />
-                    <span className="text-xs font-bold text-slate-500 tabular-nums">{filteredDecks.length} archetypes</span>
                   </div>
                 </div>
 
