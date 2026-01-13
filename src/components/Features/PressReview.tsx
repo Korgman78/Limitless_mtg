@@ -90,6 +90,8 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
   const [qualityFilter, setQualityFilter] = useState<'All' | 'Top'>('All');
   const [zoomedCard, setZoomedCard] = useState<{ officialName: string; dbName: string } | null>(null);
   const [hasVoted, setHasVoted] = useState<boolean>(false);
+  const [cardFilter, setCardFilter] = useState<string>('');
+  const [showCardSuggestions, setShowCardSuggestions] = useState<boolean>(false);
 
   // React Query hooks
   const { data: activeSetsOptions = [] } = useActiveSets();
@@ -236,14 +238,41 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
         });
     }
 
+    // Filtre par carte mentionnée
+    if (cardFilter.trim()) {
+        const search = cardFilter.toLowerCase();
+        filtered = filtered.filter((article: Article) => {
+            const cards = parsePostgresArray(article.mentioned_cards);
+            return cards.some((card: string) => card.toLowerCase().includes(search));
+        });
+    }
+
     return filtered;
-  }, [articles, selectedTags, qualityFilter]);
+  }, [articles, selectedTags, qualityFilter, cardFilter]);
 
   const allTags = useMemo((): string[] => {
     const tags = new Set<string>();
     if (articles) articles.forEach((article: Article) => article.tags?.forEach((tag: string) => tags.add(tag)));
     return Array.from(tags).sort();
   }, [articles]);
+
+  // Extraire toutes les cartes mentionnées pour l'autocomplete
+  const allMentionedCards = useMemo((): string[] => {
+    const cards = new Set<string>();
+    if (articles) {
+      articles.forEach((article: Article) => {
+        parsePostgresArray(article.mentioned_cards).forEach((card: string) => cards.add(card));
+      });
+    }
+    return Array.from(cards).sort();
+  }, [articles]);
+
+  // Suggestions filtrées par la saisie
+  const cardSuggestions = useMemo((): string[] => {
+    if (!cardFilter.trim()) return [];
+    const search = cardFilter.toLowerCase();
+    return allMentionedCards.filter((card) => card.toLowerCase().includes(search)).slice(0, 8);
+  }, [cardFilter, allMentionedCards]);
 
   const toggleTag = (tag: string): void => {
     setSelectedTags((prev: string[]) => prev.includes(tag) ? prev.filter((t: string) => t !== tag) : [...prev, tag]);
@@ -346,6 +375,59 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                     <Filter size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${qualityFilter === 'Top' ? 'text-emerald-500' : 'text-slate-500'} pointer-events-none`} />
                 </div>
             </div>
+          </div>
+
+          {/* Card Search Filter */}
+          <div className="relative">
+            <div className="relative">
+              <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${cardFilter ? 'text-indigo-400' : 'text-slate-500'} pointer-events-none z-10`} />
+              <input
+                type="text"
+                value={cardFilter}
+                onChange={(e) => {
+                  setCardFilter(e.target.value);
+                  setShowCardSuggestions(true);
+                }}
+                onFocus={() => setShowCardSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCardSuggestions(false), 200)}
+                placeholder="Filter by card name..."
+                className={`w-full bg-slate-900 border ${cardFilter ? 'border-indigo-500' : 'border-slate-700'} text-white text-xs font-bold py-2.5 pl-9 pr-9 rounded-xl outline-none focus:border-indigo-500 transition-all hover:border-slate-600`}
+              />
+              {cardFilter && (
+                <button
+                  onClick={() => setCardFilter('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Suggestions dropdown */}
+            <AnimatePresence>
+              {showCardSuggestions && cardSuggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden"
+                >
+                  {cardSuggestions.map((card: string) => (
+                    <button
+                      key={card}
+                      onClick={() => {
+                        setCardFilter(card);
+                        setShowCardSuggestions(false);
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-medium text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors flex items-center gap-2"
+                    >
+                      <Gem size={12} className="text-indigo-400 flex-shrink-0" />
+                      <span className="truncate">{card}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar mask-linear-fade">
