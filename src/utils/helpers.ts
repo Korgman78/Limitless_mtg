@@ -81,13 +81,16 @@ export const normalizeArchetypeName = (name: string): string => {
 };
 
 // Extract acronym from archetype name in WUBRG order
-// "Simic (GU)" → "UG", "WU" → "WU"
+// "Simic (GU)" → "UG", "WU" → "WU", "Orzhov (WB) + Splash" → "WB+"
 export const getArchetypeAcronym = (name: string): string => {
+  const isSplash = /splash/i.test(name);
+  const suffix = isSplash ? '+' : '';
+
   const match = name.match(/\(([WUBRG]+)\)/);
   if (match) {
-    return sortColorsWUBRG(match[1]);
+    return sortColorsWUBRG(match[1]) + suffix;
   }
-  // If it's just colors, sort them
+  // If it's just colors (with optional + Splash), sort them
   const colors = name.replace(/[^WUBRG]/g, '');
-  return sortColorsWUBRG(colors);
+  return sortColorsWUBRG(colors) + suffix;
 };

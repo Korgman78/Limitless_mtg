@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
-import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors } from '../../utils/helpers';
+import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
 import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { ManaIcons } from '../Common/ManaIcons';
 import { Tooltip } from '../Common/Tooltip';
@@ -761,7 +761,10 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
                         <div className="flex justify-between items-center mb-1">
                           <div className="flex items-center gap-2">
                             <ManaIcons colors={perf.deckColors} size="sm" />
-                            <span className="text-sm font-bold text-slate-200 truncate">{perf.deckName}</span>
+                            <span className="text-sm font-bold text-slate-200 truncate">
+                              <span className="md:hidden">{getArchetypeAcronym(perf.deckName)}</span>
+                              <span className="hidden md:inline">{normalizeArchetypeName(perf.deckName)}</span>
+                            </span>
                           </div>
                           <span className={`text-xs font-bold ${getDeltaStyle(perf.cardWr, perf.deckWr)}`}>{perf.cardWr.toFixed(1)}%</span>
                         </div>
