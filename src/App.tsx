@@ -234,10 +234,10 @@ export default function MTGLimitedApp(): React.ReactElement {
       </div>
       <div className="space-y-2">
         <button onClick={() => handleTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Layers size={20} strokeWidth={2.5} /> <span>Archetypes Breakdown</span>
+          <Layers size={20} strokeWidth={2.5} /> <span>Metagame Breakdown</span>
         </button>
         <button onClick={() => handleTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Zap size={20} strokeWidth={2.5} /> <span>Card Ratings</span>
+          <Zap size={20} strokeWidth={2.5} /> <span>Cards Ratings</span>
         </button>
         <button onClick={() => handleTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
@@ -397,6 +397,21 @@ export default function MTGLimitedApp(): React.ReactElement {
                     <button onClick={() => setChartMode(prev => prev === 'meta' ? 'pairs' : 'meta')} className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20">
                       <Repeat size={10} /> Switch Chart
                     </button>
+                  </div>
+                </div>
+
+                {/* Section Header: Archetype Breakdown */}
+                <div className="relative pt-2">
+                  {/* Decorative line */}
+                  <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                      <h2 className="text-lg md:text-xl font-black text-white tracking-tight">Archetype Breakdown</h2>
+                    </div>
+                    <div className="flex-1 h-px bg-gradient-to-r from-slate-700/50 to-transparent" />
+                    <span className="text-xs font-bold text-slate-500 tabular-nums">{filteredDecks.length} archetypes</span>
                   </div>
                 </div>
 
@@ -649,7 +664,7 @@ export default function MTGLimitedApp(): React.ReactElement {
       </AnimatePresence>
 
       <nav className="md:hidden bg-slate-900 border-t border-slate-800 px-4 py-2 flex justify-around items-center fixed bottom-0 w-full z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-        <button onClick={() => handleTabChange('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Decks</span></button>
+        <button onClick={() => handleTabChange('decks')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'decks' ? 'text-indigo-400' : 'text-slate-600'}`}><Layers size={20} strokeWidth={activeTab === 'decks' ? 2.5 : 2} /><span className="text-[9px] font-bold">Meta</span></button>
         <button onClick={() => handleTabChange('cards')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'cards' ? 'text-indigo-400' : 'text-slate-600'}`}><Zap size={20} strokeWidth={activeTab === 'cards' ? 2.5 : 2} /><span className="text-[9px] font-bold">Cards</span></button>
         <button onClick={() => handleTabChange('compare')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400' : 'text-slate-600'}`}>
           <Repeat size={20} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
