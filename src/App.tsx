@@ -442,7 +442,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   <div className="flex items-center gap-3 mb-4">
                     <div className="flex items-center gap-2">
                       <div className="w-1 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-purple-500" />
-                      <h2 className="text-lg md:text-xl font-black text-white tracking-tight">Archetype Breakdown</h2>
+                      <h2 className="text-lg md:text-xl font-black text-white tracking-tight">Archetypes Breakdown</h2>
                     </div>
                     <div className="flex-1 h-px bg-gradient-to-r from-slate-700/50 to-transparent" />
                   </div>
