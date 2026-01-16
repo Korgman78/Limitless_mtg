@@ -2,7 +2,7 @@
 
 **Limitless** is a modern, high-performance analytics platform for Magic: The Gathering Limited formats (Draft & Sealed). Built with **React 19** and **Vite**, it leverages data from **17Lands** to provide players with deep insights into the metagame, card performance, and strategic trends.
 
-![Limitless Banner](public/og-image.png)
+Don't hesitate to use the 17 lands tracker ! https://www.17lands.com/getting_started
 
 ## 🚀 Key Features
 
