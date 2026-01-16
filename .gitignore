@@ -14,3 +14,7 @@ dist/
 
 # Claude Code context (personnel)
 CLAUDE.md
+
+# Scrapping
+etl_script.py
+daily_etl.yml
