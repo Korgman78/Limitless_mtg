@@ -15,5 +15,5 @@ dist/
 # Claude Code context (personnel)
 CLAUDE.md
 
-# Scrapping
-etl_script.py
+.agent/
+.claude/
