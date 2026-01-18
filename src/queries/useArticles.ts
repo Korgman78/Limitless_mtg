@@ -102,32 +102,98 @@ export function useVoteArticle() {
   })
 }
 
-// Fetch official card names from Scryfall
+// Persistent localStorage cache for Scryfall card name mappings
+const SCRYFALL_CACHE_KEY = 'scryfall-card-names-cache'
+const SCRYFALL_CACHE_VERSION = 1
+
+interface ScryfallCache {
+  version: number
+  mappings: Record<string, string>
+  timestamps: Record<string, number>
+}
+
+const getPersistedCache = (): ScryfallCache => {
+  try {
+    const cached = localStorage.getItem(SCRYFALL_CACHE_KEY)
+    if (cached) {
+      const parsed = JSON.parse(cached)
+      if (parsed.version === SCRYFALL_CACHE_VERSION) {
+        return parsed
+      }
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return { version: SCRYFALL_CACHE_VERSION, mappings: {}, timestamps: {} }
+}
+
+const saveToPersistedCache = (approxName: string, officialName: string) => {
+  try {
+    const cache = getPersistedCache()
+    cache.mappings[approxName.toLowerCase()] = officialName
+    cache.timestamps[approxName.toLowerCase()] = Date.now()
+
+    // Cleanup old entries (older than 30 days) to prevent unbounded growth
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+    Object.keys(cache.timestamps).forEach(key => {
+      if (cache.timestamps[key] < thirtyDaysAgo) {
+        delete cache.mappings[key]
+        delete cache.timestamps[key]
+      }
+    })
+
+    localStorage.setItem(SCRYFALL_CACHE_KEY, JSON.stringify(cache))
+  } catch (e) {
+    // Ignore storage errors
+  }
+}
+
+const getCachedName = (approxName: string): string | null => {
+  const cache = getPersistedCache()
+  return cache.mappings[approxName.toLowerCase()] || null
+}
+
+// Fetch official card names from Scryfall with persistent caching
 export function useScryfallCardNames(cardNames: string[], enabled: boolean) {
   return useQuery({
     queryKey: ['scryfall', cardNames.join(',')],
     queryFn: async () => {
       const mappings: Record<string, string> = {}
+      const uncachedNames: string[] = []
 
-      await Promise.all(
-        cardNames.map(async (approxName) => {
-          try {
-            const res = await fetch(
-              `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(approxName)}`
-            )
-            if (res.ok) {
-              const data = await res.json()
-              mappings[approxName] = data.name
+      // Check persistent cache first
+      cardNames.forEach(approxName => {
+        const cached = getCachedName(approxName)
+        if (cached) {
+          mappings[approxName] = cached
+        } else {
+          uncachedNames.push(approxName)
+        }
+      })
+
+      // Only fetch uncached names
+      if (uncachedNames.length > 0) {
+        await Promise.all(
+          uncachedNames.map(async (approxName) => {
+            try {
+              const res = await fetch(
+                `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(approxName)}`
+              )
+              if (res.ok) {
+                const data = await res.json()
+                mappings[approxName] = data.name
+                saveToPersistedCache(approxName, data.name)
+              }
+            } catch (err) {
+              console.error('Scryfall fetch error:', err)
             }
-          } catch (err) {
-            console.error('Scryfall fetch error:', err)
-          }
-        })
-      )
+          })
+        )
+      }
 
       return mappings
     },
     enabled: enabled && cardNames.length > 0,
-    staleTime: 24 * 60 * 60 * 1000, // Cache Scryfall for 24h
+    staleTime: 24 * 60 * 60 * 1000, // Cache in React Query for 24h
   })
 }

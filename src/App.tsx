@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
   X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Deck, Card, SortConfig } from './types';
 
 // Constants
@@ -13,6 +14,7 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 import { useSets } from './queries/useSets';
 import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
+import { queryKeys } from './queries/keys';
 
 // Hooks
 import { useDebounce } from './hooks/useDebounce';
@@ -254,6 +256,43 @@ export default function MTGLimitedApp(): React.ReactElement {
     threshold: 80
   });
 
+  // Query client for prefetching
+  const queryClient = useQueryClient();
+
+  // Prefetch data on tab hover (reduces perceived latency)
+  const prefetchTabData = useCallback((tab: string) => {
+    switch (tab) {
+      case 'cards':
+        // Prefetch cards if not already cached
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.cards(activeSet, activeFormat, archetypeFilter),
+          staleTime: 5 * 60 * 1000, // 5 minutes
+        });
+        break;
+      case 'compare':
+        // Prefetch format comparison data
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.formatComparison(activeSet, 'rarity'),
+          staleTime: 5 * 60 * 1000,
+        });
+        break;
+      case 'press':
+        // Prefetch articles
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.articles('All'),
+          staleTime: 5 * 60 * 1000,
+        });
+        break;
+      case 'decks':
+        // Prefetch decks
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.decks(activeSet, activeFormat),
+          staleTime: 5 * 60 * 1000,
+        });
+        break;
+    }
+  }, [queryClient, activeSet, activeFormat, archetypeFilter]);
+
   // Tab change with haptic feedback
   const handleTabChange = (tab: string) => {
     haptics.light();
@@ -267,16 +306,16 @@ export default function MTGLimitedApp(): React.ReactElement {
         <p className="text-xs text-slate-500 font-medium tracking-wide">MTG LIMITED ANALYTICS</p>
       </div>
       <div className="space-y-2">
-        <button onClick={() => handleTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onMouseEnter={() => prefetchTabData('decks')} onClick={() => handleTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Layers size={20} strokeWidth={2.5} /> <span>Metagame Breakdown</span>
         </button>
-        <button onClick={() => handleTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onMouseEnter={() => prefetchTabData('cards')} onClick={() => handleTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Zap size={20} strokeWidth={2.5} /> <span>Cards Ratings</span>
         </button>
-        <button onClick={() => handleTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onMouseEnter={() => prefetchTabData('compare')} onClick={() => handleTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
         </button>
-        <button onClick={() => handleTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <button onMouseEnter={() => prefetchTabData('press')} onClick={() => handleTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
           <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
         </button>
       </div>

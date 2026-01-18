@@ -14,29 +14,29 @@ export function useCards(activeSet: string, activeFormat: string, archetypeFilte
     queryFn: async (): Promise<CardsResult> => {
       if (!activeSet) return { cards: [], globalMeanWR: 55.0 }
 
-      // Fetch global mean WR
-      const { data: globalDeck } = await supabase
-        .from('archetype_stats')
-        .select('win_rate')
-        .eq('set_code', activeSet)
-        .eq('format', activeFormat)
-        .eq('archetype_name', 'All Decks')
-        .single()
+      // Parallel fetch: global mean WR + cards
+      const [globalDeckResult, cardsResult] = await Promise.all([
+        supabase
+          .from('archetype_stats')
+          .select('win_rate')
+          .eq('set_code', activeSet)
+          .eq('format', activeFormat)
+          .eq('archetype_name', 'All Decks')
+          .single(),
+        supabase
+          .from('card_stats')
+          .select('*')
+          .eq('set_code', activeSet)
+          .eq('filter_context', archetypeFilter)
+          .eq('format', activeFormat)
+      ])
 
-      const globalMeanWR = globalDeck?.win_rate || 55.0
+      const globalMeanWR = globalDeckResult.data?.win_rate || 55.0
 
-      // Fetch cards
-      const { data, error } = await supabase
-        .from('card_stats')
-        .select('*')
-        .eq('set_code', activeSet)
-        .eq('filter_context', archetypeFilter)
-        .eq('format', activeFormat)
+      if (cardsResult.error) throw cardsResult.error
+      if (!cardsResult.data) return { cards: [], globalMeanWR }
 
-      if (error) throw error
-      if (!data) return { cards: [], globalMeanWR }
-
-      const formattedCards: Card[] = data.map((c: any) => ({
+      const formattedCards: Card[] = cardsResult.data.map((c: any) => ({
         id: c.id,
         name: c.card_name,
         rarity: c.rarity,

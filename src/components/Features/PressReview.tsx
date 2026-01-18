@@ -104,10 +104,13 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
     isFetchingNextPage: loadingMore,
   } = useArticles(currentSetFilter);
 
-  // Flatten pages into single array
+  // Flatten pages into single array - use stable dependencies
+  // pagesLength changes when new pages are loaded, currentSetFilter changes when filter changes
+  const pagesLength = articlesData?.pages?.length ?? 0;
   const articles = useMemo(() => {
     return articlesData?.pages.flat() || [];
-  }, [articlesData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagesLength, currentSetFilter]);
 
   const fetchError = articlesError ? 'Failed to load articles' : null;
   const hasMore = hasNextPage ?? false;
@@ -136,7 +139,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
     if (!text) return "";
     let content = text.split('{')[0];
     content = content.replace(/```[\s\S]*?$/g, '').replace(/`{1,3}/g, '').replace(/[-_*]{3,}/g, '').replace(/\s+$/g, '').trim();
-    
+
     const mappings = Object.entries(officialCardNames);
     if (mappings.length > 0) {
       mappings.sort((a, b) => b[0].length - a[0].length);
@@ -595,7 +598,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                       </div>
 
                       <div className="prose prose-invert prose-sm prose-indigo max-w-none">
-                        <ReactMarkdown 
+                        <ReactMarkdown
                           components={{
                             a: ({ href, children, ...props }) => {
                               if (href?.startsWith('#card-')) {
