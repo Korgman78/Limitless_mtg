@@ -15,6 +15,7 @@ import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 interface CardEvaluationBlockProps {
   card: Card;
   allCards: Card[];
+  globalMeanWR: number;  // WR moyen global du format (depuis archetype_stats "All Decks")
   onCardSelect?: (card: Card) => void;
   showPeers: boolean;
   setShowPeers: (show: boolean) => void;
@@ -42,7 +43,7 @@ const getManaColor = (colors: string | string[] | null | undefined): string => {
   }
 };
 
-const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
+const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, globalMeanWR, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
   // Utiliser les valeurs display si fournies, sinon fallback sur card
   const effectiveWR = displayWR ?? card.gih_wr;
   const effectiveALSA = displayALSA ?? card.alsa;
@@ -201,10 +202,7 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
     const validWRs = allCards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined).map(c => c.gih_wr!).sort((a, b) => a - b);
     const validALSAs = allCards.filter(c => c.alsa !== null && c.alsa !== undefined).map(c => c.alsa!).sort((a, b) => a - b);
 
-    // WR stats
-    const avgWR = validWRs.length > 0
-      ? validWRs.reduce((sum, wr) => sum + wr, 0) / validWRs.length
-      : 55;
+    // WR stats - utiliser globalMeanWR (WR moyen du format) au lieu de la moyenne des cartes
     const minWRActual = validWRs[0] ?? 45;
     const maxWRActual = validWRs[validWRs.length - 1] ?? 70;
 
@@ -214,13 +212,13 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
       : 4.5;
 
     return {
-      avgWR,
+      avgWR: globalMeanWR,  // WR moyen global du format (pas la moyenne des cartes)
       minWR: Math.floor(minWRActual - 1),
       maxWR: Math.ceil(maxWRActual + 1),
       bestWR: maxWRActual,
       avgALSA,
     };
-  }, [allCards]);
+  }, [allCards, globalMeanWR]);
 
   const AVG_WR = formatStats.avgWR;
   const minWR = formatStats.minWR;
@@ -325,8 +323,6 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
   const displayMinWR = hasAlsa ? minWR : sealedDisplayMinWR;
   const displayMaxWR = hasAlsa ? maxWR : sealedDisplayMaxWR;
 
-  const yAvg = 100 - ((AVG_WR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
-
   // Calculate Y position, clamping to 2-98% range to keep dots visible
   const getYPosition = (wr: number) => {
     const clampedWR = Math.max(displayMinWR, Math.min(displayMaxWR, wr));
@@ -334,7 +330,11 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
     return Math.max(2, Math.min(98, y));
   };
 
-  const yPos = getYPosition(effectiveWR);
+  // Position de la ligne moyenne (avec le même clamp pour cohérence)
+  const yAvg = getYPosition(AVG_WR);
+
+  // Position du point - utiliser yAvg directement si le WR est très proche de la moyenne (évite les décalages de précision)
+  const yPos = Math.abs(effectiveWR - AVG_WR) < 0.1 ? yAvg : getYPosition(effectiveWR);
 
   // Compute peer positions for matrix overlay
   const peerDots = useMemo(() => {
@@ -437,8 +437,12 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
                   className="absolute inset-0 origin-center transition-transform duration-100"
                   style={{ transform: `translate(${position.x}%, ${position.y}%) scale(${scale})` }}
                 >
-                {/* Moyenne line (always shown) */}
-                <div className="absolute left-0 right-0 border-t border-dashed border-slate-700/50" style={{ top: `${yAvg}%` }}></div>
+                {/* Moyenne line (always shown) - avec tooltip pour afficher la valeur */}
+                <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
+                  <div className="absolute left-0 right-0 h-3 cursor-help z-10 -translate-y-1/2" style={{ top: `${yAvg}%` }}>
+                    <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-slate-600" />
+                  </div>
+                </Tooltip>
 
                 {hasAlsa ? (
                   <>
@@ -561,13 +565,14 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
                 ))}
 
                         {/* Main card dot - always on top */}
-                        <motion.div
-                          initial={{ scale: 0, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ type: 'spring', delay: 0.2 }}
-                          className="absolute w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] z-10 border-2 border-indigo-600 -translate-x-1/2 -translate-y-1/2"
-                          style={{ left: `${xPos}%`, top: `${yPos}%` }}
-                        />
+                        <div className="absolute -translate-x-1/2 -translate-y-1/2 z-10" style={{ left: `${xPos}%`, top: `${yPos}%` }}>
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ type: 'spring', delay: 0.2 }}
+                            className="w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] border-2 border-indigo-600"
+                          />
+                        </div>
                 </div>
                 {/* Zoom level indicator */}
                 {scale > 1 && (
@@ -602,7 +607,7 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
 };
 
 // --- COMPOSANT PRINCIPAL ---
-export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, onClose, onCardSelect }) => {
+export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, globalMeanWR, onClose, onCardSelect }) => {
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
   const [showPeers, setShowPeers] = useState(false);
@@ -728,7 +733,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
 
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-          <CardEvaluationBlock card={card} allCards={allCards} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
+          <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
 
           <div>
             <div className="flex justify-between items-center mb-3">

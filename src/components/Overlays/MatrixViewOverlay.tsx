@@ -8,8 +8,19 @@ import { Tooltip } from '../Common/Tooltip';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
+interface Deck {
+  id: string | number;
+  name: string;
+  colors: string;
+  wr: number;
+  games: number;
+  type: string;
+  history: number[];
+}
+
 interface MatrixViewOverlayProps {
   cards: Card[];
+  decks: Deck[];
   activeFormat: string;
   archetypeFilter: string;
   globalMeanWR: number;
@@ -48,6 +59,7 @@ const getRarityColor = (rarity: string): string => {
 
 export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
   cards,
+  decks,
   activeFormat,
   archetypeFilter,
   globalMeanWR,
@@ -120,8 +132,21 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
     const minWR = validWRs[0] ?? 45;
     const maxWR = validWRs[validWRs.length - 1] ?? 70;
 
-    // Use globalMeanWR prop (format average) instead of recalculating
-    const avgWR = globalMeanWR;
+    // Si on est en mode archétype (pas Global), utiliser le WR de l'archétype comme centre
+    // Sinon utiliser le globalMeanWR (moyenne du format)
+    let avgWR = globalMeanWR;
+    if (archetypeFilter && archetypeFilter !== 'Global') {
+      // Normaliser les couleurs pour comparaison (trier les lettres alphabétiquement)
+      const normalizeColors = (colors: string) => {
+        const base = colors.replace(' + Splash', '');
+        return base.split('').sort().join('');
+      };
+      const normalizedFilter = normalizeColors(archetypeFilter);
+      const matchingDeck = decks.find(d => normalizeColors(d.colors) === normalizedFilter);
+      if (matchingDeck) {
+        avgWR = matchingDeck.wr;
+      }
+    }
 
     // ALSA average from ALL cards
     const avgALSA = validALSAs.length > 0
@@ -129,7 +154,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
       : 4.5;
 
     return { avgWR, minWR, maxWR, avgALSA };
-  }, [cards, globalMeanWR]);
+  }, [cards, decks, archetypeFilter, globalMeanWR]);
 
   // Matrix bounds
   const minALSA = 1.25;
@@ -554,6 +579,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-purple-400/70 font-black" style={{ top: `${(sealedTiers.y9 + sealedTiers.y7) / 2}%`, transform: 'translateY(-50%)' }}>TOP TIER</div>
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-emerald-400/70 font-black" style={{ top: `${(sealedTiers.y7 + sealedTiers.y5) / 2}%`, transform: 'translateY(-50%)' }}>VERY GOOD</div>
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-emerald-400/50 font-black" style={{ top: `${(sealedTiers.y5 + sealedTiers.y3) / 2}%`, transform: 'translateY(-50%)' }}>GOOD</div>
+                <div className="absolute right-3 text-[9px] md:text-[10px] text-slate-300/60 font-black" style={{ top: `${(sealedTiers.y3 + sealedTiers.y1) / 2}%`, transform: 'translateY(-50%)' }}>SOLID</div>
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-slate-400/80 font-black" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>PLAYABLE</div>
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-slate-500/70 font-black" style={{ top: `${(sealedTiers.yM1 + sealedTiers.yM3) / 2}%`, transform: 'translateY(-50%)' }}>FILLER</div>
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-amber-400/70 font-black" style={{ top: `${(sealedTiers.yM3 + sealedTiers.yM5) / 2}%`, transform: 'translateY(-50%)' }}>BAD</div>
@@ -662,7 +688,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
           </div>
 
           {/* Average WR tooltip zone */}
-          <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{formatStats.avgWR.toFixed(1)}%</div></div>}>
+          <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">{archetypeFilter && archetypeFilter !== 'Global' ? 'Archetype' : 'Format'} Average WR</div><div className="text-sm font-black text-white">{formatStats.avgWR.toFixed(1)}%</div></div>}>
             <div className="absolute left-0 right-0 h-4 cursor-help" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }} />
           </Tooltip>
 
@@ -724,7 +750,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
               {/* Delta indicator */}
               <div className="pt-2 border-t border-slate-800">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500">vs. format avg</span>
+                  <span className="text-slate-500">vs. {archetypeFilter && archetypeFilter !== 'Global' ? 'archetype' : 'format'} avg</span>
                   <span className={`font-bold ${getDeltaStyle(hoveredCard.card.gih_wr!, formatStats.avgWR)}`}>
                     {(hoveredCard.card.gih_wr! - formatStats.avgWR) >= 0 ? '+' : ''}
                     {(hoveredCard.card.gih_wr! - formatStats.avgWR).toFixed(1)}%

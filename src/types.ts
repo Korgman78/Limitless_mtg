@@ -123,6 +123,7 @@ export interface CardDetailOverlayProps {
   activeSet: string;
   decks: Deck[];
   cards: Card[];
+  globalMeanWR: number;
   onClose: () => void;
   onCardSelect?: (card: Card) => void;
 }
