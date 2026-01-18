@@ -7,7 +7,7 @@ import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useArchetypeCards } from '../../queries/useArchetypeCards';
 
-export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, activeFormat, activeSet, globalMeanWR, totalGames, onClose, onCardClick }) => {
+const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, activeFormat, activeSet, globalMeanWR, totalGames, onClose, onCardClick }) => {
   const { data: archCards = [], isLoading: loading, error } = useArchetypeCards(deck?.colors || '', activeFormat, activeSet);
   const fetchError = error ? 'Failed to load archetype data' : null;
 
@@ -186,3 +186,7 @@ export const ArchetypeDashboard: React.FC<ArchetypeDashboardProps> = ({ deck, ac
     </SwipeableOverlay>
   );
 };
+
+// Memoized export pour éviter les re-renders inutiles
+export const ArchetypeDashboard = React.memo(ArchetypeDashboardComponent);
+ArchetypeDashboard.displayName = 'ArchetypeDashboard';

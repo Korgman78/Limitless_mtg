@@ -35,6 +35,50 @@ import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Ch
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
 import { FormatComparison, PressReview, FormatBlueprint } from './components/Features';
 
+// Memoized Sidebar component to prevent unnecessary re-renders
+interface SidebarProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onPrefetch: (tab: string) => void;
+}
+
+const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }) => (
+  <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
+    <div className="mb-8 px-2">
+      <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent italic">LIMITLESS</h1>
+      <p className="text-xs text-slate-500 font-medium tracking-wide">MTG LIMITED ANALYTICS</p>
+    </div>
+    <div className="space-y-2">
+      <button onMouseEnter={() => onPrefetch('decks')} onClick={() => onTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <Layers size={20} strokeWidth={2.5} /> <span>Metagame Breakdown</span>
+      </button>
+      <button onMouseEnter={() => onPrefetch('cards')} onClick={() => onTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <Zap size={20} strokeWidth={2.5} /> <span>Cards Ratings</span>
+      </button>
+      <button onMouseEnter={() => onPrefetch('compare')} onClick={() => onTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
+      </button>
+      <button onMouseEnter={() => onPrefetch('press')} onClick={() => onTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
+      </button>
+    </div>
+    <div className="mt-auto pt-6 border-t border-slate-800 space-y-4">
+      <div className="text-[10px] text-slate-500 leading-relaxed px-2">
+        <p className="mb-2">
+          <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>. Don't forget to play with <a href="https://www.17lands.com/getting_started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">their tracker</a> on!
+        </p>
+        <p className="italic">
+          Limitless is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
+        </p>
+      </div>
+      <div className="flex gap-4 px-2 opacity-50 hover:opacity-100 transition-opacity">
+        <span className="text-[9px] text-slate-600">v1.4.0</span>
+        <span className="text-[9px] text-slate-600 font-mono uppercase tracking-tighter">Updated Daily</span>
+      </div>
+    </div>
+  </nav>
+));
+Sidebar.displayName = 'Sidebar';
 
 export default function MTGLimitedApp(): React.ReactElement {
   // --- Coach Marks for Onboarding ---
@@ -293,48 +337,12 @@ export default function MTGLimitedApp(): React.ReactElement {
     }
   }, [queryClient, activeSet, activeFormat, archetypeFilter]);
 
-  // Tab change with haptic feedback
-  const handleTabChange = (tab: string) => {
+  // Tab change with haptic feedback (memoized for Sidebar)
+  const handleTabChange = useCallback((tab: string) => {
     haptics.light();
     setActiveTab(tab);
-  };
+  }, [setActiveTab]);
 
-  const Sidebar = () => (
-    <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
-      <div className="mb-8 px-2">
-        <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent italic">LIMITLESS</h1>
-        <p className="text-xs text-slate-500 font-medium tracking-wide">MTG LIMITED ANALYTICS</p>
-      </div>
-      <div className="space-y-2">
-        <button onMouseEnter={() => prefetchTabData('decks')} onClick={() => handleTabChange('decks')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'decks' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Layers size={20} strokeWidth={2.5} /> <span>Metagame Breakdown</span>
-        </button>
-        <button onMouseEnter={() => prefetchTabData('cards')} onClick={() => handleTabChange('cards')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'cards' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Zap size={20} strokeWidth={2.5} /> <span>Cards Ratings</span>
-        </button>
-        <button onMouseEnter={() => prefetchTabData('compare')} onClick={() => handleTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
-        </button>
-        <button onMouseEnter={() => prefetchTabData('press')} onClick={() => handleTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
-        </button>
-      </div>
-      <div className="mt-auto pt-6 border-t border-slate-800 space-y-4">
-        <div className="text-[10px] text-slate-500 leading-relaxed px-2">
-          <p className="mb-2">
-            <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>. Don't forget to play with <a href="https://www.17lands.com/getting_started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">their tracker</a> on!
-          </p>
-          <p className="italic">
-            Limitless is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
-          </p>
-        </div>
-        <div className="flex gap-4 px-2 opacity-50 hover:opacity-100 transition-opacity">
-          <span className="text-[9px] text-slate-600">v1.4.0</span>
-          <span className="text-[9px] text-slate-600 font-mono uppercase tracking-tighter">Updated Daily</span>
-        </div>
-      </div>
-    </nav>
-  );
 
   const handleSort = (key: string) => {
     setSortConfig(current => {
@@ -345,17 +353,24 @@ export default function MTGLimitedApp(): React.ReactElement {
     });
   };
 
+  // Memoized callbacks for overlays to prevent unnecessary re-renders
+  const handleCloseError = useCallback(() => setError(null), []);
+  const handleCloseDeck = useCallback(() => setSelectedDeck(null), []);
+  const handleCloseMatrix = useCallback(() => setShowMatrixView(false), []);
+  const handleCloseCard = useCallback(() => setSelectedCard(null), []);
+  const handleCardSelect = useCallback((card: Card) => setSelectedCard(card), []);
+
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans w-full overflow-hidden relative selection:bg-indigo-500/30">
 
       <AnimatePresence>
-        {error && <ErrorBanner key="error-banner" message={error} onDismiss={() => setError(null)} />}
-        {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={() => setSelectedDeck(null)} onCardClick={(card) => setSelectedCard(card)} />}
-        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={() => setShowMatrixView(false)} onCardSelect={(card) => setSelectedCard(card)} />}
-        {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={() => setSelectedCard(null)} onCardSelect={(card) => setSelectedCard(card)} />}
+        {error && <ErrorBanner key="error-banner" message={error} onDismiss={handleCloseError} />}
+        {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={handleCloseDeck} onCardClick={handleCardSelect} />}
+        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
+        {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
       </AnimatePresence>
 
-      <Sidebar />
+      <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onPrefetch={prefetchTabData} />
 
       <div className="flex-1 flex flex-col h-full min-w-0 bg-slate-950 md:bg-[#0B0F19]">
         <header className="px-4 py-3 bg-slate-900 md:bg-slate-950/80 md:backdrop-blur-md sticky top-0 z-30 border-b border-slate-800 flex justify-between items-center shadow-md">

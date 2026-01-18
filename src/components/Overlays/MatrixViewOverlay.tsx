@@ -57,7 +57,7 @@ const getRarityColor = (rarity: string): string => {
   }
 };
 
-export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
+const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   cards,
   decks,
   activeFormat,
@@ -765,3 +765,7 @@ export const MatrixViewOverlay: React.FC<MatrixViewOverlayProps> = ({
     </motion.div>
   );
 };
+
+// Memoized export pour éviter les re-renders inutiles
+export const MatrixViewOverlay = React.memo(MatrixViewOverlayComponent);
+MatrixViewOverlay.displayName = 'MatrixViewOverlay';

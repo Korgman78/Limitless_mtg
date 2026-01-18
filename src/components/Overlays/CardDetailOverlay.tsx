@@ -25,6 +25,8 @@ interface CardEvaluationBlockProps {
   displayALSA?: number | null;  // ALSA à afficher (prioritaire sur card.alsa)
 }
 
+// Memoized CardEvaluationBlock pour éviter les re-renders inutiles
+
 // Mapping des couleurs MTG vers des couleurs CSS
 const getManaColor = (colors: string | string[] | null | undefined): string => {
   // Normalize to string for extractColors
@@ -43,7 +45,7 @@ const getManaColor = (colors: string | string[] | null | undefined): string => {
   }
 };
 
-const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCards, globalMeanWR, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
+const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCards, globalMeanWR, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
   // Utiliser les valeurs display si fournies, sinon fallback sur card
   const effectiveWR = displayWR ?? card.gih_wr;
   const effectiveALSA = displayALSA ?? card.alsa;
@@ -604,10 +606,11 @@ const CardEvaluationBlock: React.FC<CardEvaluationBlockProps> = ({ card, allCard
       </div>
     </div>
   );
-};
+});
+CardEvaluationBlock.displayName = 'CardEvaluationBlock';
 
 // --- COMPOSANT PRINCIPAL ---
-export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, globalMeanWR, onClose, onCardSelect }) => {
+const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, globalMeanWR, onClose, onCardSelect }) => {
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
   const [showPeers, setShowPeers] = useState(false);
@@ -817,3 +820,7 @@ export const CardDetailOverlay: React.FC<CardDetailOverlayProps> = ({ card, acti
     </SwipeableOverlay>
   );
 };
+
+// Memoized export pour éviter les re-renders inutiles
+export const CardDetailOverlay = React.memo(CardDetailOverlayComponent);
+CardDetailOverlay.displayName = 'CardDetailOverlay';
