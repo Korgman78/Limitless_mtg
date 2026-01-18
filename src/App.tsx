@@ -489,7 +489,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                 </div>
 
                 {/* Format Blueprint */}
-                <FormatBlueprint cards={cards} globalMeanWR={globalMeanWR} onCardSelect={(card) => setSelectedCard(card)} />
+                <FormatBlueprint cards={cards} globalMeanWR={globalMeanWR} activeSet={activeSet} activeFormat={activeFormat} onCardSelect={(card) => setSelectedCard(card)} />
               </motion.div>
             )}
 

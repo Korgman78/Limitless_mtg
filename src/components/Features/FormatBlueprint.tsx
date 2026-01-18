@@ -12,6 +12,8 @@ import { PrinceOMeter } from './PrinceOMeter';
 interface FormatBlueprintProps {
   cards: Card[];
   globalMeanWR: number;
+  activeSet: string;
+  activeFormat: string;
   onCardSelect?: (card: Card) => void;
 }
 
@@ -59,7 +61,7 @@ const getDeltaBg = (delta: number): string => {
   return 'bg-slate-500/10';
 };
 
-export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalMeanWR, onCardSelect }) => {
+export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalMeanWR, activeSet, activeFormat, onCardSelect }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'rarity' | 'color'>('rarity');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -270,7 +272,7 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, globalM
           >
             <div className="px-4 md:px-5 pb-5 space-y-5">
               {/* Prince-O-Meter */}
-              <PrinceOMeter cards={cards} globalMeanWR={globalMeanWR} />
+              <PrinceOMeter cards={cards} globalMeanWR={globalMeanWR} activeSet={activeSet} activeFormat={activeFormat} />
 
               {/* Tab Switcher + Stats Mode Toggle */}
               <div className="flex items-center gap-2 w-full sm:w-auto">

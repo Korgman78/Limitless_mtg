@@ -1,14 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, Hammer, Scale, X, Info, TrendingUp, Target, Trash2, Gem, Layers, GitBranch } from 'lucide-react';
+import { Crown, Hammer, Scale, X, Info, TrendingUp, Target, Trash2, Gem, Layers, GitBranch, GitCompareArrows, ChevronRight, Archive, ArrowLeftRight, ChevronDown } from 'lucide-react';
 import type { Card } from '../../types';
 import { normalizeRarity } from '../../utils/helpers';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { haptics } from '../../utils/haptics';
+import { useAllSets } from '../../queries/useAllSets';
+import { useCompareCards } from '../../queries/useCompareCards';
+import { FORMAT_OPTIONS } from '../../constants';
 
 interface PrinceOMeterProps {
   cards: Card[];
   globalMeanWR: number;
+  activeSet: string;
+  activeFormat: string;
 }
 
 interface AxisData {
@@ -81,11 +86,8 @@ const getFormatClassification = (area: number): {
   };
 };
 
-export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const isMobile = useIsMobile(640); // sm breakpoint
-
-  const analysis = useMemo(() => {
+// Extract analysis calculation to reusable function
+const calculateAnalysis = (cards: Card[], globalMeanWR: number) => {
     const validCards = cards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined);
 
     // Group by rarity
@@ -235,17 +237,45 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
         chaffThreshold
       }
     };
-  }, [cards, globalMeanWR]);
+};
+
+export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR, activeSet, activeFormat }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareSet, setCompareSet] = useState<string | null>(null);
+  const [compareFormat, setCompareFormat] = useState<string | null>(null);
+  const isMobile = useIsMobile(640);
+
+  // Fetch all sets for comparison selector
+  const { data: allSets = [] } = useAllSets();
+
+  // Fetch comparison cards
+  const { data: compareData, isLoading: isCompareLoading } = useCompareCards(compareSet, compareFormat);
+
+  // Calculate analysis for current format
+  const analysis = useMemo(() => calculateAnalysis(cards, globalMeanWR), [cards, globalMeanWR]);
+
+  // Calculate analysis for comparison format
+  const compareAnalysis = useMemo(() => {
+    if (!compareData?.cards.length) return null;
+    return calculateAnalysis(compareData.cards, compareData.globalMeanWR);
+  }, [compareData]);
 
   // State for hovered point tooltip
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
 
+  // Get format label helper
+  const getFormatLabel = (formatValue: string) => {
+    return FORMAT_OPTIONS.find(f => f.value === formatValue)?.short || formatValue;
+  };
+
   // SVG Radar Chart Component (pure SVG, no tooltip inside)
-  const RadarChart: React.FC<{ size?: number; animated?: boolean; interactive?: boolean; id?: string }> = ({
+  const RadarChart: React.FC<{ size?: number; animated?: boolean; interactive?: boolean; id?: string; showComparison?: boolean }> = ({
     size = 200,
     animated = true,
     interactive = false,
-    id = 'main'
+    id = 'main',
+    showComparison = false
   }) => {
     const center = 100;
     const maxRadius = 80;
@@ -259,9 +289,16 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
       `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
     ).join(' ') + ' Z';
 
+    // Create path for comparison polygon
+    const compareDataPath = compareAnalysis?.points.map((p, i) =>
+      `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+    ).join(' ') + ' Z';
+
     // Unique IDs to avoid conflicts between multiple radar instances
     const gradientId = `radarGradient-${id}`;
     const strokeId = `radarStroke-${id}`;
+    const compareGradientId = `compareGradient-${id}`;
+    const compareStrokeId = `compareStroke-${id}`;
 
     // Full labels for radar display with line breaks for long ones
     const radarLabels = [
@@ -275,16 +312,27 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
     return (
       <svg width={size} height={size} viewBox="0 0 200 200" className="overflow-visible">
         <defs>
-          {/* Gradient for the data polygon */}
+          {/* Gradient for the data polygon (warm - current format) */}
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.5" />
-            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.5" />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={showComparison ? 0.4 : 0.5} />
+            <stop offset="50%" stopColor="#f97316" stopOpacity={showComparison ? 0.3 : 0.35} />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity={showComparison ? 0.4 : 0.5} />
           </linearGradient>
           <linearGradient id={strokeId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#f59e0b" />
+            <stop offset="50%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#ef4444" />
+          </linearGradient>
+          {/* Gradient for comparison polygon (cool - compare format) */}
+          <linearGradient id={compareGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
+            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.35" />
+          </linearGradient>
+          <linearGradient id={compareStrokeId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#06b6d4" />
             <stop offset="50%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#06b6d4" />
+            <stop offset="100%" stopColor="#3b82f6" />
           </linearGradient>
         </defs>
 
@@ -315,7 +363,19 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
           />
         ))}
 
-        {/* Data polygon - static path, no animation */}
+        {/* Comparison polygon (rendered first, behind current) */}
+        {showComparison && compareAnalysis && (
+          <path
+            d={compareDataPath}
+            fill={`url(#${compareGradientId})`}
+            stroke={`url(#${compareStrokeId})`}
+            strokeWidth={2}
+            strokeDasharray="6 3"
+            opacity={0.9}
+          />
+        )}
+
+        {/* Data polygon - current format */}
         <path
           d={dataPath}
           fill={`url(#${gradientId})`}
@@ -323,14 +383,28 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
           strokeWidth={2.5}
         />
 
-        {/* Data points with interaction */}
+        {/* Comparison data points */}
+        {showComparison && compareAnalysis?.points.map((point, i) => (
+          <circle
+            key={`compare-${i}`}
+            cx={point.x}
+            cy={point.y}
+            r={4}
+            fill="#06b6d4"
+            stroke="#0e7490"
+            strokeWidth={1.5}
+            opacity={0.8}
+          />
+        ))}
+
+        {/* Current format data points with interaction */}
         {analysis.points.map((point, i) => (
           <circle
             key={i}
             cx={point.x}
             cy={point.y}
             r={interactive && hoveredPoint === i ? 7 : 5}
-            fill={hoveredPoint === i ? '#fff' : 'white'}
+            fill={hoveredPoint === i ? '#fff' : showComparison ? '#fbbf24' : 'white'}
             stroke={`url(#${strokeId})`}
             strokeWidth={2}
             style={{ cursor: interactive ? 'pointer' : 'default', transition: 'r 0.15s ease' }}
@@ -529,48 +603,205 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                     <p className="text-xs text-slate-500">The Prince-Pauper Spectrum</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-colors"
-                >
-                  <X size={16} className="text-slate-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Compare Button */}
+                  <motion.button
+                    onClick={() => { haptics.light(); setIsCompareMode(!isCompareMode); }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      isCompareMode
+                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300'
+                    }`}
+                  >
+                    <GitCompareArrows size={14} />
+                    <span className="hidden sm:inline">Compare</span>
+                  </motion.button>
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-colors"
+                  >
+                    <X size={16} className="text-slate-400" />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
               <div className="relative z-10 p-5 space-y-6">
-                {/* Score Display */}
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50">
-                    <span className="text-3xl">{analysis.classification.emoji}</span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-2xl font-black bg-gradient-to-r ${analysis.classification.gradient} bg-clip-text text-transparent`}>
-                          {analysis.classification.type}
-                        </span>
-                        {analysis.classification.leaning && (
-                          <span className="text-xs font-medium italic text-slate-500">
-                            leaning {analysis.classification.leaning === 'prince' ? 'Prince' : 'Pauper'}
-                          </span>
+                {/* Compare Mode Panel */}
+                <AnimatePresence>
+                  {isCompareMode && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 border border-cyan-500/20 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <GitCompareArrows size={16} className="text-cyan-400" />
+                            <span className="text-sm font-bold text-cyan-400">Compare with another format</span>
+                          </div>
+                          {compareSet && compareFormat && (
+                            <button
+                              onClick={() => { setCompareSet(null); setCompareFormat(null); }}
+                              className="text-xs text-slate-400 hover:text-white transition-colors"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Set Selector */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Set</label>
+                            <div className="relative">
+                              <select
+                                value={compareSet || ''}
+                                onChange={(e) => { setCompareSet(e.target.value || null); setCompareFormat(null); }}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/50 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-cyan-500/50"
+                              >
+                                <option value="">Select set...</option>
+                                {allSets.map((set) => (
+                                  <option key={set.code} value={set.code}>
+                                    {set.code} {!set.active && '(Archive)'}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          {/* Format Selector */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Format</label>
+                            <div className="relative">
+                              <select
+                                value={compareFormat || ''}
+                                onChange={(e) => setCompareFormat(e.target.value || null)}
+                                disabled={!compareSet}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/50 text-sm text-white appearance-none cursor-pointer focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <option value="">Select format...</option>
+                                {FORMAT_OPTIONS.map((format) => (
+                                  <option key={format.value} value={format.value}>
+                                    {format.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Loading indicator */}
+                        {isCompareLoading && compareSet && compareFormat && (
+                          <div className="flex items-center justify-center gap-2 py-2">
+                            <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
+                            <span className="text-xs text-slate-400">Loading comparison data...</span>
+                          </div>
+                        )}
+
+                        {/* Quick swap button */}
+                        {compareAnalysis && (
+                          <motion.button
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            onClick={() => {
+                              // Swap would require parent state - just show the button for now
+                              haptics.light();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-slate-800/50 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                          >
+                            <ArrowLeftRight size={12} />
+                            <span>Comparing: {activeSet} {getFormatLabel(activeFormat)} vs {compareSet} {getFormatLabel(compareFormat!)}</span>
+                          </motion.button>
                         )}
                       </div>
-                      <div className="text-sm text-slate-400">
-                        Area Score: <span className="font-bold text-white">{analysis.area.toFixed(1)}</span>
-                        <span className="text-slate-500"> / {analysis.maxArea.toFixed(0)}</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Score Display */}
+                <div className="text-center">
+                  {/* Dual score display when comparing */}
+                  {compareAnalysis ? (
+                    <div className="flex items-stretch justify-center gap-3">
+                      {/* Current format */}
+                      <div className="flex-1 max-w-[200px] px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                        <div className="flex items-center justify-center gap-2 mb-1">
+                          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-amber-500 to-orange-500" />
+                          <span className="text-[10px] font-bold text-amber-400 uppercase">{activeSet} {getFormatLabel(activeFormat)}</span>
+                        </div>
+                        <div className="text-xl font-black text-white">{analysis.classification.emoji} {analysis.classification.type}</div>
+                        <div className="text-xs text-slate-400">{analysis.area.toFixed(0)} pts</div>
+                      </div>
+
+                      {/* VS */}
+                      <div className="flex items-center">
+                        <span className="text-xs font-black text-slate-600">VS</span>
+                      </div>
+
+                      {/* Compare format */}
+                      <div className="flex-1 max-w-[200px] px-4 py-3 rounded-xl bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 border border-cyan-500/20">
+                        <div className="flex items-center justify-center gap-2 mb-1">
+                          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500" />
+                          <span className="text-[10px] font-bold text-cyan-400 uppercase">{compareSet} {getFormatLabel(compareFormat!)}</span>
+                        </div>
+                        <div className="text-xl font-black text-white">{compareAnalysis.classification.emoji} {compareAnalysis.classification.type}</div>
+                        <div className="text-xs text-slate-400">{compareAnalysis.area.toFixed(0)} pts</div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50">
+                      <span className="text-3xl">{analysis.classification.emoji}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-2xl font-black bg-gradient-to-r ${analysis.classification.gradient} bg-clip-text text-transparent`}>
+                            {analysis.classification.type}
+                          </span>
+                          {analysis.classification.leaning && (
+                            <span className="text-xs font-medium italic text-slate-500">
+                              leaning {analysis.classification.leaning === 'prince' ? 'Prince' : 'Pauper'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-slate-400">
+                          Area Score: <span className="font-bold text-white">{analysis.area.toFixed(1)}</span>
+                          <span className="text-slate-500"> / {analysis.maxArea.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Radar Chart with fixed tooltip */}
                 <div className="flex justify-center">
                   <div className="relative">
-                    <RadarChart size={220} animated={true} interactive={true} id="modal" />
+                    <RadarChart size={220} animated={true} interactive={true} id="modal" showComparison={!!compareAnalysis} />
                     <AnimatePresence>
                       <RadarTooltip />
                     </AnimatePresence>
                   </div>
                 </div>
+
+                {/* Legend when comparing */}
+                {compareAnalysis && (
+                  <div className="flex items-center justify-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500" />
+                      <span className="text-[10px] text-slate-400">{activeSet} {getFormatLabel(activeFormat)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-1 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500" style={{ borderStyle: 'dashed' }} />
+                      <span className="text-[10px] text-slate-400">{compareSet} {getFormatLabel(compareFormat!)}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Axis Details */}
                 <div className="space-y-2">
@@ -579,71 +810,129 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR 
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Axis Breakdown</span>
                   </div>
 
-                  {analysis.axes.map((axis, idx) => (
-                    <motion.div
-                      key={axis.key}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.5 + idx * 0.1 }}
-                      className="p-3 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
-                    >
-                      {/* Desktop: single row layout */}
-                      <div className="hidden sm:flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
-                          {axis.icon}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-slate-200">{axis.label}</span>
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                              axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
-                              axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
-                              'bg-emerald-500/20 text-emerald-400'
-                            }`}>
-                              {axis.score.toFixed(1)}/10
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500">{axis.description}</p>
-                        </div>
-                        <div className="w-20 h-2 rounded-full bg-slate-700 overflow-hidden flex-shrink-0">
-                          <motion.div
-                            className="h-full rounded-full"
-                            style={{ background: axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444' }}
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(axis.score / 10) * 100}%` }}
-                            transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
-                          />
-                        </div>
-                      </div>
+                  {analysis.axes.map((axis, idx) => {
+                    const compareAxis = compareAnalysis?.axes[idx];
+                    const delta = compareAxis ? axis.score - compareAxis.score : 0;
 
-                      {/* Mobile: stacked layout */}
-                      <div className="sm:hidden space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
+                    return (
+                      <motion.div
+                        key={axis.key}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.5 + idx * 0.1 }}
+                        className="p-3 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 transition-colors"
+                      >
+                        {/* Desktop: single row layout */}
+                        <div className="hidden sm:flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
                             {axis.icon}
                           </div>
-                          <span className="text-sm font-semibold text-slate-200 flex-1">{axis.label}</span>
-                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                            axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
-                            axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
-                            'bg-emerald-500/20 text-emerald-400'
-                          }`}>
-                            {axis.score.toFixed(1)}/10
-                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-200">{axis.label}</span>
+                              {/* Score badges - show both when comparing */}
+                              {compareAnalysis ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                    {axis.score.toFixed(1)}
+                                  </span>
+                                  <span className="text-[10px] text-slate-600">vs</span>
+                                  <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
+                                    {compareAxis?.score.toFixed(1)}
+                                  </span>
+                                  {delta !== 0 && (
+                                    <span className={`text-[10px] font-bold ${delta > 0 ? 'text-amber-400' : 'text-cyan-400'}`}>
+                                      {delta > 0 ? '+' : ''}{delta.toFixed(1)}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                                  axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
+                                  axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
+                                  'bg-emerald-500/20 text-emerald-400'
+                                }`}>
+                                  {axis.score.toFixed(1)}/10
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500">{axis.description}</p>
+                          </div>
+                          {/* Progress bars - dual when comparing */}
+                          <div className="w-20 flex-shrink-0 space-y-1">
+                            <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+                              <motion.div
+                                className="h-full rounded-full"
+                                style={{ background: compareAnalysis ? 'linear-gradient(to right, #f59e0b, #f97316)' : (axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444') }}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(axis.score / 10) * 100}%` }}
+                                transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
+                              />
+                            </div>
+                            {compareAnalysis && compareAxis && (
+                              <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ background: 'linear-gradient(to right, #06b6d4, #8b5cf6)' }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${(compareAxis.score / 10) * 100}%` }}
+                                  transition={{ delay: 0.8 + idx * 0.1, duration: 0.5 }}
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-relaxed">{axis.description}</p>
-                        <div className="w-full h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                          <motion.div
-                            className="h-full rounded-full"
-                            style={{ background: axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444' }}
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(axis.score / 10) * 100}%` }}
-                            transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
-                          />
+
+                        {/* Mobile: stacked layout */}
+                        <div className="sm:hidden space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ${axis.color}`}>
+                              {axis.icon}
+                            </div>
+                            <span className="text-sm font-semibold text-slate-200 flex-1">{axis.label}</span>
+                            {compareAnalysis ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-bold text-amber-400">{axis.score.toFixed(1)}</span>
+                                <span className="text-[10px] text-slate-600">/</span>
+                                <span className="text-xs font-bold text-cyan-400">{compareAxis?.score.toFixed(1)}</span>
+                              </div>
+                            ) : (
+                              <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                                axis.score >= 7 ? 'bg-amber-500/20 text-amber-400' :
+                                axis.score >= 4 ? 'bg-slate-500/20 text-slate-400' :
+                                'bg-emerald-500/20 text-emerald-400'
+                              }`}>
+                                {axis.score.toFixed(1)}/10
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">{axis.description}</p>
+                          <div className="space-y-1">
+                            <div className="w-full h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                              <motion.div
+                                className="h-full rounded-full"
+                                style={{ background: compareAnalysis ? 'linear-gradient(to right, #f59e0b, #f97316)' : (axis.score < 4 ? '#10b981' : axis.score < 7 ? '#f59e0b' : '#ef4444') }}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(axis.score / 10) * 100}%` }}
+                                transition={{ delay: 0.7 + idx * 0.1, duration: 0.5 }}
+                              />
+                            </div>
+                            {compareAnalysis && compareAxis && (
+                              <div className="w-full h-1 rounded-full bg-slate-700 overflow-hidden">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ background: 'linear-gradient(to right, #06b6d4, #8b5cf6)' }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${(compareAxis.score / 10) * 100}%` }}
+                                  transition={{ delay: 0.8 + idx * 0.1, duration: 0.5 }}
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
 
                 {/* Interpretation */}
