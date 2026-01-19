@@ -21,6 +21,7 @@ import { useDebounce } from './hooks/useDebounce';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { useCoachMarks } from './hooks/useCoachMarks';
+import { useUrlState } from './hooks/useUrlState';
 
 // Utils
 import { haptics } from './utils/haptics';
@@ -34,6 +35,7 @@ import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
 import { FormatComparison, PressReview, FormatBlueprint } from './components/Features';
+import { SearchAutocomplete } from './components/Common';
 
 // Memoized Sidebar component to prevent unnecessary re-renders
 interface SidebarProps {
@@ -129,6 +131,30 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const mainRef = React.useRef<HTMLElement | null>(null);
 
+  // --- URL State Sync (for shareable links) ---
+  useUrlState(
+    {
+      set: activeSet,
+      format: activeFormat,
+      tab: activeTab,
+      card: selectedCard?.name,
+      deck: selectedDeck?.name,
+    },
+    (urlState) => {
+      // Apply URL state on mount (URL takes priority over localStorage)
+      if (urlState.set) setActiveSet(urlState.set);
+      if (urlState.format) setActiveFormat(urlState.format);
+      if (urlState.tab) setActiveTab(urlState.tab);
+      if (urlState.card) {
+        // Defer card selection until cards are loaded
+        setPendingCardView({ cardName: urlState.card, format: urlState.format || activeFormat });
+      }
+      if (urlState.deck && decks.length > 0) {
+        const deck = decks.find(d => d.name === urlState.deck);
+        if (deck) setSelectedDeck(deck);
+      }
+    }
+  );
 
   // Sync query errors to local error state for auto-dismiss
   useEffect(() => {
@@ -525,10 +551,10 @@ export default function MTGLimitedApp(): React.ReactElement {
                               position="left"
                               delay={1500}
                             >
-                              <Sparkline data={deck.history} />
+                              <Sparkline data={deck.history} width={50} height={24} />
                             </CoachMarkWrapper>
                           ) : (
-                            <Sparkline data={deck.history} />
+                            <Sparkline data={deck.history} width={50} height={24} />
                           )}
                           <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                             {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
@@ -573,11 +599,13 @@ export default function MTGLimitedApp(): React.ReactElement {
                       </select>
                       <ChevronRight size={12} className="absolute right-3 top-3 text-slate-500 rotate-90 pointer-events-none" />
                     </div>
-                    <div className="relative flex-1">
-                      <input type="text" placeholder="Search card..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-slate-300 py-2 pl-8 pr-3 rounded-lg text-xs font-bold focus:border-indigo-500 focus:outline-none" />
-                      <Search size={12} className="absolute left-2.5 top-2.5 text-slate-500 pointer-events-none" />
-                    </div>
+                    <SearchAutocomplete
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      cards={cards}
+                      onSelectCard={(card) => setSelectedCard(card)}
+                      placeholder="Search card..."
+                    />
                   </div>
 
                   {/* LIGNE 2 & 3 (Desktop merged / Mobile stacked) */}

@@ -3,6 +3,7 @@ import { Star, Gem, AlertTriangle } from 'lucide-react';
 import type { ArchetypeDashboardProps } from '../../types';
 import { extractColors, getDeltaStyle, getCardImage, normalizeRarity, normalizeArchetypeName } from '../../utils/helpers';
 import { ManaIcons } from '../Common/ManaIcons';
+import { ArchetypeDashboardSkeleton } from '../Common/Skeleton';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useArchetypeCards } from '../../queries/useArchetypeCards';
@@ -98,7 +99,10 @@ const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, 
   };
 
   return (
-    <SwipeableOverlay onClose={onClose}>
+    <SwipeableOverlay onClose={onClose} title={deck?.name || 'Archetype'} breadcrumb="Decks">
+      {loading ? (
+        <ArchetypeDashboardSkeleton />
+      ) : (
       <div className="flex flex-col h-full md:flex-row">
         {fetchError && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
@@ -183,6 +187,7 @@ const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, 
           </div>
         </div>
       </div>
+      )}
     </SwipeableOverlay>
   );
 };

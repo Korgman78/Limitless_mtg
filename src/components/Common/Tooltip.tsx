@@ -147,7 +147,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
               transition={{ duration: 0.1 }}
               style={getTooltipStyle()}
             >
-              <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40">
+              <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-slate-200">
                 {content}
               </div>
             </motion.div>

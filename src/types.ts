@@ -105,6 +105,9 @@ export interface SwipeableOverlayProps {
   onClose: () => void;
   children: React.ReactNode;
   zIndex?: number;
+  title?: string;
+  breadcrumb?: string;
+  onBack?: () => void;
 }
 
 export interface ArchetypeDashboardProps {

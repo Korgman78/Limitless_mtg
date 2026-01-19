@@ -7,6 +7,7 @@ import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColors
 import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { ManaIcons } from '../Common/ManaIcons';
 import { Tooltip } from '../Common/Tooltip';
+import { Skeleton } from '../Common/Skeleton';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
@@ -620,7 +621,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const { isUnseen, markAsSeen } = useCoachMarks();
 
   // React Query for cross-performance data
-  const { data, error } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
+  const { data, error, isLoading: crossPerfLoading } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
   const globalStats = data?.globalStats || { gih_wr: null, alsa: null, win_rate_history: null };
   const crossPerf = data?.crossPerf || [];
   const fetchError = error ? 'Failed to load card data' : null;
@@ -637,7 +638,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const minGamesDisplay = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
 
   return (
-    <SwipeableOverlay onClose={onClose} zIndex={60}>
+    <SwipeableOverlay onClose={onClose} zIndex={60} title={card.name} breadcrumb="Cards">
       <AnimatePresence mode="wait">
         <motion.div
           key={card.name}
@@ -685,7 +686,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
               <div className="grid grid-cols-2 gap-2 w-full">
                 {/* 1. GIH BLOCK - Global */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
+                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
                   <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(globalStats.gih_wr ?? card.gih_wr, 55)} leading-none`}>
                     {(globalStats.gih_wr ?? card.gih_wr)?.toFixed(1) ?? '--'}%
                   </div>
@@ -693,7 +694,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
                 {/* 2. ALSA BLOCK - Global */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
+                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
                   <div className="text-lg md:text-3xl font-black text-white leading-none">
                     {(globalStats.alsa ?? card.alsa)?.toFixed(2) ?? '--'}
                   </div>
@@ -701,7 +702,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
                 {/* 3. TREND BLOCK - Global (Full Width & Centered) */}
                 <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative group">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
+                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
 
                   {/* Container centré sans scale */}
                   <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
@@ -752,7 +753,13 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
               </button>
             </div>
 
-            {sortedPerf.length === 0 ? (
+            {crossPerfLoading ? (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                {[1, 2, 3, 4].map(i => (
+                  <Skeleton key={i} className="h-16 rounded-xl" />
+                ))}
+              </div>
+            ) : sortedPerf.length === 0 ? (
               <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center">
                 <p className="text-xs text-slate-500">Not enough play data across archetypes (min. {minGamesDisplay} games).</p>
               </div>

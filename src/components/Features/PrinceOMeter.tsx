@@ -476,6 +476,7 @@ export const PrinceOMeter: React.FC<PrinceOMeterProps> = ({ cards, globalMeanWR,
               textAnchor={textAnchor}
               dominantBaseline="middle"
               className="text-[8px] font-bold fill-slate-300"
+              style={{ pointerEvents: 'none' }}
             >
               {needsSplit ? (
                 <>
