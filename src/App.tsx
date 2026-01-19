@@ -551,10 +551,10 @@ export default function MTGLimitedApp(): React.ReactElement {
                               position="left"
                               delay={1500}
                             >
-                              <Sparkline data={deck.history} width={50} height={24} />
+                              <Sparkline data={deck.history} />
                             </CoachMarkWrapper>
                           ) : (
-                            <Sparkline data={deck.history} width={50} height={24} />
+                            <Sparkline data={deck.history} />
                           )}
                           <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                             {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}

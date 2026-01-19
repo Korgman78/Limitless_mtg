@@ -638,7 +638,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const minGamesDisplay = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
 
   return (
-    <SwipeableOverlay onClose={onClose} zIndex={60} title={card.name} breadcrumb="Cards">
+    <SwipeableOverlay onClose={onClose} zIndex={60}>
       <AnimatePresence mode="wait">
         <motion.div
           key={card.name}
@@ -686,7 +686,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
               <div className="grid grid-cols-2 gap-2 w-full">
                 {/* 1. GIH BLOCK - Global */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
                   <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(globalStats.gih_wr ?? card.gih_wr, 55)} leading-none`}>
                     {(globalStats.gih_wr ?? card.gih_wr)?.toFixed(1) ?? '--'}%
                   </div>
@@ -694,7 +694,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
                 {/* 2. ALSA BLOCK - Global */}
                 <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
                   <div className="text-lg md:text-3xl font-black text-white leading-none">
                     {(globalStats.alsa ?? card.alsa)?.toFixed(2) ?? '--'}
                   </div>
@@ -702,7 +702,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
                 {/* 3. TREND BLOCK - Global (Full Width & Centered) */}
                 <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative group">
-                  <span className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
+                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
 
                   {/* Container centré sans scale */}
                   <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
