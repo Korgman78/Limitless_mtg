@@ -12,11 +12,11 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-INGESTION_MODE = "ALL" 
+INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
 
-# ✅ VARIABLE DE CIBLAGE
-TARGET_SET_CODE = "TLA"
+# ✅ VARIABLE DE CIBLAGE (liste de codes, ou liste vide pour tous les sets actifs)
+TARGET_SET_CODES = ["TLA"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
@@ -305,12 +305,13 @@ if __name__ == "__main__":
     print("🌍 Démarrage de l'ETL Multi-Set...")
     
     all_active_sets = get_active_sets()
-    
+
     sets_to_process = []
-    if TARGET_SET_CODE:
-        sets_to_process = [s for s in all_active_sets if s['code'] == TARGET_SET_CODE]
-        if not sets_to_process:
-            print(f"⚠️ ATTENTION : Le set cible '{TARGET_SET_CODE}' n'est pas trouvé dans les sets actifs de la base.")
+    if TARGET_SET_CODES:
+        sets_to_process = [s for s in all_active_sets if s['code'] in TARGET_SET_CODES]
+        missing = set(TARGET_SET_CODES) - {s['code'] for s in sets_to_process}
+        if missing:
+            print(f"⚠️ ATTENTION : Sets non trouvés dans les sets actifs : {missing}")
     else:
         sets_to_process = all_active_sets
 

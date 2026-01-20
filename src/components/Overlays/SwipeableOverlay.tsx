@@ -83,9 +83,10 @@ export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, on
 
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-50 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors backdrop-blur-md border border-white/10"
+          className="absolute top-2 right-2 md:top-4 md:right-4 z-50 p-1.5 md:p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors backdrop-blur-md border border-white/10"
         >
-          <X size={20} />
+          <X size={16} className="md:hidden" />
+          <X size={20} className="hidden md:block" />
         </button>
 
         {children}
