@@ -16,7 +16,7 @@ INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
 
 # ✅ VARIABLE DE CIBLAGE (liste de codes, ou liste vide pour tous les sets actifs)
-TARGET_SET_CODES = ["OTJ"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
+TARGET_SET_CODES = ["ECL"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
