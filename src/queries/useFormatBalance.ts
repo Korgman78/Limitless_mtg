@@ -22,9 +22,16 @@ interface BalanceStats {
   worst: SetExtreme
 }
 
+export interface SetBalanceData {
+  setCode: string
+  archetypeScore: number
+  colorScore: number
+}
+
 export interface FormatBalanceResult {
   archetype: BalanceStats
   color: BalanceStats
+  allSets: SetBalanceData[]
 }
 
 // Fetch balance stats across all SETS for a given FORMAT
@@ -56,6 +63,13 @@ export function useFormatBalance(format: string) {
       const colorBest = colorScores.reduce((best, r) => r.score > best.score ? r : best)
       const colorWorst = colorScores.reduce((worst, r) => r.score < worst.score ? r : worst)
 
+      // Build allSets array for chart visualization
+      const allSets: SetBalanceData[] = rows.map(r => ({
+        setCode: r.set_code,
+        archetypeScore: r.archetype_score,
+        colorScore: r.color_score,
+      }))
+
       return {
         archetype: {
           average: archetypeAvg,
@@ -67,6 +81,7 @@ export function useFormatBalance(format: string) {
           best: colorBest,
           worst: colorWorst,
         },
+        allSets,
       }
     },
     enabled: !!format,

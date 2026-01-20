@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown, ChevronRight,
-  Gem, CircleDot, BarChart3, Trophy, Skull, Sparkles, Zap, HelpCircle
+  Gem, CircleDot, BarChart3, Trophy, Skull, Sparkles, Zap, HelpCircle, ScatterChart, X, ZoomIn, RotateCcw
 } from 'lucide-react';
 import type { Card, Deck } from '../../types';
 import { normalizeRarity, extractColors } from '../../utils/helpers';
@@ -114,6 +114,124 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
   const [activeTab, setActiveTab] = useState<'rarity' | 'color'>('rarity');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [statsMode, setStatsMode] = useState<'all' | 'top10' | 'bottom10'>('all');
+  const [isBalanceChartOpen, setIsBalanceChartOpen] = useState(false);
+  const [hoveredSet, setHoveredSet] = useState<{ setCode: string; archetypeScore: number; colorScore: number; x: number; y: number } | null>(null);
+
+  // Zoom state for scatter chart
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const lastTouchDistRef = useRef<number | null>(null);
+  const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const isPanningRef = useRef(false);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Reset zoom when modal closes
+  useEffect(() => {
+    if (!isBalanceChartOpen) {
+      setZoomLevel(1);
+      setPanOffset({ x: 0, y: 0 });
+    }
+  }, [isBalanceChartOpen]);
+
+  // Mouse wheel zoom handler
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    setZoomLevel(prev => Math.max(1, Math.min(4, prev + delta)));
+  }, []);
+
+  // Touch handlers for pinch zoom and pan
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Pinch start
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastTouchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+      lastTouchCenterRef.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+      };
+    } else if (e.touches.length === 1 && zoomLevel > 1) {
+      // Pan start (only when zoomed)
+      isPanningRef.current = true;
+      lastPanPointRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY
+      };
+    }
+  }, [zoomLevel]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastTouchDistRef.current !== null) {
+      // Pinch zoom
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = dist / lastTouchDistRef.current;
+
+      setZoomLevel(prev => Math.max(1, Math.min(4, prev * scale)));
+      lastTouchDistRef.current = dist;
+    } else if (e.touches.length === 1 && isPanningRef.current && lastPanPointRef.current) {
+      // Pan
+      e.preventDefault();
+      const dx = e.touches[0].clientX - lastPanPointRef.current.x;
+      const dy = e.touches[0].clientY - lastPanPointRef.current.y;
+
+      // Limit pan based on zoom level
+      const maxPan = (zoomLevel - 1) * 50;
+      setPanOffset(prev => ({
+        x: Math.max(-maxPan, Math.min(maxPan, prev.x + dx)),
+        y: Math.max(-maxPan, Math.min(maxPan, prev.y + dy))
+      }));
+
+      lastPanPointRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY
+      };
+    }
+  }, [zoomLevel]);
+
+  const handleTouchEnd = useCallback(() => {
+    lastTouchDistRef.current = null;
+    lastTouchCenterRef.current = null;
+    isPanningRef.current = false;
+    lastPanPointRef.current = null;
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  // Mouse drag for panning on desktop
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoomLevel > 1) {
+      isPanningRef.current = true;
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
+    }
+  }, [zoomLevel]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanningRef.current && lastPanPointRef.current) {
+      const dx = e.clientX - lastPanPointRef.current.x;
+      const dy = e.clientY - lastPanPointRef.current.y;
+
+      const maxPan = (zoomLevel - 1) * 50;
+      setPanOffset(prev => ({
+        x: Math.max(-maxPan, Math.min(maxPan, prev.x + dx)),
+        y: Math.max(-maxPan, Math.min(maxPan, prev.y + dy))
+      }));
+
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
+    }
+  }, [zoomLevel]);
+
+  const handleMouseUp = useCallback(() => {
+    isPanningRef.current = false;
+    lastPanPointRef.current = null;
+  }, []);
 
   // Fetch cross-set balance data for the current format
   const { data: formatBalanceData } = useFormatBalance(activeFormat);
@@ -699,11 +817,286 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
                         crossSet={crossSetStats?.color}
                       />
                     </div>
+                    {/* Compare across sets button */}
+                    {crossSetStats?.allSets && crossSetStats.allSets.length > 1 && (
+                      <div className="flex justify-center mt-4">
+                        <button
+                          onClick={() => setIsBalanceChartOpen(true)}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/50 text-xs font-medium text-slate-400 hover:text-white transition-all"
+                        >
+                          <ScatterChart size={14} />
+                          <span>Compare across sets</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
 
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Balance Scatter Chart Modal */}
+      <AnimatePresence>
+        {isBalanceChartOpen && formatBalanceData?.allSets && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setIsBalanceChartOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-slate-800/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                    <ScatterChart size={18} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Balance Comparison</h3>
+                    <p className="text-[10px] text-slate-500">{getFormatShort(activeFormat)} across all sets</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsBalanceChartOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-colors"
+                >
+                  <X size={16} className="text-slate-400" />
+                </button>
+              </div>
+
+              {/* Scatter Plot */}
+              <div className="p-4">
+                <div className="relative bg-slate-800/30 rounded-xl p-4">
+                  {/* Y-axis label */}
+                  <div className="absolute -left-1 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-semibold text-slate-500 whitespace-nowrap">
+                    Colour Balance
+                  </div>
+
+                  {/* Zoom controls */}
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                    {zoomLevel > 1 && (
+                      <motion.button
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        onClick={resetZoom}
+                        className="p-1.5 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+                        title="Reset zoom"
+                      >
+                        <RotateCcw size={14} />
+                      </motion.button>
+                    )}
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-700/60 text-[10px] text-slate-400">
+                      <ZoomIn size={12} />
+                      <span>{zoomLevel.toFixed(1)}x</span>
+                    </div>
+                  </div>
+
+                  {/* Chart container with zoom */}
+                  <div
+                    ref={chartContainerRef}
+                    className={`relative overflow-hidden rounded-lg touch-none select-none ${zoomLevel > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'}`}
+                    onWheel={handleWheel}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                  >
+                    <motion.div
+                      animate={{
+                        scale: zoomLevel,
+                        x: panOffset.x,
+                        y: panOffset.y
+                      }}
+                      transition={{ type: 'tween', duration: 0.1 }}
+                      style={{ transformOrigin: 'center center' }}
+                    >
+                    <svg viewBox="0 0 220 220" className="w-full h-auto">
+                    {/* Grid lines */}
+                    {[0, 2.5, 5, 7.5, 10].map((v) => (
+                      <g key={v}>
+                        <line
+                          x1={20 + (v / 10) * 180}
+                          y1={20}
+                          x2={20 + (v / 10) * 180}
+                          y2={200}
+                          stroke="rgba(148, 163, 184, 0.1)"
+                          strokeWidth={1}
+                        />
+                        <line
+                          x1={20}
+                          y1={200 - (v / 10) * 180}
+                          x2={200}
+                          y2={200 - (v / 10) * 180}
+                          stroke="rgba(148, 163, 184, 0.1)"
+                          strokeWidth={1}
+                        />
+                        <text x={20 + (v / 10) * 180} y={212} textAnchor="middle" className="fill-slate-600 text-[8px]">
+                          {v}
+                        </text>
+                        <text x={12} y={200 - (v / 10) * 180 + 3} textAnchor="middle" className="fill-slate-600 text-[8px]">
+                          {v}
+                        </text>
+                      </g>
+                    ))}
+
+                    {/* Quadrant backgrounds */}
+                    <rect x={110} y={20} width={90} height={90} fill="rgba(16, 185, 129, 0.05)" />
+                    <rect x={20} y={110} width={90} height={90} fill="rgba(239, 68, 68, 0.05)" />
+
+                    {/* Average lines */}
+                    {formatBalanceData.archetype && (
+                      <line
+                        x1={20 + (formatBalanceData.archetype.average / 10) * 180}
+                        y1={20}
+                        x2={20 + (formatBalanceData.archetype.average / 10) * 180}
+                        y2={200}
+                        stroke="#6366f1"
+                        strokeWidth={1}
+                        strokeDasharray="4 2"
+                        opacity={0.5}
+                      />
+                    )}
+                    {formatBalanceData.color && (
+                      <line
+                        x1={20}
+                        y1={200 - (formatBalanceData.color.average / 10) * 180}
+                        x2={200}
+                        y2={200 - (formatBalanceData.color.average / 10) * 180}
+                        stroke="#6366f1"
+                        strokeWidth={1}
+                        strokeDasharray="4 2"
+                        opacity={0.5}
+                      />
+                    )}
+
+                    {/* Data points */}
+                    {formatBalanceData.allSets.map((set, idx) => {
+                      const x = 20 + (set.archetypeScore / 10) * 180;
+                      const y = 200 - (set.colorScore / 10) * 180;
+                      const isCurrentSet = set.setCode === activeSet;
+
+                      return (
+                        <g
+                          key={set.setCode}
+                          className="cursor-pointer"
+                          onMouseEnter={() => setHoveredSet({ ...set, x, y })}
+                          onMouseLeave={() => setHoveredSet(null)}
+                        >
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={8}
+                            fill="transparent"
+                          />
+                          <motion.circle
+                            cx={x}
+                            cy={y}
+                            r={isCurrentSet ? 3.5 : 2.5}
+                            fill={isCurrentSet ? '#8b5cf6' : '#64748b'}
+                            stroke={isCurrentSet ? '#a78bfa' : '#475569'}
+                            strokeWidth={1}
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className="pointer-events-none"
+                          />
+                          <text
+                            x={x}
+                            y={y - 5}
+                            textAnchor="middle"
+                            className={`text-[5px] font-bold pointer-events-none ${isCurrentSet ? 'fill-purple-300' : 'fill-slate-400'}`}
+                          >
+                            {set.setCode}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                    </motion.div>
+
+                    {/* Custom tooltip - positioned accounting for zoom/pan */}
+                    <AnimatePresence>
+                      {hoveredSet && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.1 }}
+                          className="absolute pointer-events-none bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-2.5 py-1.5 shadow-xl z-10"
+                          style={{
+                            // Calculate position with zoom and pan offset
+                            left: `calc(50% + ${((hoveredSet.x / 220 - 0.5) * zoomLevel * 100)}% + ${panOffset.x}px)`,
+                            top: `calc(50% + ${((hoveredSet.y / 220 - 0.5) * zoomLevel * 100)}% + ${panOffset.y}px)`,
+                            transform: 'translate(-50%, -130%)'
+                          }}
+                        >
+                          <div className="text-center">
+                            <div className="text-[11px] font-bold text-white">{hoveredSet.setCode}</div>
+                            <div className="text-[9px] text-slate-300 space-y-0.5">
+                              <div>Archetype: <span className="font-semibold text-white">{hoveredSet.archetypeScore.toFixed(1)}</span></div>
+                              <div>Colour: <span className="font-semibold text-white">{hoveredSet.colorScore.toFixed(1)}</span></div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* X-axis label */}
+                  <div className="text-center mt-1 text-[10px] font-semibold text-slate-500">
+                    Archetype Balance
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex items-center justify-center gap-4 mt-2 text-[10px]">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500 border border-purple-400" />
+                      <span className="text-slate-400">Current set</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-1 h-1 rounded-full bg-slate-500 border border-slate-600" />
+                      <span className="text-slate-400">Other sets</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-[1px] bg-indigo-500" style={{ borderStyle: 'dashed' }} />
+                      <span className="text-slate-400">Average</span>
+                    </div>
+                  </div>
+
+                  {/* Zoom hint */}
+                  <div className="text-center mt-2 text-[9px] text-slate-600">
+                    <span className="hidden sm:inline">Scroll to zoom • Drag to pan</span>
+                    <span className="sm:hidden">Pinch to zoom • Drag to pan</span>
+                  </div>
+                </div>
+
+                {/* Quadrant explanation */}
+                <div className="grid grid-cols-2 gap-2 mt-3 text-[10px]">
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-emerald-500/10">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-emerald-400">Top-right: Well balanced</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-red-500/10">
+                    <div className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="text-red-400">Bottom-left: Strongly unbalanced</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
