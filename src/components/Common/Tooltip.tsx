@@ -6,12 +6,18 @@ interface TooltipProps {
   children: ReactNode;
   content: ReactNode;
   position?: 'top' | 'left'; // Position relative to trigger
+  enabled?: boolean; // If false, renders children without tooltip
 }
 
 const LONG_PRESS_DELAY = 350; // ms before showing tooltip on mobile
 
-export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: positionProp = 'top' }) => {
+export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: positionProp = 'top', enabled = true }) => {
   const [isVisible, setIsVisible] = useState(false);
+
+  // If disabled, just render children
+  if (!enabled) {
+    return <>{children}</>;
+  }
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [placement, setPlacement] = useState<'top' | 'bottom' | 'left'>('top');
   const triggerRef = useRef<HTMLDivElement>(null);
