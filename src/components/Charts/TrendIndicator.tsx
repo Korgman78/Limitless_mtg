@@ -58,7 +58,7 @@ export const TrendIndicator: React.FC<TrendIndicatorProps> = ({ history }) => {
         {first.toFixed(1)}% → {last.toFixed(1)}%
       </div>
       <div className="text-[9px] text-slate-500 uppercase tracking-wider">
-        over 14 days
+        over {history.length} days
       </div>
     </div>
   );

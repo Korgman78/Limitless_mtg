@@ -701,35 +701,38 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                 </div>
 
                 {/* 3. TREND BLOCK - Global (Full Width & Centered) */}
-                <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative group">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND (14 days)</span>
+                {(() => {
+                    const rawHistory = globalStats.win_rate_history || (card as any).win_rate_history || [];
+                    let history = [...rawHistory];
+                    const gihWr = globalStats.gih_wr ?? card.gih_wr;
 
-                  {/* Container centré sans scale */}
-                  <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
-                    {(() => {
-                        let history = globalStats.win_rate_history || (card as any).win_rate_history || [];
-                        const gihWr = globalStats.gih_wr ?? card.gih_wr;
+                    // LOGIQUE "FLAT LINE"
+                    if (history.length === 0 && gihWr) {
+                        history = [gihWr, gihWr];
+                    } else if (history.length === 1) {
+                        history = [history[0], history[0]];
+                    }
 
-                        // LOGIQUE "FLAT LINE"
-                        if (history.length === 0 && gihWr) {
-                            history = [gihWr, gihWr];
-                        } else if (history.length === 1) {
-                            history = [history[0], history[0]];
-                        }
+                    return (
+                      <div className="col-span-2 bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-center justify-center relative group">
+                        <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1 z-10">TREND ({rawHistory.length} days)</span>
 
-                        return history.length > 1 ? (
-                            <div className="opacity-80 group-hover:opacity-100 transition-opacity">
-                                <Sparkline data={history} width={60} height={30} />
-                            </div>
-                        ) : (
-                            <span className="text-xs text-slate-600 italic">Not enough data yet</span>
-                        );
-                    })()}
-                  </div>
+                        {/* Container centré sans scale */}
+                        <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
+                          {history.length > 1 ? (
+                              <div className="opacity-80 group-hover:opacity-100 transition-opacity">
+                                  <Sparkline data={history} width={60} height={30} />
+                              </div>
+                          ) : (
+                              <span className="text-xs text-slate-600 italic">Not enough data yet</span>
+                          )}
+                        </div>
 
-                  {/* Subtle Background Decoration */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent pointer-events-none"></div>
-                </div>
+                        {/* Subtle Background Decoration */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent pointer-events-none"></div>
+                      </div>
+                    );
+                })()}
               </div>
             </div>
           </div>
