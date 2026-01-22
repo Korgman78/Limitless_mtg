@@ -15,6 +15,7 @@ import { useSets } from './queries/useSets';
 import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
 import { queryKeys } from './queries/keys';
+import { supabase } from './supabase';
 
 // Hooks
 import { useDebounce } from './hooks/useDebounce';
@@ -347,9 +348,20 @@ export default function MTGLimitedApp(): React.ReactElement {
         });
         break;
       case 'press':
-        // Prefetch articles
-        queryClient.prefetchQuery({
+        // Prefetch articles (must use prefetchInfiniteQuery to match useInfiniteQuery)
+        queryClient.prefetchInfiniteQuery({
           queryKey: queryKeys.articles('All'),
+          queryFn: async () => {
+            const dateLimit = new Date();
+            dateLimit.setDate(dateLimit.getDate() - 15);
+            const { data } = await supabase
+              .from('press_articles')
+              .select('*')
+              .order('published_at', { ascending: false })
+              .gte('published_at', dateLimit.toISOString());
+            return data || [];
+          },
+          initialPageParam: null,
           staleTime: 5 * 60 * 1000,
         });
         break;
