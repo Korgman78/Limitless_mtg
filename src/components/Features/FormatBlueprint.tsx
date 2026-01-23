@@ -9,7 +9,7 @@ import { normalizeRarity, extractColors } from '../../utils/helpers';
 import { Tooltip } from '../Common/Tooltip';
 import { PrinceOMeter } from './PrinceOMeter';
 import { useFormatBalance } from '../../queries/useFormatBalance';
-import { FORMAT_OPTIONS } from '../../constants';
+import { FORMAT_OPTIONS, RARITY_STYLES } from '../../constants';
 
 interface FormatBlueprintProps {
   cards: Card[];
@@ -115,6 +115,10 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [statsMode, setStatsMode] = useState<'all' | 'top10' | 'bottom10'>('all');
   const [isBalanceChartOpen, setIsBalanceChartOpen] = useState(false);
+
+  // Cross-filters: color filter when on rarity tab, rarity filter when on color tab
+  const [colorFilters, setColorFilters] = useState<string[]>([]);
+  const [rarityFilters, setRarityFilters] = useState<string[]>([]);
   const [hoveredSet, setHoveredSet] = useState<{ setCode: string; archetypeScore: number; colorScore: number; x: number; y: number } | null>(null);
 
   // Zoom state for scatter chart
@@ -239,6 +243,34 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
   const stats = useMemo(() => {
     const validCards = cards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined);
 
+    // Apply cross-filters based on active tab
+    const getFilteredCards = (cardList: Card[], forTab: 'rarity' | 'color'): Card[] => {
+      let filtered = cardList;
+
+      // When viewing rarity stats, apply color filter
+      if (forTab === 'rarity' && colorFilters.length > 0) {
+        filtered = filtered.filter(c => {
+          const cColors = extractColors(c.colors);
+          if (colorFilters.includes('M') && cColors.length > 1) return true;
+          if (colorFilters.includes('C') && cColors.length === 0) return true;
+          const monoFilters = colorFilters.filter(f => ['W', 'U', 'B', 'R', 'G'].includes(f));
+          if (monoFilters.length > 0) {
+            for (const f of monoFilters) {
+              if (cColors.includes(f)) return true;
+            }
+          }
+          return false;
+        });
+      }
+
+      // When viewing color stats, apply rarity filter
+      if (forTab === 'color' && rarityFilters.length > 0) {
+        filtered = filtered.filter(c => rarityFilters.includes(normalizeRarity(c.rarity)));
+      }
+
+      return filtered;
+    };
+
     const buildStats = (
       cardList: Card[],
       key: string,
@@ -276,9 +308,10 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
       return { key, label, icon, wr: avg, delta, variance, color, bgColor, top10, bottom10 };
     };
 
-    // By Rarity
+    // By Rarity (apply color filter if active)
+    const filteredForRarity = getFilteredCards(validCards, 'rarity');
     const rarityGroups: Record<string, Card[]> = { M: [], R: [], U: [], C: [] };
-    validCards.forEach(c => {
+    filteredForRarity.forEach(c => {
       const r = normalizeRarity(c.rarity);
       if (rarityGroups[r]) rarityGroups[r].push(c);
     });
@@ -290,9 +323,10 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
       buildStats(rarityGroups.C, 'C', 'Common', <CircleDot size={14} />, 'text-slate-500', 'bg-slate-600'),
     ];
 
-    // By Color
+    // By Color (apply rarity filter if active)
+    const filteredForColor = getFilteredCards(validCards, 'color');
     const colorGroups: Record<string, Card[]> = { W: [], U: [], B: [], R: [], G: [], M: [], C: [] };
-    validCards.forEach(c => {
+    filteredForColor.forEach(c => {
       const colors = extractColors(c.colors);
       if (colors.length === 0) colorGroups.C.push(c);
       else if (colors.length > 1) colorGroups.M.push(c);
@@ -364,7 +398,7 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
     };
 
     return { rarityStats, colorStats, overallVariance, totalCards: validCards.length, formatBalance };
-  }, [cards, decks, globalMeanWR]);
+  }, [cards, decks, globalMeanWR, statsMode, colorFilters, rarityFilters]);
 
   const activeStats = activeTab === 'rarity' ? stats.rarityStats : stats.colorStats;
 
@@ -484,65 +518,134 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
               <PrinceOMeter cards={cards} globalMeanWR={globalMeanWR} activeSet={activeSet} activeFormat={activeFormat} />
 
               {/* Tab Switcher + Stats Mode Toggle */}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                {/* Category tabs */}
-                <div className="flex gap-1 p-1 bg-slate-800/50 rounded-lg flex-1 sm:flex-none">
-                  {(['rarity', 'color'] as const).map(tab => (
-                    <button
-                      key={tab}
-                      onClick={() => { setActiveTab(tab); setExpandedRow(null); }}
-                      className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-md text-[11px] sm:text-xs font-bold transition-all ${activeTab === tab
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                          : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
-                        }`}
-                    >
-                      <span className="sm:hidden">{tab === 'rarity' ? 'Rarity' : 'Color'}</span>
-                      <span className="hidden sm:inline">{tab === 'rarity' ? 'By Rarity' : 'By Color'}</span>
-                    </button>
-                  ))}
+              <div className="space-y-3">
+                {/* Row 1: Category tabs + Stats mode */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Category tabs */}
+                  <div className="flex gap-1 p-1 bg-slate-800/50 rounded-lg flex-1 sm:flex-none">
+                    {(['rarity', 'color'] as const).map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => { setActiveTab(tab); setExpandedRow(null); }}
+                        className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-md text-[11px] sm:text-xs font-bold transition-all ${activeTab === tab
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
+                            : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+                          }`}
+                      >
+                        <span className="sm:hidden">{tab === 'rarity' ? 'Rarity' : 'Color'}</span>
+                        <span className="hidden sm:inline">{tab === 'rarity' ? 'By Rarity' : 'By Color'}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="w-[1px] h-6 bg-slate-700/50 hidden sm:block" />
+
+                  {/* Stats mode: All / Top 10 / Bottom 10 */}
+                  <div className="flex gap-1 p-1 bg-slate-800/50 rounded-lg">
+                    <Tooltip content={<span className="text-[10px]">Show stats for all cards</span>}>
+                      <button
+                        onClick={() => setStatsMode('all')}
+                        className={`py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'all'
+                            ? 'bg-slate-600 text-white'
+                            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                          }`}
+                      >
+                        ALL
+                      </button>
+                    </Tooltip>
+                    <Tooltip content={<span className="text-[10px]">Stats for top 10 cards only</span>}>
+                      <button
+                        onClick={() => setStatsMode('top10')}
+                        className={`flex items-center gap-1 py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'top10'
+                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/25'
+                            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                          }`}
+                      >
+                        <Trophy size={11} />
+                        <span className="sm:hidden">TOP</span>
+                        <span className="hidden sm:inline">TOP 10</span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip content={<span className="text-[10px]">Stats for bottom 10 cards only</span>}>
+                      <button
+                        onClick={() => setStatsMode('bottom10')}
+                        className={`flex items-center gap-1 py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'bottom10'
+                            ? 'bg-red-600 text-white shadow-lg shadow-red-500/25'
+                            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                          }`}
+                      >
+                        <Skull size={11} />
+                        <span className="sm:hidden">BTM</span>
+                        <span className="hidden sm:inline">BTM 10</span>
+                      </button>
+                    </Tooltip>
+                  </div>
                 </div>
 
-                <div className="w-[1px] h-6 bg-slate-700/50 hidden sm:block" />
-
-                {/* Stats mode: All / Top 10 / Bottom 10 */}
-                <div className="flex gap-1 p-1 bg-slate-800/50 rounded-lg">
-                  <Tooltip content={<span className="text-[10px]">Show stats for all cards</span>}>
-                    <button
-                      onClick={() => setStatsMode('all')}
-                      className={`py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'all'
-                          ? 'bg-slate-600 text-white'
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
-                        }`}
-                    >
-                      ALL
-                    </button>
-                  </Tooltip>
-                  <Tooltip content={<span className="text-[10px]">Stats for top 10 cards only</span>}>
-                    <button
-                      onClick={() => setStatsMode('top10')}
-                      className={`flex items-center gap-1 py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'top10'
-                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/25'
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
-                        }`}
-                    >
-                      <Trophy size={11} />
-                      <span className="sm:hidden">TOP</span>
-                      <span className="hidden sm:inline">TOP 10</span>
-                    </button>
-                  </Tooltip>
-                  <Tooltip content={<span className="text-[10px]">Stats for bottom 10 cards only</span>}>
-                    <button
-                      onClick={() => setStatsMode('bottom10')}
-                      className={`flex items-center gap-1 py-2 px-2.5 sm:px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all ${statsMode === 'bottom10'
-                          ? 'bg-red-600 text-white shadow-lg shadow-red-500/25'
-                          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
-                        }`}
-                    >
-                      <Skull size={11} />
-                      <span className="sm:hidden">BTM</span>
-                      <span className="hidden sm:inline">BTM 10</span>
-                    </button>
-                  </Tooltip>
+                {/* Row 2: Cross-filters */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
+                    {activeTab === 'rarity' ? 'Filter by color' : 'Filter by rarity'}
+                  </span>
+                  {activeTab === 'rarity' ? (
+                    // Color filter when viewing by rarity
+                    <div className="flex items-center gap-1 p-1 bg-slate-800/50 rounded-lg">
+                      {['W', 'U', 'B', 'R', 'G'].map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10 border-white' : 'opacity-50 hover:opacity-80 grayscale border-transparent'}`}
+                        >
+                          <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" alt={c} />
+                        </button>
+                      ))}
+                      <div className="w-[1px] h-4 bg-slate-700 mx-0.5" />
+                      <button
+                        onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
+                        className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-50 grayscale hover:opacity-80'}`}
+                      >
+                        M
+                      </button>
+                      <button
+                        onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
+                        className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-50 hover:opacity-80'}`}
+                      >
+                        C
+                      </button>
+                      {colorFilters.length > 0 && (
+                        <button
+                          onClick={() => setColorFilters([])}
+                          className="p-1 text-slate-500 hover:text-white transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    // Rarity filter when viewing by color
+                    <div className="flex items-center gap-1 p-1 bg-slate-800/50 rounded-lg">
+                      {['M', 'R', 'U', 'C'].map(r => {
+                        const isActive = rarityFilters.includes(r);
+                        return (
+                          <button
+                            key={r}
+                            onClick={() => setRarityFilters(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
+                            className={`w-5 h-5 md:w-6 md:h-6 rounded flex items-center justify-center text-[9px] md:text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}
+                          >
+                            {r}
+                          </button>
+                        );
+                      })}
+                      {rarityFilters.length > 0 && (
+                        <button
+                          onClick={() => setRarityFilters([])}
+                          className="p-1 text-slate-500 hover:text-white transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
