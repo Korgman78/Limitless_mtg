@@ -248,16 +248,16 @@ export const FormatBlueprint: React.FC<FormatBlueprintProps> = ({ cards, decks, 
       let filtered = cardList;
 
       // When viewing rarity stats, apply color filter
+      // Use same logic as color grouping: W/U/B/R/G = mono only, M = multi, C = colorless
       if (forTab === 'rarity' && colorFilters.length > 0) {
         filtered = filtered.filter(c => {
           const cColors = extractColors(c.colors);
           if (colorFilters.includes('M') && cColors.length > 1) return true;
           if (colorFilters.includes('C') && cColors.length === 0) return true;
           const monoFilters = colorFilters.filter(f => ['W', 'U', 'B', 'R', 'G'].includes(f));
-          if (monoFilters.length > 0) {
-            for (const f of monoFilters) {
-              if (cColors.includes(f)) return true;
-            }
+          // Only match mono-colored cards for consistency with color grouping
+          if (monoFilters.length > 0 && cColors.length === 1 && monoFilters.includes(cColors[0])) {
+            return true;
           }
           return false;
         });
