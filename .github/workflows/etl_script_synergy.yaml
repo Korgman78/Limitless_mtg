@@ -1,0 +1,33 @@
+name: Daily Synergy Calculation
+
+on:
+  schedule:
+    # Se lance tous les jours à 21:00 UTC (après le scraping des trophy decks à 17:00)
+    - cron: '0 21 * * *'
+  # Permet de lancer manuellement
+  workflow_dispatch:
+
+jobs:
+  calculate-synergies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+
+      - name: Run Synergy Calculation Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python backend/etl_script_synergy.py
