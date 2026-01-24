@@ -142,55 +142,72 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
         s_score = min(avg_synergy.get(name, 0) / 10, 1.0)
         
         weighted_score = (f_score * 0.8) + (s_score * 0.2)
-        candidates.append((name, weighted_score))
+        candidates.append((name, weighted_score, card_meta[name]))
 
     candidates.sort(key=lambda x: x[1], reverse=True)
 
-    # 5. Construction du Deck (Draft 40 cartes)
+    # 5. Construction du Deck (Draft exactement 40 cartes)
     final_deck = []
+    
+    # Étape A: Les Terrains (Cible arrondie)
+    target_lands = int(round(avg_lands))
+    land_candidates = [c for c in candidates if 'Land' in c[2].get('card_type', '')]
+    lands_added = 0
+    for name, _, meta in land_candidates:
+        if lands_added >= target_lands: break
+        # Pour les terrains, on n'ajoute qu'un exemplaire à la fois 
+        # (sauf s'il nous en manque beaucoup et que c'est un terrain de base)
+        qty = 1 
+        if 'Basic' in meta.get('card_type', ''):
+            qty = min(target_lands - lands_added, 10) # On peut mettre beaucoup de basics d'un coup
+            
+        for _ in range(qty):
+            if lands_added < target_lands:
+                final_deck.append({
+                    "name": name,
+                    "cmc": 0, # Terrains forcés à CMC 0 pour le front
+                    "type": meta.get('card_type'),
+                    "cost": "",
+                    "rarity": meta.get('rarity')
+                })
+                lands_added += 1
+
+    # Étape B: Les Spells (Le reste jusqu'à 40)
+    target_spells = 40 - lands_added
+    spell_candidates = [c for c in candidates if 'Land' not in c[2].get('card_type', '')]
+    
+    spells_added = 0
     common_pairs_count = 0
     current_curve = Counter()
-    current_creatures = 0
     
-    for name, _ in candidates:
-        if len(final_deck) >= 40: break
+    for name, _, meta in spell_candidates:
+        if spells_added >= target_spells: break
         
-        meta = card_meta[name]
-        c_type = meta.get('card_type') or ''
-        is_land = 'Land' in c_type
         cmc = min(int(meta.get('card_cmc') or 0), 7)
-        is_creature = 'Creature' in c_type
         is_common = meta.get('rarity') == 'common'
 
         qty = 1
-        if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75 and not is_land:
+        # Règle des 2 paires de communes
+        if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75:
             qty = 2
-            common_pairs_count += 1
         
-        # Logique de remplissage
-        can_add = False
-        if is_land:
-            # On remplit les terrains jusqu'à la moyenne
-            if len([c for c in final_deck if 'Land' in c['type']]) + qty <= round(avg_lands):
-                can_add = True
-        else:
-            # On respecte la courbe moyenne pour les spells
-            if current_curve[cmc] + qty <= round(float(avg_curve[str(cmc)])) + 1:
-                can_add = True
-
-        if can_add:
+        # On vérifie qu'on ne dépasse pas le slot total de sorts
+        qty = min(qty, target_spells - spells_added)
+        
+        # On respecte la courbe
+        if current_curve[cmc] < round(float(avg_curve[str(cmc)])) + 2:
             for _ in range(qty):
-                if len(final_deck) < 40:
+                if spells_added < target_spells:
                     final_deck.append({
                         "name": name,
                         "cmc": cmc,
-                        "type": c_type,
+                        "type": meta.get('card_type'),
                         "cost": meta.get('card_cost'),
                         "rarity": meta.get('rarity')
                     })
-                    if not is_land: 
-                        current_curve[cmc] += 1
-                        if is_creature: current_creatures += 1
+                    current_curve[cmc] += 1
+                    spells_added += 1
+                    if qty == 2 and _ == 0: common_pairs_count += 1
 
     return {
         "set_code": TARGET_SET,
@@ -234,7 +251,8 @@ if __name__ == "__main__":
 
     if results:
         print(f"🚀 Sauvegarde de {len(results)} squelettes dans Supabase...")
-        url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons"
+        # Utilisation de on_conflict pour mettre à jour les squelettes si ils existent déjà
+        url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name"
         resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
         if resp.status_code >= 400:
             print(f"❌ Erreur sauvegarde: {resp.text}")
