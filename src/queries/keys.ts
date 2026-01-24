@@ -12,4 +12,5 @@ export const queryKeys = {
   articles: (setFilter: string) => ['articles', setFilter] as const,
   article: (id: string | number) => ['article', id] as const,
   formatBalance: (set: string) => ['formatBalance', set] as const,
+  skeletons: (set: string, format: string) => ['skeletons', set, format] as const,
 }

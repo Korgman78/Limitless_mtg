@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -35,7 +35,7 @@ import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton, CoachMarkWrapper } 
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
-import { FormatComparison, PressReview, FormatBlueprint } from './components/Features';
+import { FormatComparison, PressReview, FormatBlueprint, TrophyDecks } from './components/Features';
 import { SearchAutocomplete } from './components/Common';
 
 // Memoized Sidebar component to prevent unnecessary re-renders
@@ -60,6 +60,9 @@ const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }
       </button>
       <button onMouseEnter={() => onPrefetch('compare')} onClick={() => onTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
         <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
+      </button>
+      <button onMouseEnter={() => onPrefetch('trophies')} onClick={() => onTabChange('trophies')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'trophies' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <Trophy size={20} strokeWidth={2.5} /> <span>Trophy Decks</span>
       </button>
       <button onMouseEnter={() => onPrefetch('press')} onClick={() => onTabChange('press')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'press' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
         <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
@@ -369,6 +372,13 @@ export default function MTGLimitedApp(): React.ReactElement {
         // Prefetch decks
         queryClient.prefetchQuery({
           queryKey: queryKeys.decks(activeSet, activeFormat),
+          staleTime: 5 * 60 * 1000,
+        });
+        break;
+      case 'trophies':
+        // Prefetch skeletons
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.skeletons(activeSet, activeFormat),
           staleTime: 5 * 60 * 1000,
         });
         break;
@@ -714,38 +724,38 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                 <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
                   {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
-                  <motion.button
-                    layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-                    key={card.id} onClick={() => setSelectedCard(card)}
-                    className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md relative"
-                  >
-                    {/* TrendIndicator - top right corner */}
-                    <div className="absolute top-1.5 right-1.5 md:top-2 md:right-2">
-                      <TrendIndicator history={(card as any).win_rate_history} />
-                    </div>
+                    <motion.button
+                      layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                      whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+                      key={card.id} onClick={() => setSelectedCard(card)}
+                      className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md relative"
+                    >
+                      {/* TrendIndicator - top right corner */}
+                      <div className="absolute top-1.5 right-1.5 md:top-2 md:right-2">
+                        <TrendIndicator history={(card as any).win_rate_history} />
+                      </div>
 
-                    <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
-                    <div className="flex-1 min-w-0 text-left flex flex-col justify-center h-full">
-                      <div className="flex justify-between items-start mb-1">
-                        <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base pr-8">{card.name}</motion.span>
-                      </div>
-                      <div className="flex justify-between items-end mt-auto">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[9px] px-1.5 rounded border font-black ${RARITY_STYLES[normalizeRarity(card.rarity)]}`}>{normalizeRarity(card.rarity)}</span>
-                            <ManaIcons colors={card.colors} size="sm" />
+                      <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
+                      <div className="flex-1 min-w-0 text-left flex flex-col justify-center h-full">
+                        <div className="flex justify-between items-start mb-1">
+                          <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base pr-8">{card.name}</motion.span>
+                        </div>
+                        <div className="flex justify-between items-end mt-auto">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[9px] px-1.5 rounded border font-black ${RARITY_STYLES[normalizeRarity(card.rarity)]}`}>{normalizeRarity(card.rarity)}</span>
+                              <ManaIcons colors={card.colors} size="sm" />
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono hidden md:block">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono hidden md:block">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className={`text-sm md:text-xl font-black ${getDeltaStyle(card.gih_wr, globalMeanWR)}`}>{card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%</span>
-                          <span className="text-[10px] text-slate-500 font-mono md:hidden">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
+                          <div className="flex flex-col items-end">
+                            <span className={`text-sm md:text-xl font-black ${getDeltaStyle(card.gih_wr, globalMeanWR)}`}>{card.gih_wr ? card.gih_wr.toFixed(1) : '--'}%</span>
+                            <span className="text-[10px] text-slate-500 font-mono md:hidden">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </motion.button>
-                ))}
+                    </motion.button>
+                  ))}
                   {/* Scroll sentinel */}
                   {!loading && visibleCardsCount < filteredCards.length && (
                     <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
@@ -767,6 +777,13 @@ export default function MTGLimitedApp(): React.ReactElement {
             {activeTab === 'press' && (
               <motion.div key="press-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                 <PressReview activeSet={activeSet} onViewCardInFormat={handleViewCardInFormat} />
+              </motion.div>
+            )}
+
+            {/* 5. TROPHY DECKS TAB */}
+            {activeTab === 'trophies' && (
+              <motion.div key="trophies-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                <TrophyDecks activeSet={activeSet} activeFormat={activeFormat} onCardSelect={handleCardSelect} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -796,6 +813,10 @@ export default function MTGLimitedApp(): React.ReactElement {
         <button onClick={() => handleTabChange('compare')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'compare' ? 'text-indigo-400' : 'text-slate-600'}`}>
           <Repeat size={20} strokeWidth={activeTab === 'compare' ? 2.5 : 2} />
           <span className="text-[9px] font-bold">Compare</span>
+        </button>
+        <button onClick={() => handleTabChange('trophies')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'trophies' ? 'text-indigo-400' : 'text-slate-600'}`}>
+          <Trophy size={20} strokeWidth={activeTab === 'trophies' ? 2.5 : 2} />
+          <span className="text-[9px] font-bold">Trophies</span>
         </button>
         <button onClick={() => handleTabChange('press')} className={`flex flex-col items-center gap-0.5 p-1 transition-all ${activeTab === 'press' ? 'text-indigo-400' : 'text-slate-600'}`}>
           <Newspaper size={20} strokeWidth={activeTab === 'press' ? 2.5 : 2} />

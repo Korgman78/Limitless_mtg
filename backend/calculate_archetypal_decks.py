@@ -68,10 +68,11 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
     """
     if not decks: return None
 
-    # 1. Analyse des stats de base (Fréquence, Courbe, Ratio)
+    # 1. Analyse des stats de base (Fréquence, Courbe, Ratio, Terrains)
     all_cards_in_decks = []
     curves = []
     creature_counts = []
+    land_counts = []
     
     for d in decks:
         cardlist = d.get('cardlist', {})
@@ -79,33 +80,49 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
         if total_cards < 35: continue
         
         creatures = 0
+        lands = 0
         mana_dist = Counter()
         for name, qty in cardlist.items():
             meta = card_meta.get(name)
             if not meta: continue
             for _ in range(qty): all_cards_in_decks.append(name)
-            cmc = min(int(meta.get('card_cmc') or 0), 7)
-            mana_dist[cmc] += qty
-            if 'Creature' in (meta.get('card_type') or ''): creatures += qty
+            
+            c_type = meta.get('card_type') or ''
+            is_land = 'Land' in c_type
+            
+            if is_land:
+                lands += qty
+            else:
+                # On ne compte que les non-terrains dans la courbe de mana
+                cmc = min(int(meta.get('card_cmc') or 0), 7)
+                mana_dist[cmc] += qty
+                if 'Creature' in c_type: 
+                    creatures += qty
         
         curves.append(mana_dist)
         creature_counts.append(creatures)
+        land_counts.append(lands)
 
     if not curves: return None
 
     # Calcul des moyennes cibles
-    avg_curve = {str(i): round(statistics.mean([c[i] for c in curves]), 1) for i in range(8)}
+    # On initialise tous les CMCs de 0 à 7 à 0.0 pour éviter les trous dans le front
+    avg_curve = {str(i): 0.0 for i in range(8)}
+    for i in range(8):
+        vals = [c[i] for c in curves]
+        avg_curve[str(i)] = round(statistics.mean(vals), 1) if vals else 0.0
+    
     avg_creatures = statistics.mean(creature_counts)
+    avg_lands = statistics.mean(land_counts)
     
     # 2. Score de Fréquence
     card_counts = Counter(all_cards_in_decks)
     max_freq = len(decks)
     
     # 3. Calcul de la Synergie "Cluster"
-    # On identifie les 15 cartes les plus fréquentes (les piliers de l'archétype)
+    # On identifie les 15 cartes les plus fréquentes
     pillars = [name for name, _ in card_counts.most_common(15)]
     
-    # On crée un dict de synergie moyenne pour chaque candidat avec les piliers
     synergy_map = {}
     for syn in synergy_data:
         ca, cb, score = syn['card_a'], syn['card_b'], float(syn['synergy_score'])
@@ -117,13 +134,12 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
     avg_synergy = {name: statistics.mean(scores) if scores else 0 for name, scores in synergy_map.items()}
 
     # 4. Score Final Pondéré : 80% Fréquence + 20% Synergie
-    # On normalise les scores entre 0 et 1 pour qu'ils soient comparables
     candidates = []
     for name, freq in card_counts.items():
         if name not in card_meta: continue
         
-        f_score = freq / max_freq # Entre 0 et 1
-        s_score = min(avg_synergy.get(name, 0) / 10, 1.0) # On plafonne la synergie à un certain niveau
+        f_score = freq / max_freq 
+        s_score = min(avg_synergy.get(name, 0) / 10, 1.0)
         
         weighted_score = (f_score * 0.8) + (s_score * 0.2)
         candidates.append((name, weighted_score))
@@ -140,44 +156,49 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
         if len(final_deck) >= 40: break
         
         meta = card_meta[name]
+        c_type = meta.get('card_type') or ''
+        is_land = 'Land' in c_type
         cmc = min(int(meta.get('card_cmc') or 0), 7)
-        is_creature = 'Creature' in (meta.get('card_type') or '')
+        is_creature = 'Creature' in c_type
         is_common = meta.get('rarity') == 'common'
 
         qty = 1
-        if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75:
+        if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75 and not is_land:
             qty = 2
             common_pairs_count += 1
         
-        # On respecte la courbe moyenne avec une tolérance
-        if current_curve[cmc] + qty <= round(float(avg_curve[str(cmc)])) + 1:
+        # Logique de remplissage
+        can_add = False
+        if is_land:
+            # On remplit les terrains jusqu'à la moyenne
+            if len([c for c in final_deck if 'Land' in c['type']]) + qty <= round(avg_lands):
+                can_add = True
+        else:
+            # On respecte la courbe moyenne pour les spells
+            if current_curve[cmc] + qty <= round(float(avg_curve[str(cmc)])) + 1:
+                can_add = True
+
+        if can_add:
             for _ in range(qty):
                 if len(final_deck) < 40:
                     final_deck.append({
                         "name": name,
                         "cmc": cmc,
-                        "type": meta.get('card_type'),
+                        "type": c_type,
                         "cost": meta.get('card_cost'),
                         "rarity": meta.get('rarity')
                     })
-                    current_curve[cmc] += 1
-                    if is_creature: current_creatures += 1
+                    if not is_land: 
+                        current_curve[cmc] += 1
+                        if is_creature: current_creatures += 1
 
     return {
         "set_code": TARGET_SET,
         "format": TARGET_FORMAT,
         "archetype_name": archetype,
         "avg_mana_curve": avg_curve,
-        "creature_ratio": round(avg_creatures / 40, 3),
-        "deck_list": final_deck
-    }
-
-    return {
-        "set_code": TARGET_SET,
-        "format": TARGET_FORMAT,
-        "archetype_name": archetype,
-        "avg_mana_curve": avg_curve,
-        "creature_ratio": round(avg_creatures / 40, 3),
+        "avg_lands": round(avg_lands, 1),
+        "creature_ratio": round(avg_creatures / (40 - avg_lands), 3),
         "deck_list": final_deck
     }
 
