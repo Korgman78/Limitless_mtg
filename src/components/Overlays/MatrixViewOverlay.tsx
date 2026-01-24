@@ -318,7 +318,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col"
+      className="fixed inset-0 z-[1000] bg-slate-950/95 backdrop-blur-sm flex flex-col"
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-slate-800">

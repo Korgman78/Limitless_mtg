@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronDown, ChevronLeft } from 'lucide-react';
 import type { SwipeableOverlayProps } from '../../types';
 
-export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, onClose, zIndex = 50, title, breadcrumb, onBack }) => {
+export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, onClose, zIndex = 1000, title, breadcrumb, onBack }) => {
   const [showHint, setShowHint] = useState(false);
 
   // Show swipe hint on first open (mobile only)

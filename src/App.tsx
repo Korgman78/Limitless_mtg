@@ -48,7 +48,7 @@ interface SidebarProps {
 const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }) => (
   <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
     <div className="mb-8 px-2">
-      <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent italic">LIMITLESS</h1>
+      <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">LIMITLESS</h1>
       <p className="text-xs text-slate-500 font-medium tracking-wide">MTG LIMITED ANALYTICS</p>
     </div>
     <div className="space-y-2">
@@ -73,7 +73,7 @@ const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }
         <p className="mb-2">
           <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>. Don't forget to play with <a href="https://www.17lands.com/getting_started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">their tracker</a> on!
         </p>
-        <p className="italic">
+        <p>
           Limitless is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
         </p>
       </div>
@@ -406,7 +406,25 @@ export default function MTGLimitedApp(): React.ReactElement {
   const handleCloseDeck = useCallback(() => setSelectedDeck(null), []);
   const handleCloseMatrix = useCallback(() => setShowMatrixView(false), []);
   const handleCloseCard = useCallback(() => setSelectedCard(null), []);
-  const handleCardSelect = useCallback((card: Card) => setSelectedCard(card), []);
+  // Enhanced handleCardSelect to handle both full Card objects and partial objects (from TrophyDecks)
+  const handleCardSelect = useCallback((card: any) => {
+    if (card.gih_wr !== undefined && card.colors !== undefined) {
+      setSelectedCard(card);
+    } else {
+      // Look up full card data by name
+      const fullCard = cards.find(c => c.name === card.name);
+      if (fullCard) {
+        setSelectedCard(fullCard);
+      } else {
+        // Last resort: normalized match for split cards or differently named cards
+        const normalize = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const searchName = normalize(card.name);
+        const matched = cards.find(c => normalize(c.name) === searchName);
+        if (matched) setSelectedCard(matched);
+        else setSelectedCard(card as Card); // Fallback to partial if nothing else
+      }
+    }
+  }, [cards]);
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans w-full overflow-hidden relative selection:bg-indigo-500/30">

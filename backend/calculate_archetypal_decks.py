@@ -11,8 +11,8 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "ECL"
-TARGET_FORMAT = "PremierDraft"
+TARGET_SET_CODES = ["ECL"]
+TARGET_FORMATS = ["PremierDraft", "TradDraft"]
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -62,7 +62,7 @@ def get_archetype_synergies(set_code, fmt):
 # 3. ALGORITHME DE CALCUL DES SQUELETTES
 # ==============================================================================
 
-def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
+def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code, format_name):
     """
     Calcule le squelette pour un archétype donné, pondéré par la synergie.
     """
@@ -176,23 +176,39 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
     target_spells = 40 - lands_added
     spell_candidates = [c for c in candidates if 'Land' not in c[2].get('card_type', '')]
     
+    # CALCUL DES QUOTAS BASÉS SUR LE RATIO D'ARCHÉTYPE
+    # On veut respecter target_creatures = target_spells * ratio
+    target_creatures = round(target_spells * (avg_creatures / (40 - avg_lands)))
+    target_non_creatures = target_spells - target_creatures
+    
     spells_added = 0
+    creatures_added = 0
+    non_creatures_added = 0
     common_pairs_count = 0
     current_curve = Counter()
     
+    # PREMIÈRE PASSE : Essayer de respecter strictement les quotas tout en suivant la fréquence
     for name, _, meta in spell_candidates:
         if spells_added >= target_spells: break
         
+        c_type = meta.get('card_type') or ''
+        is_creature = 'Creature' in c_type
         cmc = min(int(meta.get('card_cmc') or 0), 7)
         is_common = meta.get('rarity') == 'common'
+
+        # Skip si on a déjà atteint le quota pour ce type (avec une marge de +1)
+        if is_creature and creatures_added >= target_creatures + 1: continue
+        if not is_creature and non_creatures_added >= target_non_creatures + 1: continue
 
         qty = 1
         # Règle des 2 paires de communes
         if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75:
             qty = 2
         
-        # On vérifie qu'on ne dépasse pas le slot total de sorts
-        qty = min(qty, target_spells - spells_added)
+        # On vérifie qu'on ne dépasse pas le slot total de sorts ni le quota spécifique
+        max_for_type = (target_creatures + 1 - creatures_added) if is_creature else (target_non_creatures + 1 - non_creatures_added)
+        qty = min(qty, target_spells - spells_added, max_for_type)
+        if qty <= 0: continue
         
         # On respecte la courbe
         if current_curve[cmc] < round(float(avg_curve[str(cmc)])) + 2:
@@ -201,22 +217,42 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
                     final_deck.append({
                         "name": name,
                         "cmc": cmc,
-                        "type": meta.get('card_type'),
+                        "type": c_type,
                         "cost": meta.get('card_cost'),
                         "rarity": meta.get('rarity')
                     })
                     current_curve[cmc] += 1
                     spells_added += 1
+                    if is_creature: creatures_added += 1
+                    else: non_creatures_added += 1
                     if qty == 2 and _ == 0: common_pairs_count += 1
 
+    # DEUXIÈME PASSE : Si on n'a pas atteint les 40 cartes (à cause des quotas trop stricts), 
+    # on complète avec les restants par ordre de fréquence pure
+    if spells_added < target_spells:
+        for name, _, meta in spell_candidates:
+            if spells_added >= target_spells: break
+            if any(c['name'] == name for c in final_deck): continue # Déjà là (on simplifie pas de triples pour l'instant hors basics)
+
+            cmc = min(int(meta.get('card_cmc') or 0), 7)
+            final_deck.append({
+                "name": name,
+                "cmc": cmc,
+                "type": meta.get('card_type'),
+                "cost": meta.get('card_cost'),
+                "rarity": meta.get('rarity')
+            })
+            spells_added += 1
+
     return {
-        "set_code": TARGET_SET,
-        "format": TARGET_FORMAT,
+        "set_code": set_code,
+        "format": format_name,
         "archetype_name": archetype,
         "avg_mana_curve": avg_curve,
         "avg_lands": round(avg_lands, 1),
         "creature_ratio": round(avg_creatures / (40 - avg_lands), 3),
-        "deck_list": final_deck
+        "deck_list": final_deck,
+        "sample_size": len(decks)
     }
 
 # ==============================================================================
@@ -224,37 +260,41 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data):
 # ==============================================================================
 
 if __name__ == "__main__":
-    print(f"🚀 Calcul des squelettes pour {TARGET_SET}...")
+    for set_code in TARGET_SET_CODES:
+        print(f"🚀 Traitement du set {set_code}...")
+        card_meta = get_cards_metadata(set_code)
+        
+        for fmt in TARGET_FORMATS:
+            print(f"   📋 Format: {fmt}")
+            trophies = get_trophy_decks(set_code, fmt)
+            synergies = get_archetype_synergies(set_code, fmt)
+            
+            if not trophies:
+                print(f"      ⚠️ Aucun trophy deck pour {set_code} ({fmt}).")
+                continue
+
+            # Grouper par archétype
+            decks_by_arch = {}
+            for d in trophies:
+                arch = d['archetype']
+                if arch not in decks_by_arch: decks_by_arch[arch] = []
+                decks_by_arch[arch].append(d)
+
+            results = []
+            for arch, decks in decks_by_arch.items():
+                if len(decks) < 3: continue 
+                print(f"      📊 Analyse {arch} ({len(decks)} decks)...")
+                skeleton = build_archetype_skeleton(arch, decks, card_meta, synergies, set_code, fmt)
+                if skeleton:
+                    results.append(skeleton)
+
+            if results:
+                print(f"      🚀 Sauvegarde de {len(results)} squelettes dans Supabase...")
+                url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name"
+                resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
+                if resp.status_code >= 400:
+                    print(f"      ❌ Erreur sauvegarde: {resp.text}")
+                else:
+                    print(f"      ✅ Squelettes mis à jour pour {set_code} ({fmt}) !")
     
-    card_meta = get_cards_metadata(TARGET_SET)
-    trophies = get_trophy_decks(TARGET_SET, TARGET_FORMAT)
-    synergies = get_archetype_synergies(TARGET_SET, TARGET_FORMAT)
-    
-    if not trophies:
-        print("❌ Aucun trophy deck trouvé.")
-        exit(1)
-
-    # Grouper par archétype
-    decks_by_arch = {}
-    for d in trophies:
-        arch = d['archetype']
-        if arch not in decks_by_arch: decks_by_arch[arch] = []
-        decks_by_arch[arch].append(d)
-
-    results = []
-    for arch, decks in decks_by_arch.items():
-        if len(decks) < 3: continue 
-        print(f"   📊 Analyse {arch} ({len(decks)} decks)...")
-        skeleton = build_archetype_skeleton(arch, decks, card_meta, synergies)
-        if skeleton:
-            results.append(skeleton)
-
-    if results:
-        print(f"🚀 Sauvegarde de {len(results)} squelettes dans Supabase...")
-        # Utilisation de on_conflict pour mettre à jour les squelettes si ils existent déjà
-        url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name"
-        resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
-        if resp.status_code >= 400:
-            print(f"❌ Erreur sauvegarde: {resp.text}")
-        else:
-            print("✅ Terminée !")
+    print("\n🏁 Mission accomplie.")

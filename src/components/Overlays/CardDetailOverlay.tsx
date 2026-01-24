@@ -167,10 +167,10 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
 
   const peersRarity = allCards.filter((c: Card) => normalizeRarity(c.rarity) === normalizeRarity(card.rarity));
   const peersColor = peersRarity.filter((c: Card) => areColorsEqual(extractColors(c.colors), extractColors(card.colors)));
-  
+
   const rankWrRarity = getRank(peersRarity, 'gih_wr', card.gih_wr, false);
   const rankWrColor = getRank(peersColor, 'gih_wr', card.gih_wr, false);
-  
+
   const hasAlsa = !!card.alsa;
   const rankAlsaRarity = hasAlsa ? getRank(peersRarity, 'alsa', card.alsa, true) : null;
   const rankAlsaColor = hasAlsa ? getRank(peersColor, 'alsa', card.alsa, true) : null;
@@ -258,10 +258,10 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
 
     // Déterminer ligne (1-5)
     const row = effectiveWR >= wrRow1Threshold ? 1
-              : effectiveWR >= wrRow2Threshold ? 2
-              : effectiveWR >= AVG_WR ? 3
-              : effectiveWR >= wrRow4Threshold ? 4
-              : 5;
+      : effectiveWR >= wrRow2Threshold ? 2
+        : effectiveWR >= AVG_WR ? 3
+          : effectiveWR >= wrRow4Threshold ? 4
+            : 5;
 
     // Zone centrale PLAYABLE (prioritaire)
     const isPlayable = Math.abs(effectiveWR - AVG_WR) <= 0.5 && col >= 2 && col <= 3;
@@ -389,11 +389,10 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                     setShowPeers(!showPeers);
                     if (!showPeers) setShowAllRarityPeers(false);
                   }}
-                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${
-                    showPeers
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${showPeers
                       ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
                       : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
-                  }`}
+                    }`}
                 >
                   <Users size={11} />
                   {showPeers ? 'Hide' : 'Show'} {rarityLabel.toLowerCase()} color peers
@@ -404,11 +403,10 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                     setShowAllRarityPeers(!showAllRarityPeers);
                     if (!showAllRarityPeers) setShowPeers(false);
                   }}
-                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${
-                    showAllRarityPeers
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${showAllRarityPeers
                       ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
                       : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
-                  }`}
+                    }`}
                 >
                   <Users size={11} />
                   {showAllRarityPeers ? 'Hide' : 'Show'} all {rarityLabel.toLowerCase()}
@@ -440,142 +438,142 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                   className="absolute inset-0 origin-center transition-transform duration-100"
                   style={{ transform: `translate(${position.x}%, ${position.y}%) scale(${scale})` }}
                 >
-                {/* Moyenne line (always shown) - avec tooltip pour afficher la valeur */}
-                <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
-                  <div className="absolute left-0 right-0 h-3 cursor-help z-10 -translate-y-1/2" style={{ top: `${yAvg}%` }}>
-                    <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-slate-600" />
-                  </div>
-                </Tooltip>
+                  {/* Moyenne line (always shown) - avec tooltip pour afficher la valeur */}
+                  <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
+                    <div className="absolute left-0 right-0 h-3 cursor-help z-10 -translate-y-1/2" style={{ top: `${yAvg}%` }}>
+                      <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-slate-600" />
+                    </div>
+                  </Tooltip>
 
-                {hasAlsa ? (
-                  <>
-                    {/* Draft mode: 2D matrix with ALSA axis */}
-                    <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-700/50" style={{ left: `${xAvg}%` }}></div>
-                    <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-purple-500/50 font-black">TOP TIER</div>
-                    <div className="absolute top-1 right-1 md:top-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-emerald-500/50 font-black">GEM</div>
-                    <div className="absolute bottom-1 left-1 md:bottom-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-red-500/50 font-black">OVERRATED</div>
-                    <div className="absolute bottom-1 right-1 md:bottom-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-slate-600/50 font-black">CHAFF</div>
-                  </>
-                ) : (() => {
-                  // Calculate dynamic positions based on WR scale
-                  // Use displayMinWR/displayMaxWR for consistent scale with dot positions
-                  const wrRange = displayMaxWR - displayMinWR; // 20 points for Sealed (+12 to -8)
-                  const pctPerPoint = 100 / wrRange;
-
-                  // Calculate Y positions for each threshold (delta from average)
-                  const getY = (delta: number) => Math.max(0, Math.min(100, yAvg - (delta * pctPerPoint)));
-
-                  // Threshold positions
-                  const y9 = getY(9);   // BOMB threshold
-                  const y7 = getY(7);   // TOP TIER threshold
-                  const y5 = getY(5);   // VERY GOOD threshold
-                  const y3 = getY(3);   // GOOD threshold
-                  const y1 = getY(1);   // PLAYABLE top
-                  const yM1 = getY(-1); // PLAYABLE bottom
-                  const yM3 = getY(-3); // FILLER threshold
-                  const yM5 = getY(-5); // CHAFF threshold
-
-                  // Determine current card's category for dynamic label
-                  const cardDelta = effectiveWR - AVG_WR;
-                  const fixedLabels = ['Bomb', 'Playable', 'Chaff'];
-                  const showDynamicLabel = !fixedLabels.includes(statusText);
-
-                  // Get Y position for dynamic label based on card's category
-                  const getDynamicLabelY = () => {
-                    if (cardDelta >= 7) return (y9 + y7) / 2;      // TOP TIER
-                    if (cardDelta >= 5) return (y7 + y5) / 2;      // VERY GOOD
-                    if (cardDelta >= 3) return (y5 + y3) / 2;      // GOOD
-                    if (cardDelta >= 1) return (y3 + y1) / 2;      // SOLID PLAYABLE
-                    if (cardDelta >= -3) return (yM1 + yM3) / 2;   // FILLER
-                    return (yM3 + yM5) / 2;                        // BAD
-                  };
-
-                  return (
+                  {hasAlsa ? (
                     <>
-                      {/* Sealed mode: Dynamic horizontal bands based on WR thresholds */}
-                      {/* BOMB zone */}
-                      <div className="absolute left-0 right-0 bg-purple-500/20" style={{ top: 0, height: `${y9}%` }} />
-                      {/* TOP TIER zone */}
-                      <div className="absolute left-0 right-0 bg-purple-500/10" style={{ top: `${y9}%`, height: `${y7 - y9}%` }} />
-                      {/* VERY GOOD zone */}
-                      <div className="absolute left-0 right-0 bg-emerald-500/10" style={{ top: `${y7}%`, height: `${y5 - y7}%` }} />
-                      {/* GOOD zone */}
-                      <div className="absolute left-0 right-0 bg-emerald-500/5" style={{ top: `${y5}%`, height: `${y3 - y5}%` }} />
-                      {/* SOLID PLAYABLE zone */}
-                      <div className="absolute left-0 right-0 bg-slate-500/5" style={{ top: `${y3}%`, height: `${y1 - y3}%` }} />
-                      {/* PLAYABLE zone - centered on average */}
-                      <div className="absolute left-0 right-0 bg-slate-400/10 border-y border-slate-500/20" style={{ top: `${y1}%`, height: `${yM1 - y1}%` }} />
-                      {/* FILLER zone */}
-                      <div className="absolute left-0 right-0 bg-slate-600/5" style={{ top: `${yM1}%`, height: `${yM3 - yM1}%` }} />
-                      {/* BAD zone (-3 to -5) */}
-                      <div className="absolute left-0 right-0 bg-amber-500/10" style={{ top: `${yM3}%`, height: `${yM5 - yM3}%` }} />
-                      {/* CHAFF zone (-5 to bottom) */}
-                      <div className="absolute left-0 right-0 bg-red-500/15" style={{ top: `${yM5}%`, bottom: 0 }} />
-
-                      {/* Average line with tooltip for GIH WR */}
-                      <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
-                        <div className="absolute left-0 right-0 h-4 cursor-help z-10 flex items-center" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>
-                          <div className="w-full border-t border-dashed border-slate-500/70" />
-                        </div>
-                      </Tooltip>
-
-                      {/* Fixed labels: BOMB (top), PLAYABLE (center), CHAFF (bottom) */}
-                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/80 font-black" style={{ top: `${y9 / 2}%`, transform: 'translateY(-50%)' }}>BOMB</div>
-                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-300/80 font-black" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>PLAYABLE</div>
-                      <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-red-400/80 font-black" style={{ top: `${(yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>
-
-                      {/* Dynamic label for current card's category (if not BOMB, PLAYABLE, or CHAFF) */}
-                      {showDynamicLabel && (
-                        <div
-                          className={`absolute right-2 md:right-3 text-[7px] md:text-[9px] font-black ${statusColor}`}
-                          style={{ top: `${getDynamicLabelY()}%`, transform: 'translateY(-50%)' }}
-                        >
-                          {statusText.toUpperCase()}
-                        </div>
-                      )}
+                      {/* Draft mode: 2D matrix with ALSA axis */}
+                      <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-700/50" style={{ left: `${xAvg}%` }}></div>
+                      <div className="absolute top-1 left-1 md:top-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-purple-500/50 font-black">TOP TIER</div>
+                      <div className="absolute top-1 right-1 md:top-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-emerald-500/50 font-black">GEM</div>
+                      <div className="absolute bottom-1 left-1 md:bottom-2 md:left-2 text-[8px] md:text-[10px] lg:text-xs text-red-500/50 font-black">OVERRATED</div>
+                      <div className="absolute bottom-1 right-1 md:bottom-2 md:right-2 text-[8px] md:text-[10px] lg:text-xs text-slate-600/50 font-black">CHAFF</div>
                     </>
-                  );
-                })()}
+                  ) : (() => {
+                    // Calculate dynamic positions based on WR scale
+                    // Use displayMinWR/displayMaxWR for consistent scale with dot positions
+                    const wrRange = displayMaxWR - displayMinWR; // 20 points for Sealed (+12 to -8)
+                    const pctPerPoint = 100 / wrRange;
 
-                {/* Peer dots with staggered animation */}
-                {peerDots.map((peer, idx) => (
-                  <Tooltip
-                    key={peer.name}
-                    content={
-                      <div className="text-center whitespace-nowrap">
-                        <div className="text-[10px] font-bold text-white mb-1">{peer.name}</div>
-                        <div className="flex gap-3 text-[9px]">
-                          <span className="text-slate-400">WR: <span className={getDeltaStyle(peer.wr, AVG_WR)}>{peer.wr.toFixed(1)}%</span></span>
-                          {peer.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{peer.alsa.toFixed(2)}</span></span>}
+                    // Calculate Y positions for each threshold (delta from average)
+                    const getY = (delta: number) => Math.max(0, Math.min(100, yAvg - (delta * pctPerPoint)));
+
+                    // Threshold positions
+                    const y9 = getY(9);   // BOMB threshold
+                    const y7 = getY(7);   // TOP TIER threshold
+                    const y5 = getY(5);   // VERY GOOD threshold
+                    const y3 = getY(3);   // GOOD threshold
+                    const y1 = getY(1);   // PLAYABLE top
+                    const yM1 = getY(-1); // PLAYABLE bottom
+                    const yM3 = getY(-3); // FILLER threshold
+                    const yM5 = getY(-5); // CHAFF threshold
+
+                    // Determine current card's category for dynamic label
+                    const cardDelta = effectiveWR - AVG_WR;
+                    const fixedLabels = ['Bomb', 'Playable', 'Chaff'];
+                    const showDynamicLabel = !fixedLabels.includes(statusText);
+
+                    // Get Y position for dynamic label based on card's category
+                    const getDynamicLabelY = () => {
+                      if (cardDelta >= 7) return (y9 + y7) / 2;      // TOP TIER
+                      if (cardDelta >= 5) return (y7 + y5) / 2;      // VERY GOOD
+                      if (cardDelta >= 3) return (y5 + y3) / 2;      // GOOD
+                      if (cardDelta >= 1) return (y3 + y1) / 2;      // SOLID PLAYABLE
+                      if (cardDelta >= -3) return (yM1 + yM3) / 2;   // FILLER
+                      return (yM3 + yM5) / 2;                        // BAD
+                    };
+
+                    return (
+                      <>
+                        {/* Sealed mode: Dynamic horizontal bands based on WR thresholds */}
+                        {/* BOMB zone */}
+                        <div className="absolute left-0 right-0 bg-purple-500/20" style={{ top: 0, height: `${y9}%` }} />
+                        {/* TOP TIER zone */}
+                        <div className="absolute left-0 right-0 bg-purple-500/10" style={{ top: `${y9}%`, height: `${y7 - y9}%` }} />
+                        {/* VERY GOOD zone */}
+                        <div className="absolute left-0 right-0 bg-emerald-500/10" style={{ top: `${y7}%`, height: `${y5 - y7}%` }} />
+                        {/* GOOD zone */}
+                        <div className="absolute left-0 right-0 bg-emerald-500/5" style={{ top: `${y5}%`, height: `${y3 - y5}%` }} />
+                        {/* SOLID PLAYABLE zone */}
+                        <div className="absolute left-0 right-0 bg-slate-500/5" style={{ top: `${y3}%`, height: `${y1 - y3}%` }} />
+                        {/* PLAYABLE zone - centered on average */}
+                        <div className="absolute left-0 right-0 bg-slate-400/10 border-y border-slate-500/20" style={{ top: `${y1}%`, height: `${yM1 - y1}%` }} />
+                        {/* FILLER zone */}
+                        <div className="absolute left-0 right-0 bg-slate-600/5" style={{ top: `${yM1}%`, height: `${yM3 - yM1}%` }} />
+                        {/* BAD zone (-3 to -5) */}
+                        <div className="absolute left-0 right-0 bg-amber-500/10" style={{ top: `${yM3}%`, height: `${yM5 - yM3}%` }} />
+                        {/* CHAFF zone (-5 to bottom) */}
+                        <div className="absolute left-0 right-0 bg-red-500/15" style={{ top: `${yM5}%`, bottom: 0 }} />
+
+                        {/* Average line with tooltip for GIH WR */}
+                        <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">Format Average WR</div><div className="text-sm font-black text-white">{AVG_WR.toFixed(1)}%</div></div>}>
+                          <div className="absolute left-0 right-0 h-4 cursor-help z-10 flex items-center" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>
+                            <div className="w-full border-t border-dashed border-slate-500/70" />
+                          </div>
+                        </Tooltip>
+
+                        {/* Fixed labels: BOMB (top), PLAYABLE (center), CHAFF (bottom) */}
+                        <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-purple-400/80 font-black" style={{ top: `${y9 / 2}%`, transform: 'translateY(-50%)' }}>BOMB</div>
+                        <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-slate-300/80 font-black" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }}>PLAYABLE</div>
+                        <div className="absolute right-2 md:right-3 text-[7px] md:text-[9px] text-red-400/80 font-black" style={{ top: `${(yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>
+
+                        {/* Dynamic label for current card's category (if not BOMB, PLAYABLE, or CHAFF) */}
+                        {showDynamicLabel && (
+                          <div
+                            className={`absolute right-2 md:right-3 text-[7px] md:text-[9px] font-black ${statusColor}`}
+                            style={{ top: `${getDynamicLabelY()}%`, transform: 'translateY(-50%)' }}
+                          >
+                            {statusText.toUpperCase()}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                  {/* Peer dots with staggered animation */}
+                  {peerDots.map((peer, idx) => (
+                    <Tooltip
+                      key={peer.name}
+                      content={
+                        <div className="text-center whitespace-nowrap">
+                          <div className="text-[10px] font-bold text-white mb-1">{peer.name}</div>
+                          <div className="flex gap-3 text-[9px]">
+                            <span className="text-slate-400">WR: <span className={getDeltaStyle(peer.wr, AVG_WR)}>{peer.wr.toFixed(1)}%</span></span>
+                            {peer.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{peer.alsa.toFixed(2)}</span></span>}
+                          </div>
                         </div>
-                      </div>
-                    }
-                  >
+                      }
+                    >
+                      <motion.div
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 400,
+                          damping: 20,
+                          delay: idx * 0.025
+                        }}
+                        onClick={() => onCardSelect?.(peer.card)}
+                        className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 ${peer.colorClass} hover:brightness-125 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
+                        style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
+                      />
+                    </Tooltip>
+                  ))}
+
+                  {/* Main card dot - always on top */}
+                  <div className="absolute -translate-x-1/2 -translate-y-1/2 z-10" style={{ left: `${xPos}%`, top: `${yPos}%` }}>
                     <motion.div
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 400,
-                        damping: 20,
-                        delay: idx * 0.025
-                      }}
-                      onClick={() => onCardSelect?.(peer.card)}
-                      className={`absolute w-1.5 h-1.5 md:w-2 md:h-2 ${peer.colorClass} hover:brightness-125 rounded-full -translate-x-1/2 -translate-y-1/2 transition-all hover:scale-150 hover:z-20 ${onCardSelect ? 'cursor-pointer' : ''}`}
-                      style={{ left: `${peer.x}%`, top: `${peer.y}%` }}
+                      transition={{ type: 'spring', delay: 0.2 }}
+                      className="w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] border-2 border-indigo-600"
                     />
-                  </Tooltip>
-                ))}
-
-                        {/* Main card dot - always on top */}
-                        <div className="absolute -translate-x-1/2 -translate-y-1/2 z-10" style={{ left: `${xPos}%`, top: `${yPos}%` }}>
-                          <motion.div
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{ type: 'spring', delay: 0.2 }}
-                            className="w-2.5 h-2.5 md:w-3 md:h-3 lg:w-4 lg:h-4 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] md:shadow-[0_0_10px_rgba(255,255,255,0.8)] border-2 border-indigo-600"
-                          />
-                        </div>
+                  </div>
                 </div>
                 {/* Zoom level indicator */}
                 {scale > 1 && (
@@ -638,7 +636,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const minGamesDisplay = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
 
   return (
-    <SwipeableOverlay onClose={onClose} zIndex={60}>
+    <SwipeableOverlay onClose={onClose} zIndex={1100}>
       <AnimatePresence mode="wait">
         <motion.div
           key={card.name}
@@ -649,68 +647,68 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
           className="flex flex-col h-full md:flex-row"
         >
           {fetchError && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-            <AlertTriangle size={16} />
-            {fetchError}
-          </div>
-        )}
-
-        {/* Dashboard Compact Header */}
-        <div className="bg-slate-900/50 p-4 md:pb-8 md:px-6 flex flex-col border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
-          <div className="flex flex-row md:flex-col items-center gap-4 md:gap-0">
-            
-            {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
-            <div className="w-[40%] md:w-full flex-shrink-0"> 
-              <motion.img
-                layoutId={`img-${card.id}`}
-                src={getCardImage(card.name)}
-                className="w-full h-auto rounded-[10px] md:rounded-[18px] shadow-2xl shadow-black md:my-4 ring-1 ring-white/10 object-contain"
-              />
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {fetchError}
             </div>
+          )}
 
-            {/* Information & Stats Panel */}
-            <div className="flex-1 md:w-full flex flex-col justify-center pl-3 md:pl-0">
-              <div className="mb-3">
-                <h1 className="text-base md:text-2xl font-black text-left md:text-center text-white leading-tight mb-1 line-clamp-2">
-                  {card.name}
-                </h1>
-                <div className="flex items-center justify-start md:justify-center gap-2">
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border border-white/10 font-black tracking-wide ${RARITY_STYLES[rCode]}`}>
-                    {rCode}
-                  </span>
-                  <ManaIcons colors={card.colors} size="sm" />
-                </div>
+          {/* Dashboard Compact Header */}
+          <div className="bg-slate-900/50 p-4 md:pb-8 md:px-6 flex flex-col border-b border-slate-800 md:border-b-0 md:border-r md:w-1/3 md:justify-center md:pt-0 flex-shrink-0">
+            <div className="flex flex-row md:flex-col items-center gap-4 md:gap-0">
+
+              {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
+              <div className="w-[40%] md:w-full flex-shrink-0">
+                <motion.img
+                  layoutId={`img-${card.id}`}
+                  src={getCardImage(card.name)}
+                  className="w-full h-auto rounded-[10px] md:rounded-[18px] shadow-2xl shadow-black md:my-4 ring-1 ring-white/10 object-contain"
+                />
               </div>
 
-              {/* Responsive Stats Grid - 3 BLOCS (Always show GLOBAL stats) */}
-              <div className="grid grid-cols-2 gap-2 w-full">
-                {/* 1. GIH BLOCK - Global */}
-                <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
-                  <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(globalStats.gih_wr ?? card.gih_wr, 55)} leading-none`}>
-                    {(globalStats.gih_wr ?? card.gih_wr)?.toFixed(1) ?? '--'}%
+              {/* Information & Stats Panel */}
+              <div className="flex-1 md:w-full flex flex-col justify-center pl-3 md:pl-0">
+                <div className="mb-3">
+                  <h1 className="text-base md:text-2xl font-black text-left md:text-center text-white leading-tight mb-1 line-clamp-2">
+                    {card.name}
+                  </h1>
+                  <div className="flex items-center justify-start md:justify-center gap-2">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded border border-white/10 font-black tracking-wide ${RARITY_STYLES[rCode]}`}>
+                      {rCode}
+                    </span>
+                    <ManaIcons colors={card.colors} size="sm" />
                   </div>
                 </div>
 
-                {/* 2. ALSA BLOCK - Global */}
-                <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
-                  <div className="text-lg md:text-3xl font-black text-white leading-none">
-                    {(globalStats.alsa ?? card.alsa)?.toFixed(2) ?? '--'}
+                {/* Responsive Stats Grid - 3 BLOCS (Always show GLOBAL stats) */}
+                <div className="grid grid-cols-2 gap-2 w-full">
+                  {/* 1. GIH BLOCK - Global */}
+                  <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">GIH WR</span>
+                    <div className={`text-lg md:text-3xl font-black ${getDeltaStyle(globalStats.gih_wr ?? card.gih_wr, 55)} leading-none`}>
+                      {(globalStats.gih_wr ?? card.gih_wr)?.toFixed(1) ?? '--'}%
+                    </div>
                   </div>
-                </div>
 
-                {/* 3. TREND BLOCK - Global (Full Width & Centered) */}
-                {(() => {
+                  {/* 2. ALSA BLOCK - Global */}
+                  <div className="bg-slate-800/40 p-2 rounded-lg border border-white/5 flex flex-col items-start justify-center pl-3">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">ALSA</span>
+                    <div className="text-lg md:text-3xl font-black text-white leading-none">
+                      {(globalStats.alsa ?? card.alsa)?.toFixed(2) ?? '--'}
+                    </div>
+                  </div>
+
+                  {/* 3. TREND BLOCK - Global (Full Width & Centered) */}
+                  {(() => {
                     const rawHistory = globalStats.win_rate_history || (card as any).win_rate_history || [];
                     let history = [...rawHistory];
                     const gihWr = globalStats.gih_wr ?? card.gih_wr;
 
                     // LOGIQUE "FLAT LINE"
                     if (history.length === 0 && gihWr) {
-                        history = [gihWr, gihWr];
+                      history = [gihWr, gihWr];
                     } else if (history.length === 1) {
-                        history = [history[0], history[0]];
+                      history = [history[0], history[0]];
                     }
 
                     return (
@@ -720,11 +718,11 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                         {/* Container centré sans scale */}
                         <div className="w-full h-10 flex items-center justify-center px-4 relative z-10">
                           {history.length > 1 ? (
-                              <div className="opacity-80 group-hover:opacity-100 transition-opacity">
-                                  <Sparkline data={history} width={60} height={30} />
-                              </div>
+                            <div className="opacity-80 group-hover:opacity-100 transition-opacity">
+                              <Sparkline data={history} width={60} height={30} />
+                            </div>
                           ) : (
-                              <span className="text-xs text-slate-600 italic">Not enough data yet</span>
+                            <span className="text-xs text-slate-600 italic">Not enough data yet</span>
                           )}
                         </div>
 
@@ -732,99 +730,99 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                         <div className="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent pointer-events-none"></div>
                       </div>
                     );
-                })()}
+                  })()}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Scrollable Content Section */}
-        <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-          <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
+          {/* Scrollable Content Section */}
+          <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
+            <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
 
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <Layers size={14} /> Performance by Archetype
-              </h3>
-              <button
-                onClick={() => setSortMode(prev => prev === 'synergy' ? 'winrate' : 'synergy')}
-                className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20 transition-colors"
-              >
-                <ArrowUpDown size={10} />
-                {sortMode === 'synergy' ? 'Sort by Win Rate' : 'Sort by Impact'}
-              </button>
-            </div>
-
-            {crossPerfLoading ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                {[1, 2, 3, 4].map(i => (
-                  <Skeleton key={i} className="h-16 rounded-xl" />
-                ))}
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                  <Layers size={14} /> Performance by Archetype
+                </h3>
+                <button
+                  onClick={() => setSortMode(prev => prev === 'synergy' ? 'winrate' : 'synergy')}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20 transition-colors"
+                >
+                  <ArrowUpDown size={10} />
+                  {sortMode === 'synergy' ? 'Sort by Win Rate' : 'Sort by Impact'}
+                </button>
               </div>
-            ) : sortedPerf.length === 0 ? (
-              <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center">
-                <p className="text-xs text-slate-500">Not enough play data across archetypes (min. {minGamesDisplay} games).</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                {sortedPerf.map((perf: CrossPerformance, idx: number) => {
-                  const grade = calculateGrade(perf.cardWr, perf.deckWr);
-                  return (
-                    <div key={idx} className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center gap-3">
-                      <div className="flex flex-col items-center gap-1 min-w-[2.5rem]">
-                        <span className={`text-xl font-black ${grade.color.split(' ')[0]}`}>{grade.letter}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-center mb-1">
-                          <div className="flex items-center gap-2">
-                            <ManaIcons colors={perf.deckColors} size="sm" />
-                            <span className="text-sm font-bold text-slate-200 truncate">
-                              <span className="md:hidden">{getArchetypeAcronym(perf.deckName)}</span>
-                              <span className="hidden md:inline">{normalizeArchetypeName(perf.deckName)}</span>
-                            </span>
+
+              {crossPerfLoading ? (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  {[1, 2, 3, 4].map(i => (
+                    <Skeleton key={i} className="h-16 rounded-xl" />
+                  ))}
+                </div>
+              ) : sortedPerf.length === 0 ? (
+                <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center">
+                  <p className="text-xs text-slate-500">Not enough play data across archetypes (min. {minGamesDisplay} games).</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  {sortedPerf.map((perf: CrossPerformance, idx: number) => {
+                    const grade = calculateGrade(perf.cardWr, perf.deckWr);
+                    return (
+                      <div key={idx} className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center gap-3">
+                        <div className="flex flex-col items-center gap-1 min-w-[2.5rem]">
+                          <span className={`text-xl font-black ${grade.color.split(' ')[0]}`}>{grade.letter}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center gap-2">
+                              <ManaIcons colors={perf.deckColors} size="sm" />
+                              <span className="text-sm font-bold text-slate-200 truncate">
+                                <span className="md:hidden">{getArchetypeAcronym(perf.deckName)}</span>
+                                <span className="hidden md:inline">{normalizeArchetypeName(perf.deckName)}</span>
+                              </span>
+                            </div>
+                            <span className={`text-xs font-bold ${getDeltaStyle(perf.cardWr, perf.deckWr)}`}>{perf.cardWr.toFixed(1)}%</span>
                           </div>
-                          <span className={`text-xs font-bold ${getDeltaStyle(perf.cardWr, perf.deckWr)}`}>{perf.cardWr.toFixed(1)}%</span>
-                        </div>
-                        <div className="relative h-1.5 bg-slate-800 rounded-full w-full mt-2">
-                          {/* Center dot with deck WR tooltip */}
-                          <Tooltip
-                            content={
-                              <div className="text-center whitespace-nowrap">
-                                <div className="text-[10px] text-slate-400 mb-0.5">Deck Win Rate</div>
-                                <div className="text-sm font-black text-white">{perf.deckWr.toFixed(1)}%</div>
-                              </div>
-                            }
-                          >
-                            <motion.div
-                              onClick={() => markAsSeen('deck-wr-point')}
-                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-600 hover:bg-slate-500 rounded-full border-2 border-slate-800 z-20 cursor-help transition-colors"
-                              animate={isUnseen('deck-wr-point') && idx === 0 ? {
-                                boxShadow: [
-                                  '0 0 0 0 rgba(99, 102, 241, 0)',
-                                  '0 0 0 6px rgba(99, 102, 241, 0.4)',
-                                  '0 0 0 0 rgba(99, 102, 241, 0)',
-                                ],
-                              } : {}}
-                              transition={{
-                                duration: 1.5,
-                                repeat: Infinity,
-                                repeatDelay: 0.5,
-                              }}
-                            />
-                          </Tooltip>
-                          {/* Delta bar */}
-                          <div className={`absolute top-0 bottom-0 ${perf.cardWr >= perf.deckWr ? 'bg-emerald-500 left-1/2 rounded-r-full' : 'bg-red-500 right-1/2 rounded-l-full'}`}
-                            style={{ width: `${Math.min(Math.abs(perf.cardWr - perf.deckWr) * 4, 50)}%` }}></div>
+                          <div className="relative h-1.5 bg-slate-800 rounded-full w-full mt-2">
+                            {/* Center dot with deck WR tooltip */}
+                            <Tooltip
+                              content={
+                                <div className="text-center whitespace-nowrap">
+                                  <div className="text-[10px] text-slate-400 mb-0.5">Deck Win Rate</div>
+                                  <div className="text-sm font-black text-white">{perf.deckWr.toFixed(1)}%</div>
+                                </div>
+                              }
+                            >
+                              <motion.div
+                                onClick={() => markAsSeen('deck-wr-point')}
+                                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-600 hover:bg-slate-500 rounded-full border-2 border-slate-800 z-20 cursor-help transition-colors"
+                                animate={isUnseen('deck-wr-point') && idx === 0 ? {
+                                  boxShadow: [
+                                    '0 0 0 0 rgba(99, 102, 241, 0)',
+                                    '0 0 0 6px rgba(99, 102, 241, 0.4)',
+                                    '0 0 0 0 rgba(99, 102, 241, 0)',
+                                  ],
+                                } : {}}
+                                transition={{
+                                  duration: 1.5,
+                                  repeat: Infinity,
+                                  repeatDelay: 0.5,
+                                }}
+                              />
+                            </Tooltip>
+                            {/* Delta bar */}
+                            <div className={`absolute top-0 bottom-0 ${perf.cardWr >= perf.deckWr ? 'bg-emerald-500 left-1/2 rounded-r-full' : 'bg-red-500 right-1/2 rounded-l-full'}`}
+                              style={{ width: `${Math.min(Math.abs(perf.cardWr - perf.deckWr) * 4, 50)}%` }}></div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         </motion.div>
       </AnimatePresence>
     </SwipeableOverlay>

@@ -18,6 +18,7 @@ export interface ArchetypalSkeleton {
         rarity: string
     }>
     updated_at: string
+    sample_size?: number
 }
 
 export function useSkeletons(activeSet: string, activeFormat: string) {
