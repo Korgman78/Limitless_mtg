@@ -97,7 +97,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
             {/* Header & Filter */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-800 pb-8 px-2 md:px-0">
                 <div className="space-y-1">
-                    <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tighter flex items-center gap-3 uppercase">
+                    <h2 className="text-2xl md:text-4xl font-bold text-white tracking-tighter flex items-center gap-3 uppercase">
                         <Trophy className="text-yellow-500 shrink-0" size={36} />
                         ARCHETYPAL TROPHIES
                     </h2>
@@ -106,12 +106,12 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                     </p>
                 </div>
 
-                <div className="flex flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
+                <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
                     {(['all', 'mono', '2 colors', '3 colors', '4+ colors'] as ArchFilter[]).map((f) => (
                         <button
                             key={f}
                             onClick={() => { haptics.selection(); setFilter(f); }}
-                            className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                            className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
                                 }`}
                         >
                             {f}
