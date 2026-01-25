@@ -3,7 +3,7 @@ import type { FormatOption, ColorPair } from './types';
 // Sets under 17lands embargo (data is scraped but hidden in prod)
 // Remove a set code from this list to make it visible
 export const EMBARGOED_SETS: string[] = [
-  "ECL"
+
 ];
 
 export const FORMAT_OPTIONS: FormatOption[] = [

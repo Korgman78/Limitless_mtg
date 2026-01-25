@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users } from 'lucide-react';
+import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
@@ -11,6 +11,7 @@ import { Skeleton } from '../Common/Skeleton';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
+import { useCardSynergies, type CardSynergy } from '../../queries/useCardSynergies';
 
 // --- BLOC D'ÉVALUATION ---
 interface CardEvaluationBlockProps {
@@ -390,8 +391,8 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                     if (!showPeers) setShowAllRarityPeers(false);
                   }}
                   className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${showPeers
-                      ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
-                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                    ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
                     }`}
                 >
                   <Users size={11} />
@@ -404,8 +405,8 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                     if (!showAllRarityPeers) setShowPeers(false);
                   }}
                   className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${showAllRarityPeers
-                      ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
-                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                    ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
                     }`}
                 >
                   <Users size={11} />
@@ -608,6 +609,37 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
 });
 CardEvaluationBlock.displayName = 'CardEvaluationBlock';
 
+// --- COMPOSANT PARTENAIRE ---
+const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSelect }: { pairing: CardSynergy; label: string; colorClass: string; allCards: any[]; onCardSelect?: (card: any) => void }) => {
+  const partnerCard = allCards.find(c => c.name === pairing.partner);
+
+  return (
+    <div
+      onClick={() => partnerCard && onCardSelect?.(partnerCard)}
+      className="bg-slate-900/40 backdrop-blur-sm p-2 rounded-xl border border-white/5 flex items-center gap-4 hover:bg-slate-800/60 hover:border-indigo-500/30 cursor-pointer transition-all duration-300 group"
+    >
+      <div className="w-14 aspect-[2/3] flex-shrink-0 bg-slate-800 rounded-md overflow-hidden ring-1 ring-white/10 group-hover:ring-indigo-500/50 transition-all shadow-lg">
+        <img
+          src={getCardImage(pairing.partner)}
+          alt={pairing.partner}
+          className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold text-slate-100 truncate mb-1 group-hover:text-white transition-colors">{pairing.partner}</div>
+        <div className="flex items-center gap-2">
+          <div className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-800 border border-white/5 ${colorClass}`}>
+            {label}
+          </div>
+          <span className={`text-xs font-black ${colorClass}`}>
+            {label === 'CONF' ? `${(pairing.confidence * 100).toFixed(0)}%` : `${pairing.lift_score.toFixed(1)}x`}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- COMPOSANT PRINCIPAL ---
 const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, globalMeanWR, onClose, onCardSelect }) => {
   const rCode = normalizeRarity(card.rarity);
@@ -622,6 +654,12 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const { data, error, isLoading: crossPerfLoading } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
   const globalStats = data?.globalStats || { gih_wr: null, alsa: null, win_rate_history: null };
   const crossPerf = data?.crossPerf || [];
+
+  // React Query for synergy data
+  const { data: synergyData, isLoading: synergyLoading } = useCardSynergies(card.name, activeFormat, activeSet);
+  const topConfidence = synergyData?.topConfidence || [];
+  const topSynergy = synergyData?.topSynergy || [];
+
   const fetchError = error ? 'Failed to load card data' : null;
 
   const sortedPerf = useMemo(() => {
@@ -822,6 +860,55 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                 </div>
               )}
             </div>
+
+            {/* STRATEGIC PAIRINGS SECTION */}
+            {(topConfidence.length > 0 || topSynergy.length > 0) && (
+              <div className="pt-6 border-t border-slate-800/50">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <Crosshair size={14} className="text-indigo-400" /> Strategic Pairings in Trophy Decks
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Strategic Complements (Confidence) */}
+                  {topConfidence.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Users size={12} className="text-blue-400" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Partners with</span>
+                        <Tooltip content="Shows how frequently these cards are paired together in winning decks.">
+                          <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                        </Tooltip>
+                      </div>
+                      <div className="space-y-3">
+                        {topConfidence.map((p, i) => (
+                          <StrategicPairingCard key={i} pairing={p} label="CONF" colorClass="text-blue-400" allCards={allCards} onCardSelect={onCardSelect} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Synergy Peaks (Lift) */}
+                  {topSynergy.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Trophy size={12} className="text-emerald-400" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Synergizes with</span>
+                        <Tooltip content="Measures the statistical power boost when these two cards are played in the same deck.">
+                          <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                        </Tooltip>
+                      </div>
+                      <div className="space-y-3">
+                        {topSynergy.map((p, i) => (
+                          <StrategicPairingCard key={i} pairing={p} label="SYNERGY" colorClass="text-emerald-400" allCards={allCards} onCardSelect={onCardSelect} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       </AnimatePresence>

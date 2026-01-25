@@ -13,4 +13,6 @@ export const queryKeys = {
   article: (id: string | number) => ['article', id] as const,
   formatBalance: (set: string) => ['formatBalance', set] as const,
   skeletons: (set: string, format: string) => ['skeletons', set, format] as const,
+  cardSynergies: (set: string, format: string, cardName: string) =>
+    ['cardSynergies', set, format, cardName] as const,
 }
