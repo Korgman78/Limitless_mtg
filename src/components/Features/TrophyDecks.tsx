@@ -22,14 +22,14 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [selectedArch, setSelectedArch] = useState<string | null>(null);
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
     const [showImportance, setShowImportance] = useState(false);
-
-    const skeleton = useMemo(() =>
-        skeletons.find(s => s.archetype_name === selectedArch),
-        [skeletons, selectedArch]
-    );
+    const [isAlt, setIsAlt] = useState(false);
+    const [showMethodology, setShowMethodology] = useState(false);
 
     const filteredSkeletons = useMemo(() => {
         let base = [...skeletons];
+        // Only show main skeletons in the selector grid
+        base = base.filter(s => !s.is_alternative);
+
         // Sort by sample_size (most represented first)
         base.sort((a, b) => (b.sample_size || 0) - (a.sample_size || 0));
 
@@ -40,6 +40,16 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
         if (filter === '4+ colors') return base.filter(s => s.archetype_name.length >= 4);
         return base;
     }, [skeletons, filter]);
+
+    const skeleton = useMemo(() =>
+        skeletons.find(s => s.archetype_name === selectedArch && (s.is_alternative || false) === isAlt),
+        [skeletons, selectedArch, isAlt]
+    );
+
+    const hasAlternative = useMemo(() =>
+        skeletons.some(s => s.archetype_name === selectedArch && s.is_alternative),
+        [skeletons, selectedArch]
+    );
 
     const stats = useMemo(() => {
         if (!skeleton) return null;
@@ -81,6 +91,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
         if (filteredSkeletons.length > 0) {
             if (!filteredSkeletons.some(s => s.archetype_name === selectedArch)) {
                 setSelectedArch(filteredSkeletons[0].archetype_name);
+                setIsAlt(false);
             }
         }
     }, [filteredSkeletons, selectedArch]);
@@ -105,9 +116,17 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                         <Trophy className="text-yellow-500 shrink-0" size={36} />
                         ARCHETYPAL TROPHIES
                     </h2>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider ml-1">
-                        40 cards statistical skeletons
-                    </p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider ml-1">
+                            40 cards statistical skeletons
+                        </p>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); haptics.light(); setShowMethodology(!showMethodology); }}
+                            className={`p-1 rounded-full transition-colors ${showMethodology ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600 hover:text-slate-400'}`}
+                        >
+                            <HelpCircle size={14} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
@@ -123,6 +142,41 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                     ))}
                 </div>
             </div>
+
+            {/* Methodology Explanation */}
+            <AnimatePresence>
+                {showMethodology && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden px-2 md:px-0"
+                    >
+                        <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-4 md:p-6 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+                                <div className="space-y-2">
+                                    <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Data & Scoring</h4>
+                                    <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed list-none">
+                                        <li>• <strong className="text-slate-200">Source:</strong> Aggregation based exclusively on 7-X trophy decks.</li>
+                                        <li>• <strong className="text-slate-200">Meta-Shift:</strong> Recent decks {'<'} 7 days are weighted 2x vs older trophies.</li>
+                                        <li>• <strong className="text-slate-200">Clustering:</strong> Identifies distinct variants (overlap {'<'} 70% pillars).</li>
+                                        <li>• <strong className="text-slate-200">Relations:</strong> Maps card synergies based on their shared presence in decks.</li>
+                                    </ul>
+                                </div>
+                                <div className="space-y-2">
+                                    <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Skeleton Building</h4>
+                                    <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed list-none">
+                                        <li>• <strong className="text-slate-200">Curve Match:</strong> Card distribution strictly follows the mean mana curve.</li>
+                                        <li>• <strong className="text-slate-200">Core Cards:</strong> Highest frequency "pillars" are prioritized for first 80% slots.</li>
+                                        <li>• <strong className="text-slate-200">Synergy Fill:</strong> Flex slots are filled using synergy scores with the core.</li>
+                                        <li>• <strong className="text-slate-200">Smart Mana:</strong> Land counts and colors are calibrated to match spells pips.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Selector Grid */}
             <div className="px-2 md:px-0 flex justify-center">
@@ -227,6 +281,26 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
                         {/* ULTRA-COMPACT DECK GRID */}
                         <div className="space-y-12 px-2 md:px-0">
+                            {/* SUB-ARCHETYPE SELECTOR */}
+                            {hasAlternative && (
+                                <div className="flex justify-center -mb-8">
+                                    <div className="flex p-1 bg-slate-900/60 rounded-xl border border-slate-800/40 backdrop-blur-sm">
+                                        <button
+                                            onClick={() => { haptics.selection(); setIsAlt(false); }}
+                                            className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${!isAlt ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            Main Deck
+                                        </button>
+                                        <button
+                                            onClick={() => { haptics.selection(); setIsAlt(true); }}
+                                            className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${isAlt ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >
+                                            Alternative
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* 1. CREATURES */}
                             <div className="space-y-6">
                                 <div className="flex items-center gap-6">
@@ -371,7 +445,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                         <div className="flex items-center gap-2">
                                             <Star size={14} className="text-yellow-400" />
                                             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card Importance Ranking</h4>
-                                            <Tooltip content={<div className="text-center"><div>40% frequency + 30% synergy + 30% WR.</div><div className="text-slate-400 mt-1">Higher = more critical to the archetype.</div></div>}>
+                                            <Tooltip content={<div className="text-center"><div>40% frequency + 30% synergy + 30% WR.</div><div className="text-slate-400 mt-1">WR: normalized (0 to 100) based on deviation (±10%) from format avg.</div></div>}>
                                                 <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                             </Tooltip>
                                             <span className="text-[9px] text-slate-600 ml-2">Top 15 cards</span>

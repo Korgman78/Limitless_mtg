@@ -99,10 +99,116 @@ def get_archetype_synergies(set_code, fmt):
     return fetch_data("synergy_scores", f"set_code=eq.{set_code}&format=eq.{fmt}&synergy_score=gt.0&select=card_a,card_b,synergy_score")
 
 # ==============================================================================
-# 3. ALGORITHME DE CALCUL DES SQUELETTES
+# 3. HELPERS POUR ANALYSE AVANCÉE
 # ==============================================================================
 
-def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code, format_name):
+def get_trophy_weight(trophy_time):
+    """Calcule le poids d'un trophy deck selon son ancienneté (Meta-Shift)"""
+    if not trophy_time:
+        return 0.5
+    
+    try:
+        if trophy_time.endswith('Z'):
+            trophy_time = trophy_time[:-1] + '+00:00'
+        dt = datetime.fromisoformat(trophy_time)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+            
+        now = datetime.now(timezone.utc)
+        age_days = (now - dt).days
+        
+        if age_days <= 7: return 1.0    # Semaine en cours
+        if age_days <= 14: return 0.75 # J-7 à J-14
+        return 0.5                     # Plus de 14 jours
+    except:
+        return 0.5
+
+def parse_mana_pips(mana_cost):
+    """Extrait le nombre de symboles colorés d'un coût de mana (ex: {1}{W}{U} -> {'W':1, 'U':1})"""
+    if not mana_cost or not isinstance(mana_cost, str):
+        return {}
+    
+    pips = Counter()
+    for symbol in ["W", "U", "B", "R", "G"]:
+        pips[symbol] = mana_cost.count(f"{{{symbol}}}")
+    return pips
+
+def cluster_decks(decks):
+    """Sépare les decks en deux clusters si pertinent (Jaccard Similarity)"""
+    if len(decks) < 40: # Pas assez de données pour clusteriser proprement
+        return decks, []
+
+    # 1. Représentation des decks par sets de noms de cartes (sans basics)
+    deck_sets = []
+    for d in decks:
+        s = set(name for name in d.get('cardlist', {}).keys() if 'Island' not in name and 'Plains' not in name and 'Swamp' not in name and 'Mountain' not in name and 'Forest' not in name)
+        deck_sets.append(s)
+
+    def jaccard_sim(s1, s2):
+        u = s1 | s2
+        if not u: return 0
+        return len(s1 & s2) / len(u)
+
+    # 2. Initialisation simple de K-means (k=2)
+    # On prend deux decks très différents comme graines initiales
+    c1_idx = 0
+    c2_idx = 1
+    max_dist = 0
+    for i in range(min(50, len(deck_sets))):
+        for j in range(i+1, min(50, len(deck_sets))):
+            dist = 1 - jaccard_sim(deck_sets[i], deck_sets[j])
+            if dist > max_dist:
+                max_dist = dist
+                c1_idx, c2_idx = i, j
+    
+    c1_seed = deck_sets[c1_idx]
+    c2_seed = deck_sets[c2_idx]
+
+    # Une itération de clustering (suffisant pour notre besoin de segmentation simple)
+    cluster1 = []
+    cluster2 = []
+    for i, s in enumerate(deck_sets):
+        sim1 = jaccard_sim(s, c1_seed)
+        sim2 = jaccard_sim(s, c2_seed)
+        if sim1 >= sim2:
+            cluster1.append(decks[i])
+        else:
+            cluster2.append(decks[i])
+
+    # 3. Vérification des seuils (15% et >= 20 trophées)
+    total = len(decks)
+    c1_size, c2_size = len(cluster1), len(cluster2)
+    
+    smaller, larger = (cluster1, cluster2) if c1_size < c2_size else (cluster2, cluster1)
+    
+    if len(smaller) >= 20 and len(smaller) / total >= 0.15:
+        # --- NOUVEAU : Vérification de la différenciation ---
+        # On compare les "Top 15" cartes les plus fréquentes de chaque groupe (hors basics)
+        def get_top_spells(group):
+            counts = Counter()
+            for d in group:
+                for name in d.get('cardlist', {}).keys():
+                    if 'Island' not in name and 'Plains' not in name and 'Swamp' not in name and 'Mountain' not in name and 'Forest' not in name:
+                        counts[name] += 1
+            return set(name for name, _ in counts.most_common(15))
+
+        top1 = get_top_spells(larger)
+        top2 = get_top_spells(smaller)
+        
+        # Calcul de l'overlap des piliers
+        overlap = len(top1 & top2)
+        if overlap <= 10: # Moins de 70% d'overlap sur les piliers (max 10/15 communes)
+            return larger, smaller
+        else:
+            print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs)")
+    
+    return decks, []
+
+# ==============================================================================
+# 4. ALGORITHME DE CALCUL DES SQUELETTES
+# ==============================================================================
+
+def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code, format_name, is_alternative=False, format_avg_wr=55.0):
     """
     Calcule le squelette pour un archétype donné, pondéré par la synergie.
     """
@@ -122,6 +228,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     land_counts = []
     
     for d in decks:
+        weight = get_trophy_weight(d.get('trophy_time'))
         cardlist = d.get('cardlist', {})
         total_cards = sum(cardlist.values())
         if total_cards < 35: continue
@@ -132,7 +239,12 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         for name, qty in cardlist.items():
             meta = card_meta.get(name)
             if not meta: continue
-            for _ in range(qty): all_cards_in_decks.append(name)
+            
+            # Utilisation du poids pour compter les cartes
+            for _ in range(qty): 
+                all_cards_in_decks.extend([name] * (1 if weight == 1.0 else 0)) # Trick pour Counter pondéré plus tard
+                # Pour card_counts, on va utiliser une approche plus propre :
+                # On stocke (nom, poids) ou on accumule directement
             
             c_type = meta.get('card_type') or ''
             is_land = 'Land' in c_type
@@ -140,35 +252,46 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             if is_land:
                 lands += qty
             else:
-                # On ne compte que les non-terrains dans la courbe de mana
                 cmc = min(int(meta.get('card_cmc') or 0), 7)
                 mana_dist[cmc] += qty
                 if 'Creature' in c_type: 
                     creatures += qty
         
-        curves.append(mana_dist)
-        creature_counts.append(creatures)
-        land_counts.append(lands)
+        curves.append((mana_dist, weight))
+        creature_counts.append((creatures, weight))
+        land_counts.append((lands, weight))
 
     if not curves: return None
 
-    # Calcul des moyennes cibles
-    # On initialise tous les CMCs de 0 à 7 à 0.0 pour éviter les trous dans le front
+    # Calcul des moyennes pondérées
+    def weighted_mean(data):
+        total_weight = sum(w for _, w in data)
+        if total_weight == 0: return 0
+        return sum(v * w for v, w in data) / total_weight
+
     avg_curve = {str(i): 0.0 for i in range(8)}
     for i in range(8):
-        vals = [c[i] for c in curves]
-        avg_curve[str(i)] = round(statistics.mean(vals), 1) if vals else 0.0
+        vals = [(c[i], w) for c, w in curves]
+        avg_curve[str(i)] = round(weighted_mean(vals), 1)
     
-    avg_creatures = statistics.mean(creature_counts)
-    avg_lands = statistics.mean(land_counts)
+    avg_creatures = weighted_mean(creature_counts)
+    avg_lands = weighted_mean(land_counts)
     
-    # 2. Score de Fréquence
-    card_counts = Counter(all_cards_in_decks)
-    max_freq = len(decks)
+    # 2. Score de Fréquence Pondéré
+    card_weights_accum = Counter()
+    total_deck_weights = 0
+    for d in decks:
+        weight = get_trophy_weight(d.get('trophy_time'))
+        total_deck_weights += weight
+        for name, qty in d.get('cardlist', {}).items():
+            if name in card_meta:
+                card_weights_accum[name] += weight * qty
+    
+    max_freq_weighted = total_deck_weights
     
     # 3. Calcul de la Synergie "Cluster"
-    # On identifie les 15 cartes les plus fréquentes
-    pillars = [name for name, _ in card_counts.most_common(15)]
+    # On identifie les 15 cartes les plus fréquentes selon les poids
+    pillars = [name for name, _ in card_weights_accum.most_common(15)]
     
     synergy_map = {}
     for syn in synergy_data:
@@ -182,10 +305,10 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
 
     # 4. Score Final Pondéré : 80% Fréquence + 20% Synergie
     candidates = []
-    for name, freq in card_counts.items():
+    for name, weighted_count in card_weights_accum.items():
         if name not in card_meta: continue
         
-        f_score = freq / max_freq 
+        f_score = weighted_count / max_freq_weighted 
         s_score = min(avg_synergy.get(name, 0) / 10, 1.0)
         
         weighted_score = (f_score * 0.8) + (s_score * 0.2)
@@ -197,27 +320,26 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     final_deck = []
     
     # Étape A: Les Terrains (Cible arrondie)
+    # On ajoute d'abord les terrains non-basiques (bi-lands, etc.) qui sont fréquents
     target_lands = int(round(avg_lands))
     land_candidates = [c for c in candidates if 'Land' in (c[2].get('card_type') or '')]
     lands_added = 0
+    
+    # On garde une trace des non-basiques ajoutés
     for name, _, meta in land_candidates:
         if lands_added >= target_lands: break
-        # Pour les terrains, on n'ajoute qu'un exemplaire à la fois 
-        # (sauf s'il nous en manque beaucoup et que c'est un terrain de base)
-        qty = 1 
-        if 'Basic' in meta.get('card_type', ''):
-            qty = min(target_lands - lands_added, 10) # On peut mettre beaucoup de basics d'un coup
-            
-        for _ in range(qty):
-            if lands_added < target_lands:
-                final_deck.append({
-                    "name": name,
-                    "cmc": 0, # Terrains forcés à CMC 0 pour le front
-                    "type": meta.get('card_type'),
-                    "cost": "",
-                    "rarity": meta.get('rarity')
-                })
-                lands_added += 1
+        if 'Basic' in (meta.get('card_type') or ''): continue # On gèrera les basics après
+        
+        # Pour les non-basiques, on respecte la fréquence
+        if card_weights_accum[name] / max_freq_weighted > 0.2: # Seulement si significatif
+            final_deck.append({
+                "name": name,
+                "cmc": 0,
+                "type": meta.get('card_type'),
+                "cost": "",
+                "rarity": meta.get('rarity')
+            })
+            lands_added += 1
 
     # Étape B: Les Spells (Le reste jusqu'à 40)
     target_spells = 40 - lands_added
@@ -249,7 +371,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
 
         qty = 1
         # Règle des 2 paires de communes
-        if is_common and common_pairs_count < 2 and card_counts[name] > len(decks) * 0.75:
+        if is_common and common_pairs_count < 2 and card_weights_accum[name] > max_freq_weighted * 1.0:
             qty = 2
         
         # On vérifie qu'on ne dépasse pas le slot total de sorts ni le quota spécifique
@@ -274,22 +396,55 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                     else: non_creatures_added += 1
                     if qty == 2 and _ == 0: common_pairs_count += 1
 
-    # DEUXIÈME PASSE : Si on n'a pas atteint les 40 cartes (à cause des quotas trop stricts),
-    # on complète avec les restants par ordre de fréquence pure
-    if spells_added < target_spells:
-        for name, _, meta in spell_candidates:
-            if spells_added >= target_spells: break
-            if any(c['name'] == name for c in final_deck): continue # Déjà là (on simplifie pas de triples pour l'instant hors basics)
-
-            cmc = min(int(meta.get('card_cmc') or 0), 7)
-            final_deck.append({
-                "name": name,
-                "cmc": cmc,
-                "type": meta.get('card_type'),
-                "cost": meta.get('card_cost'),
-                "rarity": meta.get('rarity')
-            })
             spells_added += 1
+
+    # Étape C: Smart Mana Base (Compléter avec les basics)
+    # 1. Calculer les pips des sorts sélectionnés
+    total_pips = Counter()
+    for card in final_deck:
+        if 'Land' not in (card['type'] or ''):
+            total_pips.update(parse_mana_pips(card['cost']))
+    
+    # 2. Répartition des basics restants
+    basic_map = {
+        "W": "Plains", "U": "Island", "B": "Swamp", "R": "Mountain", "G": "Forest"
+    }
+    
+    remaining_lands = target_lands - lands_added
+    if remaining_lands > 0:
+        sum_pips = sum(total_pips.values())
+        if sum_pips == 0: # Si pas de pips (archi rare), répartition égale ou selon l'archétype
+            # On prend les couleurs du nom de l'archétype par défaut
+            colors = archetype.split(' (')[1].replace(')', '').replace(' + Splash', '') if '(' in archetype else ""
+            if not colors: colors = "WUBRG"
+            sum_pips = len(colors)
+            for c in colors: total_pips[c] = 1
+
+        # Calculer le nombre de terrains par couleur
+        lands_to_add = []
+        for color, pips in total_pips.items():
+            share = pips / sum_pips
+            count = round(share * remaining_lands)
+            if count > 0:
+                lands_to_add.extend([basic_map[color]] * count)
+        
+        # Ajuster pour arriver exactement au compte
+        while len(lands_to_add) < remaining_lands:
+            # Ajouter à la couleur dominante
+            dominant = total_pips.most_common(1)[0][0]
+            lands_to_add.append(basic_map[dominant])
+        while len(lands_to_add) > remaining_lands:
+            lands_to_add.pop()
+            
+        for land_name in lands_to_add:
+            final_deck.append({
+                "name": land_name,
+                "cmc": 0,
+                "type": "Basic Land",
+                "cost": "",
+                "rarity": "common"
+            })
+            lands_added += 1
 
     # ==========================================================================
     # 6. NOUVELLES MÉTRIQUES
@@ -306,7 +461,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     print(f"      📊 ALSA moyen du format: {avg_alsa:.2f} (sur {len(all_alsas)} cartes)")
 
     sleeper_candidates = 0
-    for name, freq in card_counts.items():
+    for name, weighted_count in card_weights_accum.items():
         meta = card_meta.get(name)
         if not meta:
             continue
@@ -317,7 +472,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         if 'Basic' in c_type: continue
 
         alsa = meta.get('alsa')
-        frequency = freq / max_freq
+        # Fréquence pondérée
+        frequency = weighted_count / max_freq_weighted
 
         # Sleeper = ALSA au-dessus de la moyenne (drafté plus tard que la moyenne)
         # ET fréquence >= 15% dans les trophies de l'archétype
@@ -401,15 +557,15 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     # Plus ce nombre est élevé, plus l'archétype est ouvert (beaucoup de cartes viables)
     # Plus ce nombre est bas, plus l'archétype est fermé (quelques cartes dominent)
 
-    # Calculer les fréquences triées (sans terrains de base)
+    # Calculer les fréquences triées (SANS LES TERRAINS)
     spell_freqs = []
-    for name, freq in card_counts.items():
+    for name, weight in card_weights_accum.items():
         meta = card_meta.get(name)
         if not meta: continue
-        c_type = meta.get('card_type') or meta.get('type_line') or ''
-        if 'Basic' in c_type: continue
-        spell_freqs.append(freq)
-
+        c_type = meta.get('card_type') or ''
+        if 'Land' in c_type: continue
+        spell_freqs.append(weight)
+    
     spell_freqs.sort(reverse=True)
     total_occurrences = sum(spell_freqs)
 
@@ -435,14 +591,14 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     cards_with_gihwr = 0
     cards_with_synergy = 0
 
-    for name, freq in card_counts.items():
+    for name, weighted_count in card_weights_accum.items():
         meta = card_meta.get(name)
         if not meta: continue
         c_type = meta.get('card_type') or meta.get('type_line') or ''
         if 'Land' in c_type: continue
 
         # Fréquence normalisée (0-1)
-        freq_score = freq / max_freq
+        freq_score = weighted_count / max_freq_weighted
 
         # Lift moyen (synergie avec les autres cartes de l'archétype) (0-1)
         raw_synergy = avg_synergy.get(name, 0)
@@ -455,7 +611,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         delta_wr_score = 0
         if gih_wr is not None and gih_wr > 0:
             cards_with_gihwr += 1
-            delta_wr = gih_wr - 55  # Delta par rapport à la moyenne
+            delta_wr = gih_wr - format_avg_wr  # Delta par rapport à la moyenne dynamique
             delta_wr_score = max(0, min(1, (delta_wr + 10) / 20))  # Normalisé [-10, +10] -> [0, 1]
 
         importance = (freq_score * 0.4) + (lift_score * 0.3) + (delta_wr_score * 0.3)
@@ -480,6 +636,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         "set_code": set_code,
         "format": format_name,
         "archetype_name": archetype,
+        "is_alternative": is_alternative, # Flag pour le front
         "avg_mana_curve": avg_curve,
         "avg_lands": round(avg_lands, 1),
         "creature_ratio": round(avg_creatures / (40 - avg_lands), 3),
@@ -506,6 +663,11 @@ if __name__ == "__main__":
             trophies = get_trophy_decks(set_code, fmt)
             synergies = get_archetype_synergies(set_code, fmt)
             
+            # Calculer le WR moyen du format (pour le centrage des scores d'importance)
+            all_wrs = [m['gih_wr'] for m in card_meta.values() if m.get('gih_wr')]
+            format_avg_wr = statistics.mean(all_wrs) if all_wrs else 55.0
+            print(f"      📊 GIH WR moyen du format: {format_avg_wr:.2f}% (sur {len(all_wrs)} cartes)")
+            
             if not trophies:
                 print(f"      ⚠️ Aucun trophy deck pour {set_code} ({fmt}).")
                 continue
@@ -521,13 +683,25 @@ if __name__ == "__main__":
             for arch, decks in decks_by_arch.items():
                 if len(decks) < 3: continue 
                 print(f"      📊 Analyse {arch} ({len(decks)} decks)...")
-                skeleton = build_archetype_skeleton(arch, decks, card_meta, synergies, set_code, fmt)
+                
+                # Clustering
+                main_group, alt_group = cluster_decks(decks)
+                
+                # Build Main
+                skeleton = build_archetype_skeleton(arch, main_group, card_meta, synergies, set_code, fmt, is_alternative=False, format_avg_wr=format_avg_wr)
                 if skeleton:
                     results.append(skeleton)
+                
+                # Build Alternative if exists
+                if alt_group:
+                    print(f"         ✨ Archétype alternatif détecté pour {arch} ({len(alt_group)} decks)")
+                    alt_skeleton = build_archetype_skeleton(arch, alt_group, card_meta, synergies, set_code, fmt, is_alternative=True, format_avg_wr=format_avg_wr)
+                    if alt_skeleton:
+                        results.append(alt_skeleton)
 
             if results:
                 print(f"      🚀 Sauvegarde de {len(results)} squelettes dans Supabase...")
-                url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name"
+                url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name,is_alternative"
                 resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
                 if resp.status_code >= 400:
                     print(f"      ❌ Erreur sauvegarde: {resp.text}")

@@ -50,6 +50,7 @@ export interface ArchetypalSkeleton {
     trending_cards?: TrendingCard[]
     openness_score?: number
     importance_cards?: ImportanceCard[]
+    is_alternative?: boolean
 }
 
 export function useSkeletons(activeSet: string, activeFormat: string) {
