@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, BarChart3, Clock, TrendingUp, Eye, Sparkles, ChevronDown, Star, HelpCircle } from 'lucide-react';
+import { Trophy, Users, BarChart3, Clock, TrendingUp, Eye, Sparkles, ChevronDown, Star, HelpCircle, Copy, Check } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
 import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
@@ -8,6 +8,19 @@ import { haptics } from '../../utils/haptics';
 import { getCardImage } from '../../utils/helpers';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
+
+const getColorCount = (name: string): number => {
+    return (name.match(/[WUBRG]/gi) || []).length;
+};
+
+const formatDeckForMTGA = (skeleton: ArchetypalSkeleton): string => {
+    const cardCounts: Record<string, number> = {};
+    for (const card of skeleton.deck_list) {
+        cardCounts[card.name] = (cardCounts[card.name] || 0) + 1;
+    }
+    const lines = Object.entries(cardCounts).map(([name, count]) => `${count} ${name}`);
+    return `Deck\n${lines.join('\n')}`;
+};
 
 interface TrophyDecksProps {
     activeSet: string;
@@ -24,6 +37,19 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [showImportance, setShowImportance] = useState(false);
     const [isAlt, setIsAlt] = useState(false);
     const [showMethodology, setShowMethodology] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const handleCopyDeck = async () => {
+        if (!skeleton) return;
+        try {
+            await navigator.clipboard.writeText(formatDeckForMTGA(skeleton));
+            setCopied(true);
+            haptics.success();
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // Silent fail - clipboard API might not be available
+        }
+    };
 
     const filteredSkeletons = useMemo(() => {
         let base = [...skeletons];
@@ -34,10 +60,10 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
         base.sort((a, b) => (b.sample_size || 0) - (a.sample_size || 0));
 
         if (filter === 'all') return base;
-        if (filter === 'mono') return base.filter(s => s.archetype_name.length === 1);
-        if (filter === '2 colors') return base.filter(s => s.archetype_name.length === 2);
-        if (filter === '3 colors') return base.filter(s => s.archetype_name.length === 3);
-        if (filter === '4+ colors') return base.filter(s => s.archetype_name.length >= 4);
+        if (filter === 'mono') return base.filter(s => getColorCount(s.archetype_name) === 1);
+        if (filter === '2 colors') return base.filter(s => getColorCount(s.archetype_name) === 2);
+        if (filter === '3 colors') return base.filter(s => getColorCount(s.archetype_name) === 3);
+        if (filter === '4+ colors') return base.filter(s => getColorCount(s.archetype_name) >= 4);
         return base;
     }, [skeletons, filter]);
 
@@ -98,11 +124,28 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center h-64 gap-4">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}>
-                    <Trophy size={40} className="text-slate-700" />
-                </motion.div>
-                <span className="text-sm font-bold text-slate-500 tracking-widest uppercase text-center">Crunching Trophy Data...</span>
+            <div className="space-y-6 md:space-y-10 animate-pulse p-2 md:p-0">
+                {/* Header skeleton */}
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-800 pb-8">
+                    <div className="space-y-2">
+                        <div className="h-10 w-72 bg-slate-800 rounded-lg" />
+                        <div className="h-4 w-48 bg-slate-900 rounded" />
+                    </div>
+                    <div className="h-10 w-80 bg-slate-900 rounded-xl" />
+                </div>
+                {/* Grid skeleton */}
+                <div className="flex justify-center">
+                    <div className="grid grid-cols-5 md:grid-cols-10 gap-2 md:gap-4 w-full max-w-6xl">
+                        {Array.from({ length: 10 }).map((_, i) => (
+                            <div key={i} className="aspect-square bg-slate-900 rounded-xl border border-slate-800" />
+                        ))}
+                    </div>
+                </div>
+                {/* Stats skeleton */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="h-48 bg-slate-900/30 rounded-[2.5rem] border border-slate-800/40" />
+                    <div className="h-48 bg-slate-900/30 rounded-[2.5rem] border border-slate-800/40" />
+                </div>
             </div>
         );
     }
@@ -180,23 +223,38 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
             {/* Selector Grid */}
             <div className="px-2 md:px-0 flex justify-center">
-                <div className="grid grid-cols-5 md:grid-cols-10 gap-2 md:gap-4 w-full max-w-6xl">
-                    {filteredSkeletons.map((s) => (
+                {filteredSkeletons.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                        <Trophy size={48} className="text-slate-800" />
+                        <p className="text-sm text-slate-500 text-center">
+                            No archetypes found for <span className="font-bold text-slate-400">{filter}</span> filter.
+                        </p>
                         <button
-                            key={s.id}
-                            onClick={() => { haptics.light(); setSelectedArch(s.archetype_name); }}
-                            className={`flex flex-col items-center justify-center p-2.5 md:p-5 rounded-xl md:rounded-2xl border transition-all duration-300 group ${selectedArch === s.archetype_name
-                                ? 'bg-indigo-600 border-indigo-400 shadow-[0_0_25px_rgba(79,70,229,0.3)] scale-105 z-10'
-                                : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-500 hover:bg-slate-800'
-                                }`}
+                            onClick={() => setFilter('all')}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors"
                         >
-                            <ManaIcons colors={s.archetype_name} size="md" />
-                            <span className={`text-[9px] md:text-[11px] font-bold mt-2 tracking-wider uppercase ${selectedArch === s.archetype_name ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>
-                                {s.archetype_name}
-                            </span>
+                            Show all archetypes
                         </button>
-                    ))}
-                </div>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-5 md:grid-cols-10 gap-2 md:gap-4 w-full max-w-6xl">
+                        {filteredSkeletons.map((s) => (
+                            <button
+                                key={s.id}
+                                onClick={() => { haptics.light(); setSelectedArch(s.archetype_name); }}
+                                className={`flex flex-col items-center justify-center p-2.5 md:p-5 rounded-xl md:rounded-2xl border transition-all duration-300 group ${selectedArch === s.archetype_name
+                                    ? 'bg-indigo-600 border-indigo-400 shadow-[0_0_25px_rgba(79,70,229,0.3)] scale-105 z-10'
+                                    : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-500 hover:bg-slate-800'
+                                    }`}
+                            >
+                                <ManaIcons colors={s.archetype_name} size="md" />
+                                <span className={`text-[9px] md:text-[11px] font-bold mt-2 tracking-wider uppercase ${selectedArch === s.archetype_name ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                                    {s.archetype_name}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <AnimatePresence mode="wait">
@@ -281,9 +339,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
                         {/* ULTRA-COMPACT DECK GRID */}
                         <div className="space-y-12 px-2 md:px-0">
-                            {/* SUB-ARCHETYPE SELECTOR */}
-                            {hasAlternative && (
-                                <div className="flex justify-center -mb-8">
+                            {/* SUB-ARCHETYPE SELECTOR + EXPORT */}
+                            <div className="flex justify-center items-center gap-4 -mb-8">
+                                {hasAlternative && (
                                     <div className="flex p-1 bg-slate-900/60 rounded-xl border border-slate-800/40 backdrop-blur-sm">
                                         <button
                                             onClick={() => { haptics.selection(); setIsAlt(false); }}
@@ -298,8 +356,18 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                             Alternative
                                         </button>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                                <button
+                                    onClick={handleCopyDeck}
+                                    className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border ${copied
+                                        ? 'bg-emerald-600 border-emerald-400 text-white'
+                                        : 'bg-slate-900/60 border-slate-800/40 text-slate-400 hover:text-white hover:border-slate-600'
+                                        }`}
+                                >
+                                    {copied ? <Check size={12} /> : <Copy size={12} />}
+                                    {copied ? 'Copied!' : 'Export MTGA'}
+                                </button>
+                            </div>
 
                             {/* 1. CREATURES */}
                             <div className="space-y-6">
@@ -341,8 +409,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                 <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
                                     <div className="flex items-center gap-2 mb-4">
                                         <Sparkles size={14} className="text-purple-400" />
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Openness Score</h4>
-                                        <Tooltip content={<div className="text-center"><div>Cards needed to fill 80% of deck slots.</div><div className="text-slate-400 mt-1">0 = 25 cards (solved), 100 = 70 cards (open).</div></div>}>
+                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Archetype Flexibility</h4>
+                                        <Tooltip content={<div className="text-center max-w-[200px]"><div className="font-semibold">How many different cards work in this archetype?</div><div className="text-slate-400 mt-1">Low = must draft specific cards. High = many viable options, easier to pivot.</div></div>}>
                                             <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                         </Tooltip>
                                     </div>
@@ -356,13 +424,13 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 />
                                             </div>
                                             <div className="flex justify-between mt-1">
-                                                <span className="text-[8px] text-slate-600">Solved</span>
-                                                <span className="text-[8px] text-slate-600">Open</span>
+                                                <span className="text-[8px] text-slate-600">Narrow</span>
+                                                <span className="text-[8px] text-slate-600">Flexible</span>
                                             </div>
                                             <p className="text-[9px] text-slate-500 mt-1">
-                                                {(skeleton.openness_score ?? 0) >= 70 ? 'Very flexible, many viable cards' :
-                                                    (skeleton.openness_score ?? 0) >= 40 ? 'Moderately open, some flex slots' :
-                                                        'Tight core, few flex slots'}
+                                                {(skeleton.openness_score ?? 0) >= 70 ? 'Many paths to victory, easy to pivot into' :
+                                                    (skeleton.openness_score ?? 0) >= 40 ? 'Some flex slots, moderate adaptability' :
+                                                        'Requires specific cards, harder to draft'}
                                             </p>
                                         </div>
                                     </div>
@@ -462,55 +530,42 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 transition={{ duration: 0.3 }}
                                                 className="overflow-hidden"
                                             >
-                                                <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
                                                     {skeleton.importance_cards.map((card, idx) => (
                                                         <button
                                                             key={card.name}
                                                             onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
-                                                            className="flex items-center gap-4 p-4 bg-slate-950/40 rounded-xl border border-slate-800/30 hover:border-indigo-500/30 transition-colors group text-left"
+                                                            className="flex items-center gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/30 hover:border-indigo-500/30 transition-colors group text-left"
                                                         >
-                                                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-sm font-black text-slate-400 flex-shrink-0">
-                                                                {idx + 1}
-                                                            </div>
-                                                            <div className="w-16 h-22 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-indigo-500/30 transition-all shadow-lg">
-                                                                <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                            <div className="relative flex-shrink-0">
+                                                                <div className="w-10 h-14 rounded-lg overflow-hidden ring-1 ring-white/10 group-hover:ring-indigo-500/30 transition-all shadow-lg">
+                                                                    <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                                </div>
+                                                                <div className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+                                                                    <span className="text-[9px] font-black text-slate-400">{idx + 1}</span>
+                                                                </div>
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <p className="text-sm font-bold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
-                                                                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                                                                        <div className="w-10 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                                                            <div
-                                                                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
-                                                                                style={{ width: `${card.importance * 100}%` }}
-                                                                            />
-                                                                        </div>
-                                                                        <span className="text-[10px] font-black text-indigo-400">{(card.importance * 100).toFixed(0)}%</span>
+                                                                <p className="text-xs font-bold text-slate-200 truncate group-hover:text-white transition-colors mb-1.5">{card.name}</p>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                                                            style={{ width: `${card.importance * 100}%` }}
+                                                                        />
                                                                     </div>
+                                                                    <span className="text-[10px] font-black text-indigo-400 w-8">{(card.importance * 100).toFixed(0)}%</span>
                                                                 </div>
-                                                                {/* 3 Composantes */}
-                                                                <div className="grid grid-cols-3 gap-2">
-                                                                    <div className="text-center">
-                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
-                                                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${card.freq_score ?? 0}%` }} />
-                                                                        </div>
-                                                                        <span className="text-[8px] text-slate-500">FREQ</span>
-                                                                        <span className="text-[9px] text-blue-400 font-bold ml-1">{card.freq_score ?? 0}</span>
-                                                                    </div>
-                                                                    <div className="text-center">
-                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
-                                                                            <div className="h-full bg-purple-500 rounded-full" style={{ width: `${card.synergy_score ?? 0}%` }} />
-                                                                        </div>
-                                                                        <span className="text-[8px] text-slate-500">SYN</span>
-                                                                        <span className="text-[9px] text-purple-400 font-bold ml-1">{card.synergy_score ?? 0}</span>
-                                                                    </div>
-                                                                    <div className="text-center">
-                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
-                                                                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${card.wr_score ?? 0}%` }} />
-                                                                        </div>
-                                                                        <span className="text-[8px] text-slate-500">WR</span>
-                                                                        <span className="text-[9px] text-emerald-400 font-bold ml-1">{card.wr_score ?? 0}</span>
-                                                                    </div>
+                                                                <div className="flex gap-2 mt-1">
+                                                                    <span className="text-[8px] text-slate-600">
+                                                                        <span className="text-blue-400">{card.freq_score ?? 0}</span> freq
+                                                                    </span>
+                                                                    <span className="text-[8px] text-slate-600">
+                                                                        <span className="text-purple-400">{card.synergy_score ?? 0}</span> syn
+                                                                    </span>
+                                                                    <span className="text-[8px] text-slate-600">
+                                                                        <span className="text-emerald-400">{card.wr_score ?? 0}</span> wr
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </button>

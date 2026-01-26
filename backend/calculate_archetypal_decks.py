@@ -5,6 +5,7 @@ import json
 import statistics
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import random
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -133,8 +134,39 @@ def parse_mana_pips(mana_cost):
         pips[symbol] = mana_cost.count(f"{{{symbol}}}")
     return pips
 
+def jaccard_sim(s1, s2):
+    """Calcule la similarité de Jaccard entre deux ensembles."""
+    u = s1 | s2
+    if not u: return 0
+    return len(s1 & s2) / len(u)
+
+def compute_silhouette(deck_sets, assignments):
+    """
+    Calcule un score de silhouette simplifié pour valider la qualité du clustering.
+    Score entre -1 (mauvais) et 1 (bon). > 0.25 = acceptable.
+    """
+    scores = []
+    for i, s in enumerate(deck_sets):
+        my_cluster = assignments[i]
+
+        # Distance intra-cluster (a)
+        same = [j for j, a in enumerate(assignments) if a == my_cluster and j != i]
+        if not same:
+            continue
+        a = sum(1 - jaccard_sim(s, deck_sets[j]) for j in same) / len(same)
+
+        # Distance inter-cluster (b)
+        other = [j for j, a in enumerate(assignments) if a != my_cluster]
+        if not other:
+            continue
+        b = sum(1 - jaccard_sim(s, deck_sets[j]) for j in other) / len(other)
+
+        scores.append((b - a) / max(a, b) if max(a, b) > 0 else 0)
+
+    return sum(scores) / len(scores) if scores else 0
+
 def cluster_decks(decks):
-    """Sépare les decks en deux clusters si pertinent (Jaccard Similarity)"""
+    """Sépare les decks en deux clusters si pertinent (Jaccard Similarity + K-means itératif)"""
     if len(decks) < 40: # Pas assez de données pour clusteriser proprement
         return decks, []
 
@@ -144,46 +176,56 @@ def cluster_decks(decks):
         s = set(name for name in d.get('cardlist', {}).keys() if 'Island' not in name and 'Plains' not in name and 'Swamp' not in name and 'Mountain' not in name and 'Forest' not in name)
         deck_sets.append(s)
 
-    def jaccard_sim(s1, s2):
-        u = s1 | s2
-        if not u: return 0
-        return len(s1 & s2) / len(u)
+    # 2. Seed selection sur échantillon aléatoire (évite le biais des premiers decks)
+    sample_size = min(50, len(deck_sets))
+    sample_indices = random.sample(range(len(deck_sets)), sample_size)
 
-    # 2. Initialisation simple de K-means (k=2)
-    # On prend deux decks très différents comme graines initiales
-    c1_idx = 0
-    c2_idx = 1
+    c1_idx, c2_idx = 0, 1
     max_dist = 0
-    for i in range(min(50, len(deck_sets))):
-        for j in range(i+1, min(50, len(deck_sets))):
+    for i in sample_indices:
+        for j in sample_indices:
+            if i >= j: continue
             dist = 1 - jaccard_sim(deck_sets[i], deck_sets[j])
             if dist > max_dist:
-                max_dist = dist
-                c1_idx, c2_idx = i, j
-    
-    c1_seed = deck_sets[c1_idx]
-    c2_seed = deck_sets[c2_idx]
+                max_dist, c1_idx, c2_idx = dist, i, j
 
-    # Une itération de clustering (suffisant pour notre besoin de segmentation simple)
-    cluster1 = []
-    cluster2 = []
-    for i, s in enumerate(deck_sets):
-        sim1 = jaccard_sim(s, c1_seed)
-        sim2 = jaccard_sim(s, c2_seed)
-        if sim1 >= sim2:
-            cluster1.append(decks[i])
-        else:
-            cluster2.append(decks[i])
+    # 3. K-means itératif (3 itérations pour stabiliser)
+    assignments = [0] * len(deck_sets)
+    centroids = [deck_sets[c1_idx], deck_sets[c2_idx]]
 
-    # 3. Vérification des seuils (15% et >= 20 trophées)
+    for iteration in range(3):
+        # Assign : chaque deck au centroïde le plus proche
+        for i, s in enumerate(deck_sets):
+            sim1 = jaccard_sim(s, centroids[0])
+            sim2 = jaccard_sim(s, centroids[1])
+            assignments[i] = 0 if sim1 >= sim2 else 1
+
+        # Update centroids : union des cartes présentes dans >50% du cluster
+        for c_id in [0, 1]:
+            cluster_indices = [i for i, a in enumerate(assignments) if a == c_id]
+            if not cluster_indices:
+                continue
+            card_counts = Counter()
+            for idx in cluster_indices:
+                card_counts.update(deck_sets[idx])
+            threshold = len(cluster_indices) * 0.5
+            centroids[c_id] = set(card for card, cnt in card_counts.items() if cnt >= threshold)
+
+    # 4. Validation par Silhouette Score
+    silhouette = compute_silhouette(deck_sets, assignments)
+    if silhouette < 0.25:
+        print(f"      ⚠️ Clustering rejeté : silhouette trop faible ({silhouette:.2f})")
+        return decks, []
+
+    cluster1 = [decks[i] for i, a in enumerate(assignments) if a == 0]
+    cluster2 = [decks[i] for i, a in enumerate(assignments) if a == 1]
+
+    # 5. Vérification des seuils (15% et >= 20 trophées)
     total = len(decks)
-    c1_size, c2_size = len(cluster1), len(cluster2)
-    
-    smaller, larger = (cluster1, cluster2) if c1_size < c2_size else (cluster2, cluster1)
-    
+    smaller, larger = (cluster1, cluster2) if len(cluster1) < len(cluster2) else (cluster2, cluster1)
+
     if len(smaller) >= 20 and len(smaller) / total >= 0.15:
-        # --- NOUVEAU : Vérification de la différenciation ---
-        # On compare les "Top 15" cartes les plus fréquentes de chaque groupe (hors basics)
+        # Vérification de la différenciation par overlap des piliers
         def get_top_spells(group):
             counts = Counter()
             for d in group:
@@ -194,14 +236,14 @@ def cluster_decks(decks):
 
         top1 = get_top_spells(larger)
         top2 = get_top_spells(smaller)
-        
-        # Calcul de l'overlap des piliers
+
         overlap = len(top1 & top2)
-        if overlap <= 10: # Moins de 70% d'overlap sur les piliers (max 10/15 communes)
+        if overlap <= 10: # Moins de 70% d'overlap sur les piliers
+            print(f"      ✅ Clustering validé : silhouette={silhouette:.2f}, overlap={overlap}/15")
             return larger, smaller
         else:
             print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs)")
-    
+
     return decks, []
 
 # ==============================================================================
@@ -395,8 +437,6 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                     if is_creature: creatures_added += 1
                     else: non_creatures_added += 1
                     if qty == 2 and _ == 0: common_pairs_count += 1
-
-            spells_added += 1
 
     # Étape C: Smart Mana Base (Compléter avec les basics)
     # 1. Calculer les pips des sorts sélectionnés
