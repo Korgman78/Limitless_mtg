@@ -296,7 +296,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
       <AnimatePresence>
         {zoomedCard && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setZoomedCard(null)} className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+            onClick={() => setZoomedCard(null)} className="fixed inset-0 z-[950] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -547,7 +547,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
 
       <AnimatePresence>
         {selectedArticle && (
-          <SwipeableOverlay onClose={() => setSelectedArticle(null)}>
+          <SwipeableOverlay onClose={() => setSelectedArticle(null)} zIndex={900}>
              <div className="flex flex-col h-full md:flex-row bg-slate-950">
               {/* Left Column (Video/Image) */}
               <div className="md:w-1/3 flex-shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-4 md:p-6 flex flex-col items-center justify-start md:justify-center relative max-h-[25vh] md:max-h-full overflow-hidden">
