@@ -140,31 +140,6 @@ def jaccard_sim(s1, s2):
     if not u: return 0
     return len(s1 & s2) / len(u)
 
-def compute_silhouette(deck_sets, assignments):
-    """
-    Calcule un score de silhouette simplifié pour valider la qualité du clustering.
-    Score entre -1 (mauvais) et 1 (bon). > 0.15 = acceptable pour MTG (decks partagent beaucoup de cartes).
-    """
-    scores = []
-    for i, s in enumerate(deck_sets):
-        my_cluster = assignments[i]
-
-        # Distance intra-cluster (a)
-        same = [j for j, a in enumerate(assignments) if a == my_cluster and j != i]
-        if not same:
-            continue
-        a = sum(1 - jaccard_sim(s, deck_sets[j]) for j in same) / len(same)
-
-        # Distance inter-cluster (b)
-        other = [j for j, a in enumerate(assignments) if a != my_cluster]
-        if not other:
-            continue
-        b = sum(1 - jaccard_sim(s, deck_sets[j]) for j in other) / len(other)
-
-        scores.append((b - a) / max(a, b) if max(a, b) > 0 else 0)
-
-    return sum(scores) / len(scores) if scores else 0
-
 def cluster_decks(decks):
     """Sépare les decks en deux clusters si pertinent (Jaccard Similarity + K-means itératif)"""
     if len(decks) < 40: # Pas assez de données pour clusteriser proprement
@@ -211,22 +186,16 @@ def cluster_decks(decks):
             threshold = len(cluster_indices) * 0.5
             centroids[c_id] = set(card for card, cnt in card_counts.items() if cnt >= threshold)
 
-    # 4. Validation par Silhouette Score
-    # Seuil à 0.15 (permissif) car les decks MTG partagent naturellement beaucoup de cartes
-    silhouette = compute_silhouette(deck_sets, assignments)
-    if silhouette < 0.15:
-        print(f"      ⚠️ Clustering rejeté : silhouette trop faible ({silhouette:.2f})")
-        return decks, []
-
     cluster1 = [decks[i] for i, a in enumerate(assignments) if a == 0]
     cluster2 = [decks[i] for i, a in enumerate(assignments) if a == 1]
 
-    # 5. Vérification des seuils (15% et >= 20 trophées)
+    # 4. Vérification des seuils (15% et >= 20 trophées)
     total = len(decks)
     smaller, larger = (cluster1, cluster2) if len(cluster1) < len(cluster2) else (cluster2, cluster1)
 
     if len(smaller) >= 20 and len(smaller) / total >= 0.15:
-        # Vérification de la différenciation par overlap des piliers
+        # 5. Vérification de la différenciation par overlap des piliers
+        # C'est le vrai test métier : les deux groupes ont-ils des cartes clés différentes ?
         def get_top_spells(group):
             counts = Counter()
             for d in group:
@@ -240,10 +209,12 @@ def cluster_decks(decks):
 
         overlap = len(top1 & top2)
         if overlap <= 10: # Moins de 70% d'overlap sur les piliers
-            print(f"      ✅ Clustering validé : silhouette={silhouette:.2f}, overlap={overlap}/15")
+            print(f"      ✅ Clustering validé : {len(smaller)} decks alternatifs, overlap={overlap}/15 piliers")
             return larger, smaller
         else:
             print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs)")
+    elif len(smaller) >= 20:
+        print(f"      ⚠️ Cluster trop petit : {len(smaller)} decks ({100*len(smaller)/total:.0f}% < 15%)")
 
     return decks, []
 
