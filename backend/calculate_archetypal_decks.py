@@ -145,13 +145,16 @@ def cluster_decks(decks):
     if len(decks) < 40: # Pas assez de données pour clusteriser proprement
         return decks, []
 
+    # Seed fixe pour résultats reproductibles (même données → même clustering)
+    random.seed(42)
+
     # 1. Représentation des decks par sets de noms de cartes (sans basics)
     deck_sets = []
     for d in decks:
         s = set(name for name in d.get('cardlist', {}).keys() if 'Island' not in name and 'Plains' not in name and 'Swamp' not in name and 'Mountain' not in name and 'Forest' not in name)
         deck_sets.append(s)
 
-    # 2. Seed selection sur échantillon aléatoire (évite le biais des premiers decks)
+    # 2. Seed selection sur échantillon (évite le biais des premiers decks)
     sample_size = min(50, len(deck_sets))
     sample_indices = random.sample(range(len(deck_sets)), sample_size)
 
