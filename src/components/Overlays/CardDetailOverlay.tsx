@@ -892,8 +892,8 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <Users size={12} className="text-blue-400" />
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Partners with</span>
-                        <Tooltip content="Shows how frequently these cards are paired together in winning decks.">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Often played together</span>
+                        <Tooltip content={`When ${card.name} is in a trophy deck, these cards appear most often alongside it.`}>
                           <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                         </Tooltip>
                       </div>
@@ -911,7 +911,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       <div className="flex items-center gap-2 mb-4">
                         <Trophy size={12} className="text-emerald-400" />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Synergizes with</span>
-                        <Tooltip content="Measures the statistical power boost when these two cards are played in the same deck.">
+                        <Tooltip content="These cards appear together more often than expected by chance. Higher lift = stronger synergy.">
                           <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                         </Tooltip>
                       </div>
