@@ -143,7 +143,7 @@ def jaccard_sim(s1, s2):
 def compute_silhouette(deck_sets, assignments):
     """
     Calcule un score de silhouette simplifié pour valider la qualité du clustering.
-    Score entre -1 (mauvais) et 1 (bon). > 0.25 = acceptable.
+    Score entre -1 (mauvais) et 1 (bon). > 0.15 = acceptable pour MTG (decks partagent beaucoup de cartes).
     """
     scores = []
     for i, s in enumerate(deck_sets):
@@ -212,8 +212,9 @@ def cluster_decks(decks):
             centroids[c_id] = set(card for card, cnt in card_counts.items() if cnt >= threshold)
 
     # 4. Validation par Silhouette Score
+    # Seuil à 0.15 (permissif) car les decks MTG partagent naturellement beaucoup de cartes
     silhouette = compute_silhouette(deck_sets, assignments)
-    if silhouette < 0.25:
+    if silhouette < 0.15:
         print(f"      ⚠️ Clustering rejeté : silhouette trop faible ({silhouette:.2f})")
         return decks, []
 
