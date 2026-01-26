@@ -13,7 +13,8 @@
       "Bash(curl:*)",
       "Bash(git status:*)",
       "Bash(git restore:*)",
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(grep:*)"
     ]
   }
 }

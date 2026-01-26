@@ -1,16 +1,15 @@
-name: Daily Trophy Decks ETL
+name: Daily Trophy Decks Pipeline
 
 on:
   schedule:
-    # Se lance tous les jours à 17:00 UTC (pour capturer les decks des dernières 24h)
-    - cron: '0 17 * * *'
-  # Permet de lancer manuellement depuis GitHub pour tester
+    # Se lance tous les jours à 16:00 UTC
+    - cron: '0 16 * * *'
+  # Permet de lancer manuellement depuis GitHub
   workflow_dispatch:
 
 jobs:
-  scrape-trophy-decks:
+  trophy-decks-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 240  # 4h max (scraping peut être long avec les sleeps)
 
     steps:
       - name: Check out repository
@@ -26,8 +25,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests python-dotenv
 
-      - name: Run Trophy Decks ETL Script
+      # Étape 1: Scraping des trophy decks depuis 17lands
+      - name: 1/3 - Scrape Trophy Decks
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python backend/etl_script_trophydecks.py
+
+      # Étape 2: Calcul des synergies (lift scores)
+      - name: 2/3 - Calculate Synergies
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python backend/etl_script_synergy.py
+
+      # Étape 3: Génération des squelettes archétypaux
+      - name: 3/3 - Generate Archetypal Skeletons
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python backend/calculate_archetypal_decks.py

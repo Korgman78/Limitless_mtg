@@ -4,6 +4,7 @@ import time
 import json
 import statistics
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -34,19 +35,58 @@ HEADERS_SUPABASE = {
 # 2. DATA FETCHING
 # ==============================================================================
 
-def fetch_data(table, params="*"):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{params}"
-    resp = requests.get(url, headers=HEADERS_SUPABASE)
-    if resp.status_code != 200:
-        print(f"❌ Erreur {table}: {resp.text}")
-        return []
-    return resp.json()
+def fetch_data(table, params="select=*"):
+    """Récupère toutes les données d'une table avec pagination automatique"""
+    all_data = []
+    offset = 0
+    page_size = 1000
 
-def get_cards_metadata(set_code):
-    """Charge toutes les métadonnées de card_list pour les jointures en Python"""
-    print("🔍 Chargement des métadonnées des cartes...")
-    data = fetch_data("card_list", f"set_code=eq.{set_code}&select=*")
-    return {c['card_name']: c for c in data}
+    while True:
+        url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&limit={page_size}&offset={offset}"
+        resp = requests.get(url, headers=HEADERS_SUPABASE)
+        if resp.status_code != 200:
+            print(f"❌ Erreur {table}: {resp.text}")
+            break
+
+        data = resp.json()
+        if not data:
+            break
+
+        all_data.extend(data)
+
+        if len(data) < page_size:
+            break  # Dernière page
+
+        offset += page_size
+        print(f"   📄 {len(all_data)} lignes chargées...")
+
+    return all_data
+
+def get_cards_metadata(set_code, fmt):
+    """Charge toutes les métadonnées de card_list et les stats de card_stats"""
+    print(f"🔍 Chargement des métadonnées (card_list) pour {set_code}...")
+    metadata_rows = fetch_data("card_list", f"set_code=eq.{set_code}&select=*")
+    
+    print(f"📊 Chargement des stats (card_stats) pour {set_code} ({fmt})...")
+    # On filtre IMPÉRATIVEMENT sur filter_context=Global pour avoir les stats globales de la carte
+    # (Confirmé par etl_script.py:220)
+    stats_rows = fetch_data("card_stats", f"set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.Global&select=card_name,alsa,gih_wr")
+    
+    stats_map = {s['card_name']: s for s in stats_rows}
+    
+    merged_data = {}
+    for card in metadata_rows:
+        name = card['card_name']
+        stats = stats_map.get(name, {})
+        
+        merged_data[name] = {
+            **card,
+            "alsa": stats.get('alsa'),
+            "gih_wr": stats.get('gih_wr')
+        }
+        
+    print(f"   ✅ {len(merged_data)} cartes chargées avec succès.")
+    return merged_data
 
 def get_trophy_decks(set_code, fmt):
     print(f"🏆 Chargement des trophy decks pour {set_code} ({fmt})...")
@@ -67,6 +107,13 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     Calcule le squelette pour un archétype donné, pondéré par la synergie.
     """
     if not decks: return None
+
+    # Debug: Vérifier le matching des noms de cartes
+    all_deck_cards = set()
+    for d in decks:
+        all_deck_cards.update(d.get('cardlist', {}).keys())
+    matched = sum(1 for c in all_deck_cards if c in card_meta)
+    print(f"      🔍 Matching: {matched}/{len(all_deck_cards)} cartes trouvées dans card_stats")
 
     # 1. Analyse des stats de base (Fréquence, Courbe, Ratio, Terrains)
     all_cards_in_decks = []
@@ -151,7 +198,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     
     # Étape A: Les Terrains (Cible arrondie)
     target_lands = int(round(avg_lands))
-    land_candidates = [c for c in candidates if 'Land' in c[2].get('card_type', '')]
+    land_candidates = [c for c in candidates if 'Land' in (c[2].get('card_type') or '')]
     lands_added = 0
     for name, _, meta in land_candidates:
         if lands_added >= target_lands: break
@@ -174,7 +221,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
 
     # Étape B: Les Spells (Le reste jusqu'à 40)
     target_spells = 40 - lands_added
-    spell_candidates = [c for c in candidates if 'Land' not in c[2].get('card_type', '')]
+    spell_candidates = [c for c in candidates if 'Land' not in (c[2].get('card_type') or '')]
     
     # CALCUL DES QUOTAS BASÉS SUR LE RATIO D'ARCHÉTYPE
     # On veut respecter target_creatures = target_spells * ratio
@@ -227,7 +274,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                     else: non_creatures_added += 1
                     if qty == 2 and _ == 0: common_pairs_count += 1
 
-    # DEUXIÈME PASSE : Si on n'a pas atteint les 40 cartes (à cause des quotas trop stricts), 
+    # DEUXIÈME PASSE : Si on n'a pas atteint les 40 cartes (à cause des quotas trop stricts),
     # on complète avec les restants par ordre de fréquence pure
     if spells_added < target_spells:
         for name, _, meta in spell_candidates:
@@ -244,6 +291,191 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             })
             spells_added += 1
 
+    # ==========================================================================
+    # 6. NOUVELLES MÉTRIQUES
+    # ==========================================================================
+
+    # --- 6.1 SLEEPER CARDS ---
+    # Cartes avec ALSA élevé (draftées tard) mais fréquence élevée dans les trophies
+    # = Cartes sous-estimées par les joueurs mais qui gagnent
+    sleeper_cards = []
+
+    # D'abord, calculons l'ALSA moyen du format pour calibrer
+    all_alsas = [m.get('alsa') for m in card_meta.values() if m.get('alsa') is not None]
+    avg_alsa = statistics.mean(all_alsas) if all_alsas else 4.0
+    print(f"      📊 ALSA moyen du format: {avg_alsa:.2f} (sur {len(all_alsas)} cartes)")
+
+    sleeper_candidates = 0
+    for name, freq in card_counts.items():
+        meta = card_meta.get(name)
+        if not meta:
+            continue
+
+        # Ignorer les terrains (vérifier plusieurs noms de colonnes possibles)
+        c_type = meta.get('card_type') or meta.get('type_line') or ''
+        if 'Land' in c_type: continue
+        if 'Basic' in c_type: continue
+
+        alsa = meta.get('alsa')
+        frequency = freq / max_freq
+
+        # Sleeper = ALSA au-dessus de la moyenne (drafté plus tard que la moyenne)
+        # ET fréquence >= 15% dans les trophies de l'archétype
+        if alsa is not None and alsa > avg_alsa and frequency >= 0.15:
+            sleeper_candidates += 1
+            # Score = écart ALSA par rapport à la moyenne × fréquence
+            alsa_delta = alsa - avg_alsa
+            sleeper_score = alsa_delta * frequency
+            sleeper_cards.append({
+                "name": name,
+                "alsa": round(alsa, 2),
+                "frequency": round(frequency * 100, 1),
+                "score": round(sleeper_score, 3)
+            })
+
+    sleeper_cards.sort(key=lambda x: x['score'], reverse=True)
+    sleeper_cards = sleeper_cards[:5]  # Top 5 sleepers
+    print(f"      😴 Sleeper cards: {len(sleeper_cards)} trouvées (sur {sleeper_candidates} candidats)")
+
+    # --- 6.2 TRENDING CARDS ---
+    # Comparer fréquence dans les decks récents vs anciens
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=7)  # 7 derniers jours = récent
+
+    recent_decks = []
+    old_decks = []
+    for d in decks:
+        trophy_time = d.get('trophy_time')
+        if trophy_time:
+            try:
+                if trophy_time.endswith('Z'):
+                    trophy_time = trophy_time[:-1] + '+00:00'
+                dt = datetime.fromisoformat(trophy_time)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt >= cutoff:
+                    recent_decks.append(d)
+                else:
+                    old_decks.append(d)
+            except:
+                old_decks.append(d)
+        else:
+            old_decks.append(d)
+
+    trending_cards = []
+    if len(recent_decks) >= 3 and len(old_decks) >= 3:
+        # Compter les fréquences dans chaque groupe
+        recent_counts = Counter()
+        old_counts = Counter()
+
+        for d in recent_decks:
+            for name in d.get('cardlist', {}).keys():
+                if name in card_meta and 'Land' not in (card_meta[name].get('card_type') or ''):
+                    recent_counts[name] += 1
+
+        for d in old_decks:
+            for name in d.get('cardlist', {}).keys():
+                if name in card_meta and 'Land' not in (card_meta[name].get('card_type') or ''):
+                    old_counts[name] += 1
+
+        # Calculer le delta de fréquence
+        for name in set(recent_counts.keys()) | set(old_counts.keys()):
+            recent_freq = recent_counts[name] / len(recent_decks) if recent_decks else 0
+            old_freq = old_counts[name] / len(old_decks) if old_decks else 0
+
+            delta = recent_freq - old_freq
+            # Trending = augmentation significative (> 15 points de %)
+            if delta > 0.15 and recent_freq > 0.20:
+                trending_cards.append({
+                    "name": name,
+                    "recent_freq": round(recent_freq * 100, 1),
+                    "old_freq": round(old_freq * 100, 1),
+                    "delta": round(delta * 100, 1)
+                })
+
+        trending_cards.sort(key=lambda x: x['delta'], reverse=True)
+        trending_cards = trending_cards[:5]  # Top 5 trending
+
+    # --- 6.3 ARCHETYPE OPENNESS SCORE ---
+    # Métrique basée sur la concentration : combien de cartes représentent 80% des slots ?
+    # Plus ce nombre est élevé, plus l'archétype est ouvert (beaucoup de cartes viables)
+    # Plus ce nombre est bas, plus l'archétype est fermé (quelques cartes dominent)
+
+    # Calculer les fréquences triées (sans terrains de base)
+    spell_freqs = []
+    for name, freq in card_counts.items():
+        meta = card_meta.get(name)
+        if not meta: continue
+        c_type = meta.get('card_type') or meta.get('type_line') or ''
+        if 'Basic' in c_type: continue
+        spell_freqs.append(freq)
+
+    spell_freqs.sort(reverse=True)
+    total_occurrences = sum(spell_freqs)
+
+    # Compter combien de cartes il faut pour atteindre 80% des occurrences
+    cumulative = 0
+    cards_for_80pct = 0
+    for freq in spell_freqs:
+        cumulative += freq
+        cards_for_80pct += 1
+        if cumulative >= total_occurrences * 0.80:
+            break
+
+    # Normaliser : 25 cartes = très fermé (0), 70 cartes = très ouvert (100)
+    # 25 = nombre de non-terrains dans un deck (40 - 17 terrains + 2 marge)
+    # Formule : (cards_for_80pct - 25) / (70 - 25) * 100
+    openness_raw = (cards_for_80pct - 25) / 45 * 100
+    openness_score = max(0, min(100, round(openness_raw)))
+    print(f"      🔓 Openness: {cards_for_80pct} cartes pour 80% -> score {openness_score}")
+
+    # --- 6.4 CARD IMPORTANCE SCORE ---
+    # Score composite : 40% Fréquence + 30% Synergie + 30% Delta WR
+    importance_cards = []
+    cards_with_gihwr = 0
+    cards_with_synergy = 0
+
+    for name, freq in card_counts.items():
+        meta = card_meta.get(name)
+        if not meta: continue
+        c_type = meta.get('card_type') or meta.get('type_line') or ''
+        if 'Land' in c_type: continue
+
+        # Fréquence normalisée (0-1)
+        freq_score = freq / max_freq
+
+        # Lift moyen (synergie avec les autres cartes de l'archétype) (0-1)
+        raw_synergy = avg_synergy.get(name, 0)
+        lift_score = min(raw_synergy / 5, 1.0)  # Normalisé sur 5
+        if raw_synergy > 0:
+            cards_with_synergy += 1
+
+        # Delta WR (GIH WR - format average, approximé par 55%) (0-1)
+        gih_wr = meta.get('gih_wr')
+        delta_wr_score = 0
+        if gih_wr is not None and gih_wr > 0:
+            cards_with_gihwr += 1
+            delta_wr = gih_wr - 55  # Delta par rapport à la moyenne
+            delta_wr_score = max(0, min(1, (delta_wr + 10) / 20))  # Normalisé [-10, +10] -> [0, 1]
+
+        importance = (freq_score * 0.4) + (lift_score * 0.3) + (delta_wr_score * 0.3)
+
+        importance_cards.append({
+            "name": name,
+            "importance": round(importance, 3),
+            # Composantes individuelles (en %)
+            "freq_score": round(freq_score * 100, 0),
+            "synergy_score": round(lift_score * 100, 0),
+            "wr_score": round(delta_wr_score * 100, 0),
+            # Données brutes
+            "frequency": round(freq_score * 100, 1),
+            "gih_wr": round(gih_wr, 1) if gih_wr else None
+        })
+
+    importance_cards.sort(key=lambda x: x['importance'], reverse=True)
+    importance_cards = importance_cards[:15]  # Top 15
+    print(f"      ⭐ Importance: {len(importance_cards)} cartes, {cards_with_synergy} avec synergie, {cards_with_gihwr} avec GIH WR")
+
     return {
         "set_code": set_code,
         "format": format_name,
@@ -252,7 +484,12 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         "avg_lands": round(avg_lands, 1),
         "creature_ratio": round(avg_creatures / (40 - avg_lands), 3),
         "deck_list": final_deck,
-        "sample_size": len(decks)
+        "sample_size": len(decks),
+        # Nouvelles métriques
+        "sleeper_cards": sleeper_cards,
+        "trending_cards": trending_cards,
+        "openness_score": openness_score,
+        "importance_cards": importance_cards
     }
 
 # ==============================================================================
@@ -262,10 +499,10 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
 if __name__ == "__main__":
     for set_code in TARGET_SET_CODES:
         print(f"🚀 Traitement du set {set_code}...")
-        card_meta = get_cards_metadata(set_code)
-        
+
         for fmt in TARGET_FORMATS:
             print(f"   📋 Format: {fmt}")
+            card_meta = get_cards_metadata(set_code, fmt)
             trophies = get_trophy_decks(set_code, fmt)
             synergies = get_archetype_synergies(set_code, fmt)
             

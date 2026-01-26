@@ -610,8 +610,8 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
 CardEvaluationBlock.displayName = 'CardEvaluationBlock';
 
 // --- COMPOSANT PARTENAIRE ---
-const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSelect }: { pairing: CardSynergy; label: string; colorClass: string; allCards: any[]; onCardSelect?: (card: any) => void }) => {
-  const partnerCard = allCards.find(c => c.name === pairing.partner);
+const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSelect }: { pairing: CardSynergy; label: string; colorClass: string; allCards: Card[]; onCardSelect?: (card: Card) => void }) => {
+  const partnerCard = allCards.find((c: Card) => c.name === pairing.partner);
 
   return (
     <div
@@ -632,7 +632,7 @@ const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSele
             {label}
           </div>
           <span className={`text-xs font-black ${colorClass}`}>
-            {label === 'CONF' ? `${(pairing.confidence * 100).toFixed(0)}%` : `${pairing.lift_score.toFixed(1)}x`}
+            {label === 'PAIRED' ? `${(pairing.confidence * 100).toFixed(0)}%` : `${pairing.lift_score.toFixed(1)}x`}
           </span>
         </div>
       </div>
@@ -862,7 +862,23 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
             </div>
 
             {/* STRATEGIC PAIRINGS SECTION */}
-            {(topConfidence.length > 0 || topSynergy.length > 0) && (
+            {synergyLoading ? (
+              <div className="pt-6 border-t border-slate-800/50">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <Crosshair size={14} className="text-indigo-400" /> Strategic Pairings in Trophy Decks
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {[1, 2].map(i => (
+                    <div key={i} className="space-y-3">
+                      <Skeleton className="h-4 w-32" />
+                      {[1, 2, 3].map(j => <Skeleton key={j} className="h-16 rounded-xl" />)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (topConfidence.length > 0 || topSynergy.length > 0) && (
               <div className="pt-6 border-t border-slate-800/50">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -883,7 +899,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       </div>
                       <div className="space-y-3">
                         {topConfidence.map((p, i) => (
-                          <StrategicPairingCard key={i} pairing={p} label="CONF" colorClass="text-blue-400" allCards={allCards} onCardSelect={onCardSelect} />
+                          <StrategicPairingCard key={i} pairing={p} label="PAIRED" colorClass="text-blue-400" allCards={allCards} onCardSelect={onCardSelect} />
                         ))}
                       </div>
                     </div>
@@ -901,7 +917,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       </div>
                       <div className="space-y-3">
                         {topSynergy.map((p, i) => (
-                          <StrategicPairingCard key={i} pairing={p} label="SYNERGY" colorClass="text-emerald-400" allCards={allCards} onCardSelect={onCardSelect} />
+                          <StrategicPairingCard key={i} pairing={p} label="LIFT" colorClass="text-emerald-400" allCards={allCards} onCardSelect={onCardSelect} />
                         ))}
                       </div>
                     </div>

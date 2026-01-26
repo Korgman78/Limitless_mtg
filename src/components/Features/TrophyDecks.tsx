@@ -1,15 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, BarChart3, Clock, Database } from 'lucide-react';
-import { useSkeletons } from '../../queries/useSkeletons';
+import { Trophy, Users, BarChart3, Clock, TrendingUp, Eye, Sparkles, ChevronDown, Star, HelpCircle } from 'lucide-react';
+import { Tooltip } from '../Common/Tooltip';
+import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
 import { haptics } from '../../utils/haptics';
 import { getCardImage } from '../../utils/helpers';
 
+type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
+
 interface TrophyDecksProps {
     activeSet: string;
     activeFormat: string;
-    onCardSelect: (card: any) => void;
+    onCardSelect: (card: SkeletonCard) => void;
 }
 
 type ArchFilter = 'all' | 'mono' | '2 colors' | '3 colors' | '4+ colors';
@@ -18,6 +21,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
     const [selectedArch, setSelectedArch] = useState<string | null>(null);
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
+    const [showImportance, setShowImportance] = useState(false);
 
     const skeleton = useMemo(() =>
         skeletons.find(s => s.archetype_name === selectedArch),
@@ -231,7 +235,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                 </div>
                                 <div className="flex flex-wrap md:flex-nowrap gap-4 md:gap-3">
                                     {cmcRange.map((num) => (
-                                        <CmcStack key={`c-${num}`} cmc={num} cards={skeleton.deck_list.filter(c => c.cmc === num && (c.type.includes('Creature') || c.type.includes('Planeswalker')))} onCardSelect={onCardSelect} />
+                                        <CmcStack key={`c-${num}`} cmc={num} cards={skeleton.deck_list.filter(c => c.cmc === num && (c.type?.includes('Creature') || c.type?.includes('Planeswalker')))} onCardSelect={onCardSelect} />
                                     ))}
                                 </div>
                             </div>
@@ -244,10 +248,205 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                 </div>
                                 <div className="flex flex-wrap md:flex-nowrap gap-4 md:gap-3">
                                     {cmcRange.map((num) => (
-                                        <CmcStack key={`nc-${num}`} cmc={num} cards={skeleton.deck_list.filter(c => c.cmc === num && (!c.type.includes('Creature') && !c.type.includes('Planeswalker')))} onCardSelect={onCardSelect} />
+                                        <CmcStack key={`nc-${num}`} cmc={num} cards={skeleton.deck_list.filter(c => c.cmc === num && (!c.type?.includes('Creature') && !c.type?.includes('Planeswalker')))} onCardSelect={onCardSelect} />
                                     ))}
                                 </div>
                             </div>
+                        </div>
+
+                        {/* ARCHETYPE INSIGHTS SECTION */}
+                        <div className="space-y-8 px-2 md:px-0 pt-8 border-t border-slate-800/50">
+                            <div className="flex items-center gap-6">
+                                <div className="px-4 py-1.5 rounded-full bg-purple-500/5 border border-purple-500/20 text-[9px] font-bold text-purple-500/60 tracking-wider uppercase">Archetype Insights</div>
+                                <div className="h-px bg-slate-900/60 flex-1" />
+                            </div>
+
+                            {/* Openness Score + Sleepers + Trending Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                                {/* Openness Score */}
+                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Sparkles size={14} className="text-purple-400" />
+                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Openness Score</h4>
+                                        <Tooltip content={<div className="text-center"><div>Cards needed to fill 80% of deck slots.</div><div className="text-slate-400 mt-1">0 = 25 cards (solved), 100 = 70 cards (open).</div></div>}>
+                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                                        </Tooltip>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="text-4xl font-black text-white">{skeleton.openness_score ?? '--'}</div>
+                                        <div className="flex-1">
+                                            <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500 rounded-full transition-all duration-500"
+                                                    style={{ width: `${skeleton.openness_score ?? 0}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between mt-1">
+                                                <span className="text-[8px] text-slate-600">Solved</span>
+                                                <span className="text-[8px] text-slate-600">Open</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 mt-1">
+                                                {(skeleton.openness_score ?? 0) >= 70 ? 'Very flexible, many viable cards' :
+                                                    (skeleton.openness_score ?? 0) >= 40 ? 'Moderately open, some flex slots' :
+                                                        'Tight core, few flex slots'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Sleeper Cards */}
+                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Eye size={14} className="text-emerald-400" />
+                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sleeper Cards</h4>
+                                        <Tooltip content={<div className="text-center"><div>Drafted late but win often.</div><div className="text-slate-400 mt-1">Undervalued gems to look for.</div></div>}>
+                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                                        </Tooltip>
+                                    </div>
+                                    {skeleton.sleeper_cards && skeleton.sleeper_cards.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {skeleton.sleeper_cards.slice(0, 3).map((card, idx) => (
+                                                <button
+                                                    key={card.name}
+                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
+                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
+                                                >
+                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
+                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-emerald-500/30 transition-all">
+                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
+                                                        <p className="text-[9px] text-slate-500">ALSA {card.alsa} · {card.frequency}% freq</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-600 italic">No sleeper cards detected</p>
+                                    )}
+                                </div>
+
+                                {/* Trending Cards */}
+                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <TrendingUp size={14} className="text-orange-400" />
+                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Trending Cards</h4>
+                                        <Tooltip content={<div className="text-center"><div>Rising in trophy decks this week.</div><div className="text-slate-400 mt-1">Meta is shifting toward these.</div></div>}>
+                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                                        </Tooltip>
+                                    </div>
+                                    {skeleton.trending_cards && skeleton.trending_cards.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {skeleton.trending_cards.slice(0, 3).map((card, idx) => (
+                                                <button
+                                                    key={card.name}
+                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
+                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
+                                                >
+                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
+                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-orange-500/30 transition-all">
+                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
+                                                        <p className="text-[9px] text-emerald-400 font-bold">+{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-600 italic">Not enough data for trends yet</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Card Importance - Collapsible */}
+                            {skeleton.importance_cards && skeleton.importance_cards.length > 0 && (
+                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl overflow-hidden">
+                                    <button
+                                        onClick={() => { haptics.light(); setShowImportance(!showImportance); }}
+                                        className="w-full flex items-center justify-between p-5 hover:bg-slate-800/20 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Star size={14} className="text-yellow-400" />
+                                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card Importance Ranking</h4>
+                                            <Tooltip content={<div className="text-center"><div>40% frequency + 30% synergy + 30% WR.</div><div className="text-slate-400 mt-1">Higher = more critical to the archetype.</div></div>}>
+                                                <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                                            </Tooltip>
+                                            <span className="text-[9px] text-slate-600 ml-2">Top 15 cards</span>
+                                        </div>
+                                        <ChevronDown size={16} className={`text-slate-500 transition-transform duration-300 ${showImportance ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    <AnimatePresence>
+                                        {showImportance && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {skeleton.importance_cards.map((card, idx) => (
+                                                        <button
+                                                            key={card.name}
+                                                            onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
+                                                            className="flex items-center gap-4 p-4 bg-slate-950/40 rounded-xl border border-slate-800/30 hover:border-indigo-500/30 transition-colors group text-left"
+                                                        >
+                                                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-sm font-black text-slate-400 flex-shrink-0">
+                                                                {idx + 1}
+                                                            </div>
+                                                            <div className="w-16 h-22 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-indigo-500/30 transition-all shadow-lg">
+                                                                <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <p className="text-sm font-bold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
+                                                                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                                                        <div className="w-10 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                                                            <div
+                                                                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                                                                style={{ width: `${card.importance * 100}%` }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-[10px] font-black text-indigo-400">{(card.importance * 100).toFixed(0)}%</span>
+                                                                    </div>
+                                                                </div>
+                                                                {/* 3 Composantes */}
+                                                                <div className="grid grid-cols-3 gap-2">
+                                                                    <div className="text-center">
+                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
+                                                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${card.freq_score ?? 0}%` }} />
+                                                                        </div>
+                                                                        <span className="text-[8px] text-slate-500">FREQ</span>
+                                                                        <span className="text-[9px] text-blue-400 font-bold ml-1">{card.freq_score ?? 0}</span>
+                                                                    </div>
+                                                                    <div className="text-center">
+                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
+                                                                            <div className="h-full bg-purple-500 rounded-full" style={{ width: `${card.synergy_score ?? 0}%` }} />
+                                                                        </div>
+                                                                        <span className="text-[8px] text-slate-500">SYN</span>
+                                                                        <span className="text-[9px] text-purple-400 font-bold ml-1">{card.synergy_score ?? 0}</span>
+                                                                    </div>
+                                                                    <div className="text-center">
+                                                                        <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-1">
+                                                                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${card.wr_score ?? 0}%` }} />
+                                                                        </div>
+                                                                        <span className="text-[8px] text-slate-500">WR</span>
+                                                                        <span className="text-[9px] text-emerald-400 font-bold ml-1">{card.wr_score ?? 0}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            )}
                         </div>
                     </motion.div>
                 ) : null}
@@ -256,9 +455,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     );
 };
 
-const CmcStack: React.FC<{ cmc: number, cards: any[], onCardSelect: (c: any) => void }> = ({ cmc, cards, onCardSelect }) => {
+const CmcStack: React.FC<{ cmc: number, cards: SkeletonCard[], onCardSelect: (c: SkeletonCard) => void }> = ({ cmc, cards, onCardSelect }) => {
     const grouped = useMemo(() => {
-        return cards.reduce((acc: any[], card) => {
+        return cards.reduce((acc: (SkeletonCard & { count: number })[], card) => {
             const existing = acc.find(x => x.name === card.name);
             if (existing) existing.count++;
             else acc.push({ ...card, count: 1 });

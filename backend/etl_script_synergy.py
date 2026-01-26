@@ -54,18 +54,36 @@ def get_active_sets():
         return []
 
 def get_trophy_decks(set_code, fmt):
-    """Récupère tous les trophy decks pour un set/format"""
-    url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist"
-    try:
-        response = requests.get(url, headers=HEADERS_SUPABASE)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"   ❌ Erreur fetch decks: {response.text[:200]}")
-            return []
-    except Exception as e:
-        print(f"   ❌ Exception fetch decks: {e}")
-        return []
+    """Récupère tous les trophy decks pour un set/format avec pagination"""
+    all_decks = []
+    offset = 0
+    page_size = 1000
+
+    while True:
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist&limit={page_size}&offset={offset}"
+        try:
+            response = requests.get(url, headers=HEADERS_SUPABASE)
+            if response.status_code != 200:
+                print(f"   ❌ Erreur fetch decks: {response.text[:200]}")
+                break
+
+            data = response.json()
+            if not data:
+                break
+
+            all_decks.extend(data)
+
+            if len(data) < page_size:
+                break  # Dernière page
+
+            offset += page_size
+            print(f"   📄 {len(all_decks)} decks chargés...")
+
+        except Exception as e:
+            print(f"   ❌ Exception fetch decks: {e}")
+            break
+
+    return all_decks
 
 def save_synergies(synergies, set_code, fmt):
     """Sauvegarde les synergies dans Supabase"""

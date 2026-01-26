@@ -2,6 +2,32 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../supabase'
 import { queryKeys } from './keys'
 
+export interface SleeperCard {
+    name: string
+    alsa: number
+    frequency: number
+    score: number
+}
+
+export interface TrendingCard {
+    name: string
+    recent_freq: number
+    old_freq: number
+    delta: number
+}
+
+export interface ImportanceCard {
+    name: string
+    importance: number
+    // Composantes individuelles (0-100)
+    freq_score: number
+    synergy_score: number
+    wr_score: number
+    // Données brutes
+    frequency: number
+    gih_wr: number | null
+}
+
 export interface ArchetypalSkeleton {
     id: string
     set_code: string
@@ -19,6 +45,11 @@ export interface ArchetypalSkeleton {
     }>
     updated_at: string
     sample_size?: number
+    // Nouvelles métriques
+    sleeper_cards?: SleeperCard[]
+    trending_cards?: TrendingCard[]
+    openness_score?: number
+    importance_cards?: ImportanceCard[]
 }
 
 export function useSkeletons(activeSet: string, activeFormat: string) {

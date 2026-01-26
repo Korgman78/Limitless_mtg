@@ -22,48 +22,28 @@ export function useCardSynergies(
     return useQuery({
         queryKey: queryKeys.cardSynergies(activeSet, activeFormat, cardName),
         queryFn: async (): Promise<CardSynergiesResult> => {
-            // Query where the card is card_a
-            const { data: dataA, error: errorA } = await supabase
+            // Single query with OR filter for both card_a and card_b
+            const { data, error } = await supabase
                 .from('synergy_scores')
                 .select('*')
                 .eq('set_code', activeSet)
                 .eq('format', activeFormat)
-                .eq('card_a', cardName)
+                .or(`card_a.eq.${cardName},card_b.eq.${cardName}`)
 
-            // Query where the card is card_b
-            const { data: dataB, error: errorB } = await supabase
-                .from('synergy_scores')
-                .select('*')
-                .eq('set_code', activeSet)
-                .eq('format', activeFormat)
-                .eq('card_b', cardName)
-
-            if (errorA) console.error('Error fetching synergies (A):', errorA)
-            if (errorB) console.error('Error fetching synergies (B):', errorB)
-
-            const synergies: CardSynergy[] = []
-
-            if (dataA) {
-                dataA.forEach((item: any) => {
-                    synergies.push({
-                        partner: item.card_b,
-                        synergy_score: item.synergy_score,
-                        lift_score: item.lift_score,
-                        confidence: item.confidence_a_to_b,
-                    })
-                })
+            if (error) {
+                console.error('Error fetching synergies:', error)
+                return { topConfidence: [], topSynergy: [] }
             }
 
-            if (dataB) {
-                dataB.forEach((item: any) => {
-                    synergies.push({
-                        partner: item.card_a,
-                        synergy_score: item.synergy_score,
-                        lift_score: item.lift_score,
-                        confidence: item.confidence_b_to_a,
-                    })
-                })
-            }
+            const synergies: CardSynergy[] = (data || []).map((item: any) => {
+                const isCardA = item.card_a === cardName
+                return {
+                    partner: isCardA ? item.card_b : item.card_a,
+                    synergy_score: item.synergy_score,
+                    lift_score: item.lift_score,
+                    confidence: isCardA ? item.confidence_a_to_b : item.confidence_b_to_a,
+                }
+            })
 
             // Sort and pick top 3
             const topConfidence = [...synergies]
