@@ -384,12 +384,13 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             lands_added += 1
 
     # Étape B: Les Spells (Le reste jusqu'à 40)
-    target_spells = 40 - lands_added
+    # IMPORTANT: On utilise target_lands (pas lands_added) car les basics seront ajoutés après
+    target_spells = 40 - target_lands
     spell_candidates = [c for c in candidates if 'Land' not in (c[2].get('card_type') or '')]
-    
+
     # CALCUL DES QUOTAS BASÉS SUR LE RATIO D'ARCHÉTYPE
     # On veut respecter target_creatures = target_spells * ratio
-    target_creatures = round(target_spells * (avg_creatures / (40 - avg_lands)))
+    target_creatures = round(target_spells * (avg_creatures / max(1, 40 - avg_lands)))
     target_non_creatures = target_spells - target_creatures
     
     spells_added = 0
