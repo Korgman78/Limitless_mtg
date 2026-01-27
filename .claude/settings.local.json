@@ -14,7 +14,16 @@
       "Bash(git status:*)",
       "Bash(git restore:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(claude install:*)",
+      "Bash(C:/Users/rapha/.local/bin/claude.exe --help)",
+      "Bash(echo:*)",
+      "Bash(where:*)",
+      "Bash(test:*)",
+      "Bash(npm run dev:*)",
+      "Bash(ls:*)",
+      "Bash(dir \"C:\\\\Users\\\\rapha\\\\mtg-front-new\\\\arena-overlay\\\\*.png\")",
+      "Bash(dir:*)"
     ]
   }
 }

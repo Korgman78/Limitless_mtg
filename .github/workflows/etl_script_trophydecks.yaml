@@ -3,7 +3,7 @@ name: Daily Trophy Decks Pipeline
 on:
   schedule:
     # Se lance tous les jours à 16:00 UTC
-    - cron: '0 16 * * *'
+    - cron: '15 46 * * *'
   # Permet de lancer manuellement depuis GitHub
   workflow_dispatch:
 
