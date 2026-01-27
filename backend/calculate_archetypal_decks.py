@@ -211,11 +211,11 @@ def cluster_decks(decks):
         top2 = get_top_spells(smaller)
 
         overlap = len(top1 & top2)
-        if overlap <= 10: # Moins de 70% d'overlap sur les piliers
+        if overlap <= 9: # Moins de 60% d'overlap sur les piliers (9/15)
             print(f"      ✅ Clustering validé : {len(smaller)} decks alternatifs, overlap={overlap}/15 piliers")
             return larger, smaller
         else:
-            print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs)")
+            print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs, seuil=9)")
     elif len(smaller) >= 20:
         print(f"      ⚠️ Cluster trop petit : {len(smaller)} decks ({100*len(smaller)/total:.0f}% < 15%)")
 

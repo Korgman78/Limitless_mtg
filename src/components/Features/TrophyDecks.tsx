@@ -113,6 +113,31 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
     const cmcRange = useMemo(() => Array.from({ length: maxCmc + 1 }, (_, i) => i), [maxCmc]);
 
+    const colorDistribution = useMemo(() => {
+        if (!skeleton) return { W: 0, U: 0, B: 0, R: 0, G: 0, total: 0 };
+
+        const counts = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+        let totalNonLand = 0;
+
+        for (const card of skeleton.deck_list) {
+            if (card.type?.includes('Land')) continue;
+            totalNonLand++;
+
+            const cost = card.cost || '';
+            for (const color of ['W', 'U', 'B', 'R', 'G'] as const) {
+                // Check normal mana {W} and hybrid mana {W/U}, {2/W}, {W/P}, etc.
+                const hasColor = cost.includes(`{${color}}`) ||
+                    cost.includes(`{${color}/`) ||
+                    cost.includes(`/${color}}`);
+                if (hasColor) {
+                    counts[color]++;
+                }
+            }
+        }
+
+        return { ...counts, total: totalNonLand };
+    }, [skeleton]);
+
     React.useEffect(() => {
         if (filteredSkeletons.length > 0) {
             if (!filteredSkeletons.some(s => s.archetype_name === selectedArch)) {
@@ -318,20 +343,44 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     </h3>
                                 </div>
                                 <div className="grid grid-cols-3 gap-2 h-[100px]">
-                                    {/* Creatures */}
+                                    {/* Creatures / Spells Ratio */}
                                     <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
-                                        <span className="text-3xl lg:text-4xl font-black text-white tracking-tighter">{(skeleton.creature_ratio * 100).toFixed(0)}%</span>
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1">CREATURES</span>
-                                    </div>
-                                    {/* Spells */}
-                                    <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
-                                        <span className="text-3xl lg:text-4xl font-black text-white tracking-tighter">{(100 - (skeleton.creature_ratio * 100)).toFixed(0)}%</span>
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1">SPELLS</span>
+                                        <div className="flex items-baseline gap-1">
+                                            <span className="text-3xl lg:text-4xl font-black text-emerald-400 tracking-tighter">{(skeleton.creature_ratio * 100).toFixed(0)}</span>
+                                            <span className="text-xl text-slate-600 font-bold">/</span>
+                                            <span className="text-3xl lg:text-4xl font-black text-indigo-400 tracking-tighter">{(100 - skeleton.creature_ratio * 100).toFixed(0)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[8px] font-bold text-emerald-500/60 uppercase">Crea</span>
+                                            <span className="text-[8px] font-bold text-indigo-500/60 uppercase">Spells</span>
+                                        </div>
                                     </div>
                                     {/* Lands */}
                                     <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
                                         <span className="text-3xl lg:text-4xl font-black text-white tracking-tighter">{skeleton.avg_lands}</span>
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1 text-center whitespace-nowrap">LANDS TOTAL</span>
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1 text-center whitespace-nowrap">LANDS</span>
+                                    </div>
+                                    {/* Color Distribution - Only show active colors */}
+                                    <div className="flex flex-col items-center justify-center p-2 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
+                                        <div className="flex items-center justify-center gap-2">
+                                            {(['W', 'U', 'B', 'R', 'G'] as const)
+                                                .filter(color => colorDistribution[color] > 0)
+                                                .map(color => (
+                                                    <div key={color} className="flex flex-col items-center">
+                                                        <div className="relative">
+                                                            <img
+                                                                src={`https://svgs.scryfall.io/card-symbols/${color}.svg`}
+                                                                alt={color}
+                                                                className="w-7 h-7 lg:w-8 lg:h-8 drop-shadow-lg"
+                                                            />
+                                                            <span className="absolute -bottom-1 -right-1 bg-slate-900 text-white text-[9px] font-black px-1 rounded-full border border-slate-700 min-w-[16px] text-center">
+                                                                {colorDistribution[color]}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                        <span className="text-[8px] font-bold text-slate-600 uppercase mt-2">Cards by Color</span>
                                     </div>
                                 </div>
                             </div>
