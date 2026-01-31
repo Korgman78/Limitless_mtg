@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Sets et formats à traiter
 TARGET_SET_CODES = ["ECL"]  # [] pour tous les sets actifs
-TARGET_FORMATS = ["PremierDraft", "TradDraft"]
+TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 
 # Seuils pour filtrer les résultats (valeurs par défaut, recalculées dynamiquement)
 MIN_LIFT_SCORE = 1.2  # Ne garder que les synergies significatives (lift > 1.2)

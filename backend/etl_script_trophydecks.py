@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Sets et formats à traiter (modifiable)
 TARGET_SET_CODES = ["ECL"]  # Ex: ["FDN", "DSK"] ou [] pour tous les sets actifs
-TARGET_FORMATS = ["PremierDraft", "TradDraft"]  # Formats à scraper
+TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]  # Formats à scraper
 
 # Date cible (None = dernières 24h, ou "YYYY-MM-DD" pour une date spécifique)
 TARGET_DATE = None  # Ex: "2025-01-20" pour scraper les decks du 20 janvier 2025

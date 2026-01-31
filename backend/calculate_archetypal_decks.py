@@ -14,7 +14,7 @@ from pathlib import Path
 # ==============================================================================
 
 TARGET_SET_CODES = ["ECL"]
-TARGET_FORMATS = ["PremierDraft", "TradDraft"]
+TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
