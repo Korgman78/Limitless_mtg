@@ -44,7 +44,7 @@ def fetch_data(table, params="select=*"):
     page_num = 0
 
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&limit={page_size}&offset={offset}"
+        url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&order=id&limit={page_size}&offset={offset}"
         resp = requests.get(url, headers=HEADERS_SUPABASE)
 
         page_num += 1

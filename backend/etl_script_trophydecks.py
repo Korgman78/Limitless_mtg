@@ -192,7 +192,7 @@ def get_existing_deck_ids(set_code, fmt):
         print(f"   ⚠️ Exception count: {e}")
 
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=aggregate_id&limit={page_size}&offset={offset}"
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=aggregate_id&order=id&limit={page_size}&offset={offset}"
 
         success = False
         is_last_page = False

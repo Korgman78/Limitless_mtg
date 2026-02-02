@@ -41,7 +41,7 @@ def fetch_all(table, params):
     page_size = 1000
 
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&limit={page_size}&offset={offset}"
+        url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&order=id&limit={page_size}&offset={offset}"
         resp = requests.get(url, headers=HEADERS_SUPABASE)
         if resp.status_code != 200:
             print(f"❌ Erreur {table}: {resp.status_code} - {resp.text[:200]}")

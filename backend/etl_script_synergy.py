@@ -60,7 +60,7 @@ def get_trophy_decks(set_code, fmt):
     page_size = 1000
 
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist&limit={page_size}&offset={offset}"
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist&order=id&limit={page_size}&offset={offset}"
         try:
             response = requests.get(url, headers=HEADERS_SUPABASE)
             if response.status_code != 200:
