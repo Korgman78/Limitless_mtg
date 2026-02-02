@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, BarChart3, Clock, TrendingUp, Eye, Sparkles, ChevronDown, Star, HelpCircle, Copy, Check } from 'lucide-react';
+import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle, Copy, Check } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
 import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
@@ -452,8 +452,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                 <div className="h-px bg-slate-900/60 flex-1" />
                             </div>
 
-                            {/* Openness Score + Sleepers + Trending Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                            {/* Openness Score + Sleepers + Trending + Declining Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-5">
                                 {/* Openness Score */}
                                 <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
                                     <div className="flex items-center gap-2 mb-4">
@@ -542,6 +542,39 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                     <div className="flex-1 min-w-0 text-left">
                                                         <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
                                                         <p className="text-[9px] text-emerald-400 font-bold">+{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-600 italic">Not enough data for trends yet</p>
+                                    )}
+                                </div>
+
+                                {/* Declining Cards */}
+                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <TrendingDown size={14} className="text-red-400" />
+                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Declining Cards</h4>
+                                        <Tooltip content={<div className="text-center"><div>Falling out of trophy decks.</div><div className="text-slate-400 mt-1">Meta is moving away from these.</div></div>}>
+                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                                        </Tooltip>
+                                    </div>
+                                    {skeleton.declining_cards && skeleton.declining_cards.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {skeleton.declining_cards.slice(0, 3).map((card, idx) => (
+                                                <button
+                                                    key={card.name}
+                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
+                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
+                                                >
+                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
+                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-red-500/30 transition-all">
+                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
+                                                        <p className="text-[9px] text-red-400 font-bold">{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
                                                     </div>
                                                 </button>
                                             ))}

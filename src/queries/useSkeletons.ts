@@ -48,6 +48,7 @@ export interface ArchetypalSkeleton {
     // Nouvelles métriques
     sleeper_cards?: SleeperCard[]
     trending_cards?: TrendingCard[]
+    declining_cards?: TrendingCard[]
     openness_score?: number
     importance_cards?: ImportanceCard[]
     is_alternative?: boolean

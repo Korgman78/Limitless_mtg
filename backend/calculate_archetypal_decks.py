@@ -604,6 +604,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             old_decks.append(d)
 
     trending_cards = []
+    declining_cards = []
     if recent_decks and old_decks:
         # Compter les fréquences dans chaque groupe
         recent_counts = Counter()
@@ -620,24 +621,31 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                     old_counts[name] += 1
 
         # Calculer le delta de fréquence pour toutes les cartes
-        all_deltas = []
+        rising_deltas = []
+        declining_deltas = []
         for name in set(recent_counts.keys()) | set(old_counts.keys()):
             recent_freq = recent_counts[name] / len(recent_decks) if recent_decks else 0
             old_freq = old_counts[name] / len(old_decks) if old_decks else 0
             delta = recent_freq - old_freq
 
-            # Garder uniquement les deltas positifs (cartes en hausse)
-            if delta > 0:
-                all_deltas.append({
-                    "name": name,
-                    "recent_freq": round(recent_freq * 100, 1),
-                    "old_freq": round(old_freq * 100, 1),
-                    "delta": round(delta * 100, 1)
-                })
+            card_data = {
+                "name": name,
+                "recent_freq": round(recent_freq * 100, 1),
+                "old_freq": round(old_freq * 100, 1),
+                "delta": round(delta * 100, 1)
+            }
 
-        # Top 3 meilleures tendances (sans seuils arbitraires)
-        all_deltas.sort(key=lambda x: x['delta'], reverse=True)
-        trending_cards = all_deltas[:3]
+            if delta > 0:
+                rising_deltas.append(card_data)
+            elif delta < 0:
+                declining_deltas.append(card_data)
+
+        # Top 3 en hausse et top 3 en baisse
+        rising_deltas.sort(key=lambda x: x['delta'], reverse=True)
+        trending_cards = rising_deltas[:3]
+
+        declining_deltas.sort(key=lambda x: x['delta'])  # Plus négatif en premier
+        declining_cards = declining_deltas[:3]
 
     # --- 6.3 ARCHETYPE OPENNESS SCORE ---
     # Métrique basée sur la concentration : combien de cartes représentent 80% des slots ?
@@ -732,6 +740,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         # Nouvelles métriques
         "sleeper_cards": sleeper_cards,
         "trending_cards": trending_cards,
+        "declining_cards": declining_cards,
         "openness_score": openness_score,
         "importance_cards": importance_cards
     }
