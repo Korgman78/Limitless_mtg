@@ -604,7 +604,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             old_decks.append(d)
 
     trending_cards = []
-    if len(recent_decks) >= 2 and len(old_decks) >= 2:
+    if recent_decks and old_decks:
         # Compter les fréquences dans chaque groupe
         recent_counts = Counter()
         old_counts = Counter()
