@@ -124,22 +124,22 @@ def get_existing_histories(set_code, fmt):
 
 def get_existing_card_histories(set_code, fmt, context):
     """
-    Pour les Cartes : Récupère l'historique WIN RATE par nom de carte
+    Pour les Cartes : Récupère l'historique WIN RATE et ALSA par nom de carte
     pour un set, un format et un contexte de couleur donnés.
+    Retourne un tuple (wr_histories, alsa_histories)
     """
-    # Attention à l'encodage URL si le context contient des caractères spéciaux, 
-    # mais ici "Global", "WU", etc. passent bien.
-    url = f"{SUPABASE_URL}/rest/v1/card_stats?select=card_name,win_rate_history&set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.{context}"
+    url = f"{SUPABASE_URL}/rest/v1/card_stats?select=card_name,win_rate_history,alsa_history&set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.{context}"
     try:
         r = requests.get(url, headers=HEADERS_SUPABASE)
         if r.status_code == 200:
             data = r.json()
-            # Dictionnaire : { "Card Name": [55.2, 56.1, ...], ... }
-            return {row['card_name']: row.get('win_rate_history', []) for row in data}
-        return {}
+            wr_histories = {row['card_name']: row.get('win_rate_history', []) for row in data}
+            alsa_histories = {row['card_name']: row.get('alsa_history', []) for row in data}
+            return wr_histories, alsa_histories
+        return {}, {}
     except Exception as e:
         print(f"⚠️ Erreur récupération historique cartes: {e}")
-        return {}
+        return {}, {}
 
 # ==============================================================================
 # 4. INGESTION DES DECKS (Avec Gestion Historique)
@@ -218,9 +218,9 @@ def ingest_cards(set_code, start_date):
         
         for color in COLORS:
             context = color if color else "Global"
-            
+
             # 1. Récupération de l'historique existant pour ce set/format/context
-            existing_card_histories = get_existing_card_histories(set_code, fmt, context)
+            existing_wr_histories, existing_alsa_histories = get_existing_card_histories(set_code, fmt, context)
             
             is_sealed = "Sealed" in fmt
             splash_param = "true" if is_sealed else "false"
@@ -251,19 +251,23 @@ def ingest_cards(set_code, start_date):
                     img_count = row.get('game_count') or 0
                     
                     current_wr = round(gih, 2) if gih is not None else None
+                    current_alsa = round(alsa, 2) if alsa is not None else None
 
-                    # --- GESTION HISTORIQUE CARTES ---
-                    # Récupération ancien historique ou vide
-                    history = existing_card_histories.get(name)
-                    if history is None: history = []
-
-                    # On ajoute la nouvelle valeur SI elle existe (pas None)
+                    # --- GESTION HISTORIQUE WIN RATE ---
+                    wr_history = existing_wr_histories.get(name)
+                    if wr_history is None: wr_history = []
                     if current_wr is not None:
-                        history.append(current_wr)
-                        
-                        # Rolling Window de 14 jours
-                        if len(history) > 14: 
-                            history = history[-14:]
+                        wr_history.append(current_wr)
+                        if len(wr_history) > 14:
+                            wr_history = wr_history[-14:]
+
+                    # --- GESTION HISTORIQUE ALSA ---
+                    alsa_history = existing_alsa_histories.get(name)
+                    if alsa_history is None: alsa_history = []
+                    if current_alsa is not None:
+                        alsa_history.append(current_alsa)
+                        if len(alsa_history) > 14:
+                            alsa_history = alsa_history[-14:]
                     # ----------------------------------
 
                     record = {
@@ -273,10 +277,11 @@ def ingest_cards(set_code, start_date):
                         "colors": row.get('color', ''),
                         "filter_context": context,
                         "format": fmt,
-                        "gih_wr": current_wr, 
-                        "alsa": alsa,
+                        "gih_wr": current_wr,
+                        "alsa": current_alsa,
                         "img_count": img_count,
-                        "win_rate_history": history # Nouvelle donnée
+                        "win_rate_history": wr_history,
+                        "alsa_history": alsa_history
                     }
                     unique_batch[f"{fmt}_{name}_{context}"] = record
                 except Exception: continue

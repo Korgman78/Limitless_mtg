@@ -102,11 +102,16 @@ export default function MTGLimitedApp(): React.ReactElement {
   const { data: availableSets = [], error: setsError } = useSets();
   const { data: decksData, isLoading: decksLoading, error: decksError, refetch: refetchDecks } = useDecks(activeSet, activeFormat);
   const { data: cardsData, isLoading: cardsLoading, error: cardsError, refetch: refetchCards } = useCards(activeSet, activeFormat, archetypeFilter);
+  // Données globales pour FormatBlueprint (indépendantes du filtre d'archétype sélectionné dans l'onglet Cards)
+  const { data: globalCardsData } = useCards(activeSet, activeFormat, 'Global');
 
   const decks = decksData?.decks || [];
   const totalGames = decksData?.totalGames || 1;
   const cards = cardsData?.cards || [];
   const globalMeanWR = cardsData?.globalMeanWR || 55.0;
+  // Données globales pour FormatBlueprint
+  const globalCards = globalCardsData?.cards || [];
+  const globalMeanWRForBlueprint = globalCardsData?.globalMeanWR || 55.0;
   const loading = cardsLoading;
 
   // Combine errors from all queries
@@ -608,8 +613,8 @@ export default function MTGLimitedApp(): React.ReactElement {
                   ))}
                 </div>
 
-                {/* Format Blueprint */}
-                <FormatBlueprint cards={cards} decks={decks} globalMeanWR={globalMeanWR} activeSet={activeSet} activeFormat={activeFormat} onCardSelect={(card) => setSelectedCard(card)} />
+                {/* Format Blueprint - utilise les données globales, pas le filtre d'archétype de l'onglet Cards */}
+                <FormatBlueprint cards={globalCards} decks={decks} globalMeanWR={globalMeanWRForBlueprint} activeSet={activeSet} activeFormat={activeFormat} onCardSelect={(card) => setSelectedCard(card)} />
               </motion.div>
             )}
 
