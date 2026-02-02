@@ -739,8 +739,17 @@ if __name__ == "__main__":
                         results.append(alt_skeleton)
 
             if results:
+                # D'abord, supprimer les anciens squelettes pour ce set/format
+                # Cela évite de garder des ALT orphelins qui ne sont plus détectés
+                print(f"      🗑️ Suppression des anciens squelettes pour {set_code}/{fmt}...")
+                delete_url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?set_code=eq.{set_code}&format=eq.{fmt}"
+                delete_resp = requests.delete(delete_url, headers=HEADERS_SUPABASE)
+                if delete_resp.status_code >= 400:
+                    print(f"      ⚠️ Erreur suppression (non bloquant): {delete_resp.text}")
+
+                # Ensuite, insérer les nouveaux squelettes
                 print(f"      🚀 Sauvegarde de {len(results)} squelettes dans Supabase...")
-                url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?on_conflict=set_code,format,archetype_name,is_alternative"
+                url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons"
                 resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
                 if resp.status_code >= 400:
                     print(f"      ❌ Erreur sauvegarde: {resp.text}")
