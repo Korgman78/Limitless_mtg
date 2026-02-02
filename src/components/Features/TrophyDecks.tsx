@@ -53,8 +53,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
     const filteredSkeletons = useMemo(() => {
         let base = [...skeletons];
-        // Only show main skeletons in the selector grid
-        base = base.filter(s => !s.is_alternative);
+        // Only show main skeletons with at least 20 trophies
+        base = base.filter(s => !s.is_alternative && (s.sample_size || 0) >= 20);
 
         // Sort by sample_size (most represented first)
         base.sort((a, b) => (b.sample_size || 0) - (a.sample_size || 0));
