@@ -157,6 +157,80 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
     setPosition({ x: 0, y: 0 });
   }, []);
 
+  // Dynamic WR & ALSA stats computed from format data
+  const formatStats = useMemo(() => {
+    const validWRs = allCards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined).map(c => c.gih_wr!).sort((a, b) => a - b);
+    const validALSAs = allCards.filter(c => c.alsa !== null && c.alsa !== undefined).map(c => c.alsa!).sort((a, b) => a - b);
+
+    const minWRActual = validWRs[0] ?? 45;
+    const maxWRActual = validWRs[validWRs.length - 1] ?? 70;
+
+    const avgALSA = validALSAs.length > 0
+      ? validALSAs.reduce((sum, a) => sum + a, 0) / validALSAs.length
+      : 4.5;
+
+    return {
+      avgWR: globalMeanWR,
+      minWR: Math.floor(minWRActual - 1),
+      maxWR: Math.ceil(maxWRActual + 1),
+      bestWR: maxWRActual,
+      avgALSA,
+    };
+  }, [allCards, globalMeanWR]);
+
+  const peersRarity = useMemo(() =>
+    allCards.filter((c: Card) => normalizeRarity(c.rarity) === normalizeRarity(card.rarity)),
+    [allCards, card.rarity]
+  );
+
+  const peersColor = useMemo(() =>
+    peersRarity.filter((c: Card) => areColorsEqual(extractColors(c.colors), extractColors(card.colors))),
+    [peersRarity, card.colors]
+  );
+
+  const hasAlsa = !!card.alsa;
+  const minALSA = 1.25;
+  const maxALSA = 8.75;
+
+  // Compute peer positions for matrix overlay
+  const peerDots = useMemo(() => {
+    if (!showPeers && !showAllRarityPeers) return [];
+    if (!effectiveWR) return [];
+
+    const AVG_ALSA = formatStats.avgALSA;
+    const displayMinWR = hasAlsa ? formatStats.minWR : formatStats.avgWR - 8;
+    const displayMaxWR = hasAlsa ? formatStats.maxWR : formatStats.avgWR + 12;
+
+    const getYPosition = (wr: number) => {
+      const clampedWR = Math.max(displayMinWR, Math.min(displayMaxWR, wr));
+      const y = 100 - ((clampedWR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
+      return Math.max(2, Math.min(98, y));
+    };
+
+    const peers = showAllRarityPeers
+      ? peersRarity.filter((c: Card) => c.name !== card.name && c.gih_wr)
+      : peersColor.filter((c: Card) => c.name !== card.name && c.gih_wr);
+
+    const sealedXPositions = peers.map((_, idx) => {
+      const baseX = 10 + (idx / Math.max(1, peers.length - 1)) * 80;
+      const jitter = (idx % 3 - 1) * 3;
+      return Math.max(8, Math.min(92, baseX + jitter));
+    });
+
+    return peers.map((c: Card, idx: number) => ({
+      card: c,
+      name: c.name,
+      wr: c.gih_wr!,
+      alsa: c.alsa ?? null,
+      x: hasAlsa && c.alsa
+        ? ((Math.max(minALSA, Math.min(maxALSA, c.alsa)) - minALSA) / (maxALSA - minALSA)) * 100
+        : sealedXPositions[idx],
+      y: getYPosition(c.gih_wr!),
+      colorClass: showAllRarityPeers ? getManaColor(c.colors) : 'bg-slate-400/70',
+    }));
+  }, [showPeers, showAllRarityPeers, hasAlsa, peersRarity, peersColor, card.name, effectiveWR, formatStats, minALSA, maxALSA]);
+
+  // Early return AFTER all hooks
   if (!effectiveWR) return null;
 
   const getRank = (list: any[], metric: string, val: any, asc: boolean = false): { rank: number; total: number } => {
@@ -166,13 +240,9 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
     return { rank: index + 1, total: valid.length };
   };
 
-  const peersRarity = allCards.filter((c: Card) => normalizeRarity(c.rarity) === normalizeRarity(card.rarity));
-  const peersColor = peersRarity.filter((c: Card) => areColorsEqual(extractColors(c.colors), extractColors(card.colors)));
-
   const rankWrRarity = getRank(peersRarity, 'gih_wr', card.gih_wr, false);
   const rankWrColor = getRank(peersColor, 'gih_wr', card.gih_wr, false);
 
-  const hasAlsa = !!card.alsa;
   const rankAlsaRarity = hasAlsa ? getRank(peersRarity, 'alsa', card.alsa, true) : null;
   const rankAlsaColor = hasAlsa ? getRank(peersColor, 'alsa', card.alsa, true) : null;
 
@@ -201,37 +271,11 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
     );
   };
 
-  // Dynamic WR & ALSA stats computed from format data
-  const formatStats = useMemo(() => {
-    const validWRs = allCards.filter(c => c.gih_wr !== null && c.gih_wr !== undefined).map(c => c.gih_wr!).sort((a, b) => a - b);
-    const validALSAs = allCards.filter(c => c.alsa !== null && c.alsa !== undefined).map(c => c.alsa!).sort((a, b) => a - b);
-
-    // WR stats - utiliser globalMeanWR (WR moyen du format) au lieu de la moyenne des cartes
-    const minWRActual = validWRs[0] ?? 45;
-    const maxWRActual = validWRs[validWRs.length - 1] ?? 70;
-
-    // ALSA stats
-    const avgALSA = validALSAs.length > 0
-      ? validALSAs.reduce((sum, a) => sum + a, 0) / validALSAs.length
-      : 4.5;
-
-    return {
-      avgWR: globalMeanWR,  // WR moyen global du format (pas la moyenne des cartes)
-      minWR: Math.floor(minWRActual - 1),
-      maxWR: Math.ceil(maxWRActual + 1),
-      bestWR: maxWRActual,
-      avgALSA,
-    };
-  }, [allCards, globalMeanWR]);
-
   const AVG_WR = formatStats.avgWR;
   const minWR = formatStats.minWR;
   const maxWR = formatStats.maxWR;
   const bestWR = formatStats.bestWR;
-
   const AVG_ALSA = formatStats.avgALSA;
-  const minALSA = 1.25;
-  const maxALSA = 8.75;
 
   // For Sealed: use fixed scale with symmetric margins for BOMB (+9 to +12) and CHAFF (-5 to -8)
   const sealedDisplayMinWR = AVG_WR - 8;
@@ -339,35 +383,6 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
 
   // Position du point - utiliser yAvg directement si le WR est très proche de la moyenne (évite les décalages de précision)
   const yPos = Math.abs(effectiveWR - AVG_WR) < 0.1 ? yAvg : getYPosition(effectiveWR);
-
-  // Compute peer positions for matrix overlay
-  const peerDots = useMemo(() => {
-    if (!showPeers && !showAllRarityPeers) return [];
-
-    // Select peers based on mode: color peers or all rarity peers
-    const peers = showAllRarityPeers
-      ? peersRarity.filter((c: Card) => c.name !== card.name && c.gih_wr)
-      : peersColor.filter((c: Card) => c.name !== card.name && c.gih_wr);
-
-    // For Sealed: distribute dots evenly across width with small jitter
-    const sealedXPositions = peers.map((_, idx) => {
-      const baseX = 10 + (idx / Math.max(1, peers.length - 1)) * 80; // 10% to 90%
-      const jitter = (idx % 3 - 1) * 3; // -3, 0, or +3 for slight variation
-      return Math.max(8, Math.min(92, baseX + jitter));
-    });
-
-    return peers.map((c: Card, idx: number) => ({
-      card: c,
-      name: c.name,
-      wr: c.gih_wr!,
-      alsa: c.alsa ?? null,
-      x: hasAlsa && c.alsa
-        ? ((Math.max(minALSA, Math.min(maxALSA, c.alsa)) - minALSA) / (maxALSA - minALSA)) * 100
-        : sealedXPositions[idx],
-      y: getYPosition(c.gih_wr!),
-      colorClass: showAllRarityPeers ? getManaColor(c.colors) : 'bg-slate-400/70',
-    }));
-  }, [showPeers, showAllRarityPeers, hasAlsa, peersRarity, peersColor, card.name, displayMinWR, displayMaxWR, minALSA, maxALSA]);
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 mt-6">
