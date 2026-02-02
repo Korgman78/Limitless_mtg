@@ -6,6 +6,8 @@ import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
 import { haptics } from '../../utils/haptics';
 import { getCardImage } from '../../utils/helpers';
+import { CmcStack } from './CmcStack';
+import { InsightCardList } from './InsightCardList';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
 
@@ -30,14 +32,24 @@ interface TrophyDecksProps {
 
 type ArchFilter = 'all' | 'mono' | '2 colors' | '3 colors' | '4+ colors';
 
+interface ArchSelection {
+    archetype: string | null;
+    isAlternative: boolean;
+}
+
 export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect }) => {
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
-    const [selectedArch, setSelectedArch] = useState<string | null>(null);
+    const [selection, setSelection] = useState<ArchSelection>({ archetype: null, isAlternative: false });
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
     const [showImportance, setShowImportance] = useState(false);
-    const [isAlt, setIsAlt] = useState(false);
     const [showMethodology, setShowMethodology] = useState(false);
     const [copied, setCopied] = useState(false);
+
+    // Aliases pour compatibilité avec le code existant
+    const selectedArch = selection.archetype;
+    const isAlt = selection.isAlternative;
+    const setSelectedArch = (arch: string | null) => setSelection(s => ({ ...s, archetype: arch }));
+    const setIsAlt = (alt: boolean) => setSelection(s => ({ ...s, isAlternative: alt }));
 
     const handleCopyDeck = async () => {
         if (!skeleton) return;
@@ -486,103 +498,49 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                 </div>
 
                                 {/* Sleeper Cards */}
-                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <Eye size={14} className="text-emerald-400" />
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sleeper Cards</h4>
-                                        <Tooltip content={<div className="text-center"><div>Drafted late but win often.</div><div className="text-slate-400 mt-1">Undervalued gems to look for.</div></div>}>
-                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
-                                        </Tooltip>
-                                    </div>
-                                    {skeleton.sleeper_cards && skeleton.sleeper_cards.length > 0 ? (
-                                        <div className="space-y-2">
-                                            {skeleton.sleeper_cards.slice(0, 3).map((card, idx) => (
-                                                <button
-                                                    key={card.name}
-                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
-                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
-                                                >
-                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
-                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-emerald-500/30 transition-all">
-                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 text-left">
-                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
-                                                        <p className="text-[9px] text-slate-500">ALSA {card.alsa} · {card.frequency}% freq</p>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-600 italic">No sleeper cards detected</p>
+                                <InsightCardList
+                                    title="Sleeper Cards"
+                                    icon={Eye}
+                                    iconColor="text-emerald-400"
+                                    hoverRingColor="group-hover:ring-emerald-500/30"
+                                    tooltipContent={<div className="text-center"><div>Drafted late but win often.</div><div className="text-slate-400 mt-1">Undervalued gems to look for.</div></div>}
+                                    cards={skeleton.sleeper_cards}
+                                    emptyMessage="No sleeper cards detected"
+                                    onCardSelect={onCardSelect}
+                                    renderSubtext={(card) => (
+                                        <p className="text-[9px] text-slate-500">ALSA {card.alsa} · {card.frequency}% freq</p>
                                     )}
-                                </div>
+                                />
 
                                 {/* Trending Cards */}
-                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <TrendingUp size={14} className="text-orange-400" />
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Trending Cards</h4>
-                                        <Tooltip content={<div className="text-center"><div>Rising in trophy decks this week.</div><div className="text-slate-400 mt-1">Meta is shifting toward these.</div></div>}>
-                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
-                                        </Tooltip>
-                                    </div>
-                                    {skeleton.trending_cards && skeleton.trending_cards.length > 0 ? (
-                                        <div className="space-y-2">
-                                            {skeleton.trending_cards.slice(0, 3).map((card, idx) => (
-                                                <button
-                                                    key={card.name}
-                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
-                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
-                                                >
-                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
-                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-orange-500/30 transition-all">
-                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 text-left">
-                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
-                                                        <p className="text-[9px] text-emerald-400 font-bold">+{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-600 italic">Not enough data for trends yet</p>
+                                <InsightCardList
+                                    title="Trending Cards"
+                                    icon={TrendingUp}
+                                    iconColor="text-orange-400"
+                                    hoverRingColor="group-hover:ring-orange-500/30"
+                                    tooltipContent={<div className="text-center"><div>Rising in trophy decks this week.</div><div className="text-slate-400 mt-1">Meta is shifting toward these.</div></div>}
+                                    cards={skeleton.trending_cards}
+                                    emptyMessage="Not enough data for trends yet"
+                                    onCardSelect={onCardSelect}
+                                    renderSubtext={(card) => (
+                                        <p className="text-[9px] text-emerald-400 font-bold">+{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
                                     )}
-                                </div>
+                                />
 
                                 {/* Declining Cards */}
-                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <TrendingDown size={14} className="text-red-400" />
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Declining Cards</h4>
-                                        <Tooltip content={<div className="text-center"><div>Falling out of trophy decks.</div><div className="text-slate-400 mt-1">Meta moving away, or ALSA rising (picked earlier).</div></div>}>
-                                            <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
-                                        </Tooltip>
-                                    </div>
-                                    {skeleton.declining_cards && skeleton.declining_cards.length > 0 ? (
-                                        <div className="space-y-2">
-                                            {skeleton.declining_cards.slice(0, 3).map((card, idx) => (
-                                                <button
-                                                    key={card.name}
-                                                    onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
-                                                    className="w-full flex items-center gap-3 group hover:bg-slate-800/30 rounded-lg p-1 -m-1 transition-colors"
-                                                >
-                                                    <span className="text-[10px] font-bold text-slate-600 w-4">{idx + 1}</span>
-                                                    <div className="w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 group-hover:ring-red-500/30 transition-all">
-                                                        <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 text-left">
-                                                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>
-                                                        <p className="text-[9px] text-red-400 font-bold">{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-600 italic">Not enough data for trends yet</p>
+                                <InsightCardList
+                                    title="Declining Cards"
+                                    icon={TrendingDown}
+                                    iconColor="text-red-400"
+                                    hoverRingColor="group-hover:ring-red-500/30"
+                                    tooltipContent={<div className="text-center"><div>Falling out of trophy decks.</div><div className="text-slate-400 mt-1">Meta moving away, or ALSA rising (picked earlier).</div></div>}
+                                    cards={skeleton.declining_cards}
+                                    emptyMessage="Not enough data for trends yet"
+                                    onCardSelect={onCardSelect}
+                                    renderSubtext={(card) => (
+                                        <p className="text-[9px] text-red-400 font-bold">{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
                                     )}
-                                </div>
+                                />
                             </div>
 
                             {/* Card Importance - Collapsible */}
@@ -665,67 +623,3 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
         </div>
     );
 };
-
-const CmcStack: React.FC<{ cmc: number, cards: SkeletonCard[], onCardSelect: (c: SkeletonCard) => void }> = ({ cmc, cards, onCardSelect }) => {
-    const grouped = useMemo(() => {
-        return cards.reduce((acc: (SkeletonCard & { count: number })[], card) => {
-            const existing = acc.find(x => x.name === card.name);
-            if (existing) existing.count++;
-            else acc.push({ ...card, count: 1 });
-            return acc;
-        }, []);
-    }, [cards]);
-
-    if (cards.length === 0) return (
-        <div className="hidden md:flex flex-col flex-1 items-center opacity-5 pointer-events-none select-none">
-            <div className="text-[14px] font-bold text-white mb-2">{cmc}</div>
-            <div className="aspect-[2/3] w-full border-2 border-dashed border-slate-700 rounded-xl" />
-        </div>
-    );
-
-    return (
-        <div className="flex flex-col w-[46%] md:flex-1 md:min-w-0 group/stack transition-all hover:z-[100] px-1 md:px-2">
-            <div className="flex items-center justify-between px-2 mb-2">
-                <span className="text-[16px] font-bold text-white/80">{cmc}</span>
-                <span className="text-[10px] font-bold text-slate-600">({cards.length})</span>
-            </div>
-
-            <div className="relative isolate">
-                {grouped.map((card, idx) => (
-                    <motion.div
-                        key={`${card.name}-${idx}`}
-                        className="relative"
-                        style={{
-                            marginTop: idx === 0 ? 0 : '-135%',
-                            zIndex: idx
-                        }}
-                        whileHover={{
-                            y: -25,
-                            zIndex: 200,
-                            scale: 1.15,
-                            transition: { type: "spring", stiffness: 400, damping: 22 }
-                        }}
-                    >
-                        <button
-                            onClick={() => onCardSelect(card)}
-                            className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-[0_15px_45px_rgba(0,0,0,1)] border border-slate-800/80 bg-slate-900 group"
-                        >
-                            <img
-                                src={getCardImage(card.name)}
-                                alt={card.name}
-                                className="w-full h-full object-cover transition-opacity duration-300 opacity-95 group-hover:opacity-100"
-                                loading="lazy"
-                            />
-
-                            {card.count > 1 && (
-                                <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[11px] font-bold w-6 h-6 rounded-full flex items-center justify-center shadow-lg border border-indigo-300/40 z-[60]">
-                                    {card.count}
-                                </div>
-                            )}
-                        </button>
-                    </motion.div>
-                ))}
-            </div>
-        </div>
-    )
-}
