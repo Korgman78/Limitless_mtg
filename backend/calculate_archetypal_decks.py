@@ -154,6 +154,56 @@ def jaccard_sim(s1, s2):
     if not u: return 0
     return len(s1 & s2) / len(u)
 
+def calculate_silhouette(deck_sets, assignments):
+    """
+    Calcule le silhouette score pour valider la qualité du clustering.
+    Score entre -1 et 1 : > 0.3 = bon clustering, < 0.2 = clusters mal séparés.
+
+    Pour chaque deck:
+    - a = distance moyenne aux decks du même cluster
+    - b = distance moyenne aux decks de l'autre cluster
+    - silhouette = (b - a) / max(a, b)
+    """
+    n = len(deck_sets)
+    if n < 4:
+        return 0.0
+
+    # Séparer les indices par cluster
+    cluster0_indices = [i for i, a in enumerate(assignments) if a == 0]
+    cluster1_indices = [i for i, a in enumerate(assignments) if a == 1]
+
+    if len(cluster0_indices) < 2 or len(cluster1_indices) < 2:
+        return 0.0
+
+    # Échantillonner si trop de decks (pour performance)
+    max_sample = 100
+    if len(cluster0_indices) > max_sample:
+        cluster0_indices = random.sample(cluster0_indices, max_sample)
+    if len(cluster1_indices) > max_sample:
+        cluster1_indices = random.sample(cluster1_indices, max_sample)
+
+    silhouettes = []
+
+    for idx in cluster0_indices + cluster1_indices:
+        my_cluster = cluster0_indices if assignments[idx] == 0 else cluster1_indices
+        other_cluster = cluster1_indices if assignments[idx] == 0 else cluster0_indices
+
+        # Distance = 1 - similarité de Jaccard
+        # a = distance moyenne intra-cluster
+        a_distances = [1 - jaccard_sim(deck_sets[idx], deck_sets[j]) for j in my_cluster if j != idx]
+        a = sum(a_distances) / len(a_distances) if a_distances else 0
+
+        # b = distance moyenne inter-cluster
+        b_distances = [1 - jaccard_sim(deck_sets[idx], deck_sets[j]) for j in other_cluster]
+        b = sum(b_distances) / len(b_distances) if b_distances else 0
+
+        # Silhouette pour ce deck
+        if max(a, b) > 0:
+            s = (b - a) / max(a, b)
+            silhouettes.append(s)
+
+    return sum(silhouettes) / len(silhouettes) if silhouettes else 0.0
+
 def cluster_decks(decks):
     """Sépare les decks en deux clusters si pertinent (Jaccard Similarity + K-means itératif)"""
     if len(decks) < 40: # Pas assez de données pour clusteriser proprement
@@ -226,8 +276,13 @@ def cluster_decks(decks):
 
         overlap = len(top1 & top2)
         if overlap <= 9: # Moins de 60% d'overlap sur les piliers (9/15)
-            print(f"      ✅ Clustering validé : {len(smaller)} decks alternatifs, overlap={overlap}/15 piliers")
-            return larger, smaller
+            # 6. Vérification statistique par silhouette score
+            silhouette = calculate_silhouette(deck_sets, assignments)
+            if silhouette >= 0.25:  # Seuil de qualité du clustering
+                print(f"      ✅ Clustering validé : {len(smaller)} decks alternatifs, overlap={overlap}/15, silhouette={silhouette:.2f}")
+                return larger, smaller
+            else:
+                print(f"      ⚠️ Archétype alternatif rejeté : silhouette trop basse ({silhouette:.2f} < 0.25)")
         else:
             print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs, seuil=9)")
     elif len(smaller) >= 20:
