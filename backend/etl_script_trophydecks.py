@@ -173,27 +173,69 @@ def get_existing_deck_ids(set_code, fmt):
     all_ids = set()
     offset = 0
     page_size = 1000
+    max_retries = 3
+
+    # D'abord, obtenir le count total pour vérification
+    count_url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=count"
+    count_headers = {**HEADERS_SUPABASE, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"}
+    try:
+        count_resp = requests.get(count_url, headers=count_headers)
+        content_range = count_resp.headers.get("content-range", "")
+        if "/" in content_range:
+            expected_count = int(content_range.split("/")[-1])
+            print(f"   📊 Count total attendu: {expected_count} decks")
+        else:
+            expected_count = 0
+            print(f"   ⚠️ Impossible d'obtenir le count total (header: {content_range})")
+    except Exception as e:
+        expected_count = 0
+        print(f"   ⚠️ Exception count: {e}")
 
     while True:
         url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=aggregate_id&limit={page_size}&offset={offset}"
-        try:
-            response = requests.get(url, headers=HEADERS_SUPABASE)
-            if response.status_code == 200:
-                data = response.json()
-                if not data:
-                    break  # Plus de données
-                for row in data:
-                    all_ids.add(row['aggregate_id'])
-                if len(data) < page_size:
-                    break  # Dernière page
-                offset += page_size
-            else:
-                print(f"   ⚠️ Erreur fetch existing IDs: {response.text[:100]}")
-                break
-        except Exception as e:
-            print(f"   ⚠️ Exception fetch existing IDs: {e}")
+
+        success = False
+        is_last_page = False
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=HEADERS_SUPABASE, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    if not data:
+                        is_last_page = True
+                        success = True
+                        break  # Plus de données
+                    for row in data:
+                        all_ids.add(row['aggregate_id'])
+                    print(f"   📄 Page {offset // page_size + 1}: {len(data)} IDs (total: {len(all_ids)})")
+                    if len(data) < page_size:
+                        is_last_page = True
+                        success = True
+                        break  # Dernière page
+                    offset += page_size
+                    success = True
+                    break
+                else:
+                    print(f"   ⚠️ Erreur page {offset // page_size + 1} (tentative {attempt + 1}): {response.status_code}")
+                    time.sleep(2)
+            except Exception as e:
+                print(f"   ⚠️ Exception page {offset // page_size + 1} (tentative {attempt + 1}): {e}")
+                time.sleep(2)
+
+        if not success:
+            print(f"   ❌ ÉCHEC: Impossible de charger tous les IDs existants après {max_retries} tentatives")
+            print(f"   ❌ Chargé: {len(all_ids)} / Attendu: {expected_count}")
+            return None
+
+        if is_last_page:
             break
 
+    # Vérification finale
+    if expected_count > 0 and len(all_ids) < expected_count * 0.95:  # Tolérance de 5%
+        print(f"   ❌ ALERTE: IDs chargés ({len(all_ids)}) << attendus ({expected_count})")
+        return None
+
+    print(f"   ✅ {len(all_ids)} IDs existants chargés avec succès")
     return all_ids
 
 # ==============================================================================
@@ -296,6 +338,10 @@ def ingest_trophy_decks(set_code, formats):
 
         # Récupérer les IDs déjà en BDD pour éviter les doublons
         existing_ids = get_existing_deck_ids(set_code, fmt)
+        if existing_ids is None:
+            print(f"   ❌ ABANDON du format {fmt}: impossible de charger les IDs existants")
+            print(f"   ❌ Ceci évite d'écraser les archetypes existants par erreur")
+            continue
         print(f"   📦 {len(existing_ids)} decks déjà en BDD")
 
         # Parcourir chaque combinaison de couleurs (un appel API par couleur)
