@@ -278,11 +278,11 @@ def cluster_decks(decks):
         if overlap <= 9: # Moins de 60% d'overlap sur les piliers (9/15)
             # 6. Vérification statistique par silhouette score
             silhouette = calculate_silhouette(deck_sets, assignments)
-            if silhouette >= 0.15:  # Seuil assoupli (0.15) pour formats tribaux
+            if silhouette >= 0.05:  # Seuil très assoupli (0.05) pour formats tribaux
                 print(f"      ✅ Clustering validé : {len(smaller)} decks alternatifs, overlap={overlap}/15, silhouette={silhouette:.2f}")
                 return larger, smaller
             else:
-                print(f"      ⚠️ Archétype alternatif rejeté : silhouette trop basse ({silhouette:.2f} < 0.15)")
+                print(f"      ⚠️ Archétype alternatif rejeté : silhouette trop basse ({silhouette:.2f} < 0.05)")
         else:
             print(f"      ⚠️ Archétype alternatif rejeté : trop similaire ({overlap}/15 piliers communs, seuil=9)")
     elif len(smaller) >= 20:

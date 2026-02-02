@@ -416,20 +416,34 @@ export default function MTGLimitedApp(): React.ReactElement {
     if (card.gih_wr !== undefined && card.colors !== undefined) {
       setSelectedCard(card);
     } else {
-      // Look up full card data by name
-      const fullCard = cards.find(c => c.name === card.name);
+      // Look up full card data by name - first in filtered cards, then in globalCards
+      const fullCard = cards.find(c => c.name === card.name)
+        || globalCards.find(c => c.name === card.name);
       if (fullCard) {
         setSelectedCard(fullCard);
       } else {
         // Last resort: normalized match for split cards or differently named cards
         const normalize = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '');
         const searchName = normalize(card.name);
-        const matched = cards.find(c => normalize(c.name) === searchName);
+        const matched = cards.find(c => normalize(c.name) === searchName)
+          || globalCards.find(c => normalize(c.name) === searchName);
         if (matched) setSelectedCard(matched);
-        else setSelectedCard(card as Card); // Fallback to partial if nothing else
+        else {
+          // Create a minimal valid Card object to prevent crashes
+          const safeCard: Card = {
+            id: `temp-${card.name}`,
+            name: card.name,
+            rarity: card.rarity || 'common',
+            colors: card.colors || '',
+            gih_wr: null,
+            alsa: null,
+            img_count: 0,
+          };
+          setSelectedCard(safeCard);
+        }
       }
     }
-  }, [cards]);
+  }, [cards, globalCards]);
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-950 text-slate-100 font-sans w-full overflow-hidden relative selection:bg-indigo-500/30">
