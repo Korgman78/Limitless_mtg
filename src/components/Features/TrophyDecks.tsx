@@ -556,7 +556,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     <div className="flex items-center gap-2 mb-4">
                                         <TrendingDown size={14} className="text-red-400" />
                                         <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Declining Cards</h4>
-                                        <Tooltip content={<div className="text-center"><div>Falling out of trophy decks.</div><div className="text-slate-400 mt-1">Meta is moving away from these.</div></div>}>
+                                        <Tooltip content={<div className="text-center"><div>Falling out of trophy decks.</div><div className="text-slate-400 mt-1">Meta moving away, or ALSA rising (picked earlier).</div></div>}>
                                             <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                         </Tooltip>
                                     </div>
