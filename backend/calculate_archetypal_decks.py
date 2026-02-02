@@ -604,7 +604,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
             old_decks.append(d)
 
     trending_cards = []
-    if len(recent_decks) >= 3 and len(old_decks) >= 3:
+    if len(recent_decks) >= 2 and len(old_decks) >= 2:
         # Compter les fréquences dans chaque groupe
         recent_counts = Counter()
         old_counts = Counter()
@@ -619,23 +619,25 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                 if name in card_meta and 'Land' not in (card_meta[name].get('card_type') or ''):
                     old_counts[name] += 1
 
-        # Calculer le delta de fréquence
+        # Calculer le delta de fréquence pour toutes les cartes
+        all_deltas = []
         for name in set(recent_counts.keys()) | set(old_counts.keys()):
             recent_freq = recent_counts[name] / len(recent_decks) if recent_decks else 0
             old_freq = old_counts[name] / len(old_decks) if old_decks else 0
-
             delta = recent_freq - old_freq
-            # Trending = augmentation significative (> 15 points de %)
-            if delta > 0.15 and recent_freq > 0.20:
-                trending_cards.append({
+
+            # Garder uniquement les deltas positifs (cartes en hausse)
+            if delta > 0:
+                all_deltas.append({
                     "name": name,
                     "recent_freq": round(recent_freq * 100, 1),
                     "old_freq": round(old_freq * 100, 1),
                     "delta": round(delta * 100, 1)
                 })
 
-        trending_cards.sort(key=lambda x: x['delta'], reverse=True)
-        trending_cards = trending_cards[:5]  # Top 5 trending
+        # Top 3 meilleures tendances (sans seuils arbitraires)
+        all_deltas.sort(key=lambda x: x['delta'], reverse=True)
+        trending_cards = all_deltas[:3]
 
     # --- 6.3 ARCHETYPE OPENNESS SCORE ---
     # Métrique basée sur la concentration : combien de cartes représentent 80% des slots ?
