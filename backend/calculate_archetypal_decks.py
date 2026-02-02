@@ -41,15 +41,20 @@ def fetch_data(table, params="select=*"):
     all_data = []
     offset = 0
     page_size = 1000
+    page_num = 0
 
     while True:
         url = f"{SUPABASE_URL}/rest/v1/{table}?{params}&limit={page_size}&offset={offset}"
         resp = requests.get(url, headers=HEADERS_SUPABASE)
+
+        page_num += 1
         if resp.status_code != 200:
-            print(f"❌ Erreur {table}: {resp.text}")
+            print(f"❌ Erreur {table} (page {page_num}): status={resp.status_code} - {resp.text[:200]}")
             break
 
         data = resp.json()
+        print(f"   📄 Page {page_num}: {len(data)} lignes (total: {len(all_data) + len(data)})")
+
         if not data:
             break
 
@@ -59,8 +64,8 @@ def fetch_data(table, params="select=*"):
             break  # Dernière page
 
         offset += page_size
-        print(f"   📄 {len(all_data)} lignes chargées...")
 
+    print(f"   ✅ {table}: {len(all_data)} lignes chargées au total")
     return all_data
 
 def get_cards_metadata(set_code, fmt):
@@ -91,7 +96,16 @@ def get_cards_metadata(set_code, fmt):
 
 def get_trophy_decks(set_code, fmt):
     print(f"🏆 Chargement des trophy decks pour {set_code} ({fmt})...")
-    return fetch_data("trophy_decks", f"set_code=eq.{set_code}&format=eq.{fmt}&select=*")
+    decks = fetch_data("trophy_decks", f"set_code=eq.{set_code}&format=eq.{fmt}&select=*")
+
+    # Debug: vérifier le nombre de decks par archétype
+    from collections import Counter
+    arch_counts = Counter(d['archetype'] for d in decks)
+    print(f"   📊 Distribution des {len(decks)} decks par archétype:")
+    for arch, count in sorted(arch_counts.items(), key=lambda x: -x[1])[:10]:
+        print(f"      {arch}: {count} decks")
+
+    return decks
 
 def get_archetype_synergies(set_code, fmt):
     """Charge les scores de synergie significatifs"""
@@ -670,6 +684,15 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
 # ==============================================================================
 
 if __name__ == "__main__":
+    print("=" * 60)
+    print("🔧 CONFIGURATION DEBUG")
+    print("=" * 60)
+    print(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'MISSING'}...")
+    print(f"   SUPABASE_KEY: {'*' * 10 + SUPABASE_KEY[-10:] if SUPABASE_KEY else 'MISSING'}")
+    print(f"   TARGET_SET_CODES: {TARGET_SET_CODES}")
+    print(f"   TARGET_FORMATS: {TARGET_FORMATS}")
+    print("=" * 60)
+
     for set_code in TARGET_SET_CODES:
         print(f"🚀 Traitement du set {set_code}...")
 
