@@ -459,12 +459,12 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     <div className="flex items-center gap-2 mb-4">
                                         <Sparkles size={14} className="text-purple-400" />
                                         <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Archetype Flexibility</h4>
-                                        <Tooltip content={<div className="text-center max-w-[200px]"><div className="font-semibold">How many different cards work in this archetype?</div><div className="text-slate-400 mt-1">Low = must draft specific cards. High = many viable options, easier to pivot.</div></div>}>
+                                        <Tooltip content={<div className="text-center max-w-[220px]"><div className="font-semibold">{skeleton.openness_cards ?? '?'} different cards cover 80% of slots</div><div className="text-slate-400 mt-1">More cards = more flexibility. Fewer = must draft specific cards.</div></div>}>
                                             <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                         </Tooltip>
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        <div className="text-4xl font-black text-white">{skeleton.openness_score ?? '--'}</div>
+                                        <div className="text-4xl font-black text-white">{skeleton.openness_cards ?? '--'}</div>
                                         <div className="flex-1">
                                             <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden">
                                                 <div
@@ -477,9 +477,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 <span className="text-[8px] text-slate-600">Flexible</span>
                                             </div>
                                             <p className="text-[9px] text-slate-500 mt-1">
-                                                {(skeleton.openness_score ?? 0) >= 70 ? 'Many paths to victory, easy to pivot into' :
-                                                    (skeleton.openness_score ?? 0) >= 40 ? 'Some flex slots, moderate adaptability' :
-                                                        'Requires specific cards, harder to draft'}
+                                                {(skeleton.openness_cards ?? 0) >= 55 ? 'Many viable cards, easy to pivot' :
+                                                    (skeleton.openness_cards ?? 0) >= 40 ? 'Moderate flexibility' :
+                                                        'Requires specific cards'}
                                             </p>
                                         </div>
                                     </div>

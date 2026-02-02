@@ -742,6 +742,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         "trending_cards": trending_cards,
         "declining_cards": declining_cards,
         "openness_score": openness_score,
+        "openness_cards": cards_for_80pct,
         "importance_cards": importance_cards
     }
 

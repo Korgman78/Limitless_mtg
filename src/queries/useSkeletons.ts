@@ -50,6 +50,7 @@ export interface ArchetypalSkeleton {
     trending_cards?: TrendingCard[]
     declining_cards?: TrendingCard[]
     openness_score?: number
+    openness_cards?: number
     importance_cards?: ImportanceCard[]
     is_alternative?: boolean
 }
