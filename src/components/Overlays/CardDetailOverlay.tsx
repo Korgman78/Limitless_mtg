@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle } from 'lucide-react';
+import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle, TrendingUp } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
@@ -25,7 +25,11 @@ interface CardEvaluationBlockProps {
   setShowAllRarityPeers: (show: boolean) => void;
   displayWR?: number | null;  // WR à afficher (prioritaire sur card.gih_wr)
   displayALSA?: number | null;  // ALSA à afficher (prioritaire sur card.alsa)
+  wrHistory?: number[] | null;  // Historique WR pour comparaison
+  alsaHistory?: number[] | null;  // Historique ALSA pour comparaison
 }
+
+type CompareMode = 'none' | 'start' | 'week';
 
 // Memoized CardEvaluationBlock pour éviter les re-renders inutiles
 
@@ -47,10 +51,42 @@ const getManaColor = (colors: string | string[] | null | undefined): string => {
   }
 };
 
-const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCards, globalMeanWR, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA }) => {
+const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCards, globalMeanWR, onCardSelect, showPeers, setShowPeers, showAllRarityPeers, setShowAllRarityPeers, displayWR, displayALSA, wrHistory, alsaHistory }) => {
   // Utiliser les valeurs display si fournies, sinon fallback sur card
   const effectiveWR = displayWR ?? card.gih_wr;
   const effectiveALSA = displayALSA ?? card.alsa;
+
+  // Compare mode state
+  const [compareMode, setCompareMode] = useState<CompareMode>('none');
+
+  // Calculate historical values based on compare mode
+  const historicalData = useMemo(() => {
+    if (compareMode === 'none' || !wrHistory || wrHistory.length < 2) {
+      return null;
+    }
+
+    const wrLen = wrHistory.length;
+    const alsaLen = alsaHistory?.length ?? 0;
+
+    if (compareMode === 'start') {
+      return {
+        wr: wrHistory[0],
+        alsa: alsaHistory?.[0] ?? null,
+        label: 'Format Start'
+      };
+    } else {
+      // 'week' - 7 days ago or first available
+      // wrHistory[wrLen-1] = most recent, so 7 days ago = wrLen - 1 - 7 = wrLen - 8
+      const weekIdx = Math.max(0, wrLen - 8);
+      const alsaWeekIdx = Math.max(0, alsaLen - 8);
+      const daysAgo = wrLen - 1 - weekIdx;
+      return {
+        wr: wrHistory[weekIdx],
+        alsa: alsaHistory?.[alsaWeekIdx] ?? null,
+        label: daysAgo >= 7 ? '7 days ago' : `${daysAgo} days ago`
+      };
+    }
+  }, [compareMode, wrHistory, alsaHistory]);
 
   // Zoom & pan state for matrix
   const [scale, setScale] = useState(1);
@@ -384,6 +420,14 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
   // Position du point - utiliser yAvg directement si le WR est très proche de la moyenne (évite les décalages de précision)
   const yPos = Math.abs(effectiveWR - AVG_WR) < 0.1 ? yAvg : getYPosition(effectiveWR);
 
+  // Position du point historique (calculée ici pour garantir le même scope)
+  const histYPos = historicalData
+    ? (Math.abs(historicalData.wr - AVG_WR) < 0.1 ? yAvg : getYPosition(historicalData.wr))
+    : null;
+  const histXPos = historicalData
+    ? (hasAlsa ? ((Math.max(minALSA, Math.min(maxALSA, historicalData.alsa ?? alsa)) - minALSA) / (maxALSA - minALSA)) * 100 : 50)
+    : null;
+
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 mt-6">
       <div className="flex items-center gap-2 mb-4">
@@ -395,7 +439,7 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
           <div className="flex-1 space-y-2 text-center sm:text-left">
             <div className="text-xs text-slate-500 font-medium">Evaluation:</div>
             <div className={`text-lg font-black ${statusColor}`}>{statusText}</div>
-            <div className="text-[10px] text-slate-500 leading-relaxed">
+            <div className="text-[10px] text-slate-500 leading-relaxed hidden sm:block">
               {hasAlsa ? <>Comparing <strong>Pick Order (ALSA)</strong> vs <strong>Win Rate</strong>.<br />High WR + Late Pick = Underrated.</> : <>Based solely on <strong>Games In Hand Win Rate</strong>.</>}
             </div>
             {peersColor.length > 1 && (
@@ -427,6 +471,31 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                   <Users size={11} />
                   {showAllRarityPeers ? 'Hide' : 'Show'} all {rarityLabel.toLowerCase()}
                   <span className="text-[9px] opacity-60">({peersRarity.length - 1})</span>
+                </button>
+              </div>
+            )}
+            {/* Compare mode buttons */}
+            {wrHistory && wrHistory.length >= 2 && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <button
+                  onClick={() => setCompareMode(compareMode === 'start' ? 'none' : 'start')}
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${compareMode === 'start'
+                    ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/30'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                    }`}
+                >
+                  <TrendingUp size={11} />
+                  vs Start
+                </button>
+                <button
+                  onClick={() => setCompareMode(compareMode === 'week' ? 'none' : 'week')}
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 ${compareMode === 'week'
+                    ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/30'
+                    : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300'
+                    }`}
+                >
+                  <TrendingUp size={11} />
+                  vs Week
                 </button>
               </div>
             )}
@@ -580,6 +649,28 @@ const CardEvaluationBlock = React.memo<CardEvaluationBlockProps>(({ card, allCar
                       />
                     </Tooltip>
                   ))}
+
+                  {/* Historical point when compare mode active */}
+                  {historicalData && histYPos !== null && histXPos !== null && (
+                    <div className="absolute -translate-x-1/2 -translate-y-1/2 z-[6]" style={{ left: `${histXPos}%`, top: `${histYPos}%` }}>
+                      <Tooltip content={
+                        <div className="text-center whitespace-nowrap">
+                          <div className="text-[10px] font-bold text-amber-400 mb-1">{historicalData.label}</div>
+                          <div className="flex gap-3 text-[9px]">
+                            <span className="text-slate-400">WR: <span className="text-white">{historicalData.wr.toFixed(1)}%</span></span>
+                            {historicalData.alsa && <span className="text-slate-400">ALSA: <span className="text-white">{historicalData.alsa.toFixed(2)}</span></span>}
+                          </div>
+                        </div>
+                      }>
+                        <motion.div
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ type: 'spring', delay: 0.1 }}
+                          className="w-2 h-2 md:w-2.5 md:h-2.5 lg:w-3 lg:h-3 bg-amber-500/50 rounded-full border border-amber-500/70 shadow-[0_0_4px_rgba(251,191,36,0.3)] cursor-help"
+                        />
+                      </Tooltip>
+                    </div>
+                  )}
 
                   {/* Main card dot - always on top */}
                   <div className="absolute -translate-x-1/2 -translate-y-1/2 z-10" style={{ left: `${xPos}%`, top: `${yPos}%` }}>
@@ -791,7 +882,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
           {/* Scrollable Content Section */}
           <div className="flex-1 overflow-y-auto p-5 pb-32 space-y-6 bg-slate-950">
-            <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} />
+            <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} wrHistory={globalStats.win_rate_history} alsaHistory={globalStats.alsa_history} />
 
             <div>
               <div className="flex justify-between items-center mb-3">

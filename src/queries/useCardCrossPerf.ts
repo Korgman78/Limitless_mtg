@@ -9,6 +9,7 @@ interface CardCrossPerfResult {
     gih_wr: number | null
     alsa: number | null
     win_rate_history: number[] | null
+    alsa_history: number[] | null
   }
   crossPerf: CrossPerformance[]
 }
@@ -23,7 +24,7 @@ export function useCardCrossPerf(
     queryKey: queryKeys.cardCrossPerf(activeSet, activeFormat, cardName),
     queryFn: async (): Promise<CardCrossPerfResult> => {
       const emptyResult = {
-        globalStats: { gih_wr: null, alsa: null, win_rate_history: null },
+        globalStats: { gih_wr: null, alsa: null, win_rate_history: null, alsa_history: null },
         crossPerf: []
       }
 
@@ -31,7 +32,7 @@ export function useCardCrossPerf(
         // Fetch global stats for display
         const { data: globalStat, error: globalError } = await supabase
           .from('card_stats')
-          .select('gih_wr, alsa, win_rate_history')
+          .select('gih_wr, alsa, win_rate_history, alsa_history')
           .eq('set_code', activeSet)
           .eq('card_name', cardName)
           .eq('filter_context', 'Global')
@@ -46,6 +47,7 @@ export function useCardCrossPerf(
           gih_wr: globalStat?.gih_wr || null,
           alsa: globalStat?.alsa || null,
           win_rate_history: globalStat?.win_rate_history || null,
+          alsa_history: globalStat?.alsa_history || null,
         }
 
         const avgCardWr = globalStat?.gih_wr || 55.0
