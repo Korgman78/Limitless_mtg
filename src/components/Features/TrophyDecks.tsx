@@ -41,9 +41,10 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
     const [selection, setSelection] = useState<ArchSelection>({ archetype: null, isAlternative: false });
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
-    const [showImportance, setShowImportance] = useState(false);
+    const [showImportance, setShowImportance] = useState(true);
     const [showMethodology, setShowMethodology] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [importanceSort, setImportanceSort] = useState<'importance' | 'freq' | 'synergy' | 'wr'>('importance');
 
     // Aliases pour compatibilité avec le code existant
     const selectedArch = selection.archetype;
@@ -570,8 +571,61 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 transition={{ duration: 0.3 }}
                                                 className="overflow-hidden"
                                             >
+                                                {/* Sort buttons */}
+                                                <div className="px-5 pb-3 flex items-center gap-2 flex-wrap">
+                                                    <span className="text-[9px] text-slate-600 uppercase tracking-wider">Sort by:</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); haptics.selection(); setImportanceSort('importance'); }}
+                                                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all ${
+                                                            importanceSort === 'importance'
+                                                                ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30'
+                                                                : 'text-slate-500 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        Overall
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); haptics.selection(); setImportanceSort('freq'); }}
+                                                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all ${
+                                                            importanceSort === 'freq'
+                                                                ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30'
+                                                                : 'text-slate-500 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        Frequency
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); haptics.selection(); setImportanceSort('synergy'); }}
+                                                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all ${
+                                                            importanceSort === 'synergy'
+                                                                ? 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30'
+                                                                : 'text-slate-500 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        Synergy
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); haptics.selection(); setImportanceSort('wr'); }}
+                                                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all ${
+                                                            importanceSort === 'wr'
+                                                                ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30'
+                                                                : 'text-slate-500 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        Win Rate
+                                                    </button>
+                                                </div>
                                                 <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                    {skeleton.importance_cards.map((card, idx) => (
+                                                    {[...skeleton.importance_cards]
+                                                        .sort((a, b) => {
+                                                            switch (importanceSort) {
+                                                                case 'freq': return (b.freq_score ?? 0) - (a.freq_score ?? 0);
+                                                                case 'synergy': return (b.synergy_score ?? 0) - (a.synergy_score ?? 0);
+                                                                case 'wr': return (b.wr_score ?? 0) - (a.wr_score ?? 0);
+                                                                default: return b.importance - a.importance;
+                                                            }
+                                                        })
+                                                        .map((card, idx) => (
                                                         <button
                                                             key={card.name}
                                                             onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
@@ -596,15 +650,15 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                                     </div>
                                                                     <span className="text-[10px] font-black text-indigo-400 w-8">{(card.importance * 100).toFixed(0)}%</span>
                                                                 </div>
-                                                                <div className="flex gap-2 mt-1">
-                                                                    <span className="text-[8px] text-slate-600">
-                                                                        <span className="text-blue-400">{card.freq_score ?? 0}</span> freq
+                                                                <div className="flex gap-3 mt-1">
+                                                                    <span className="text-[10px] text-slate-500">
+                                                                        <span className="text-blue-400 font-semibold">{card.freq_score ?? 0}</span> freq
                                                                     </span>
-                                                                    <span className="text-[8px] text-slate-600">
-                                                                        <span className="text-purple-400">{card.synergy_score ?? 0}</span> syn
+                                                                    <span className="text-[10px] text-slate-500">
+                                                                        <span className="text-purple-400 font-semibold">{card.synergy_score ?? 0}</span> syn
                                                                     </span>
-                                                                    <span className="text-[8px] text-slate-600">
-                                                                        <span className="text-emerald-400">{card.wr_score ?? 0}</span> wr
+                                                                    <span className="text-[10px] text-slate-500">
+                                                                        <span className="text-emerald-400 font-semibold">{card.wr_score ?? 0}</span> wr
                                                                     </span>
                                                                 </div>
                                                             </div>

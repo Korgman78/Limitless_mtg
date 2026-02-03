@@ -111,7 +111,32 @@ def get_archetype_synergies(set_code, fmt):
     """Charge les scores de synergie significatifs"""
     print("🔗 Chargement des scores de synergie...")
     # On ne prend que les synergies positives pour ne pas biaiser négativement
-    return fetch_data("synergy_scores", f"set_code=eq.{set_code}&format=eq.{fmt}&synergy_score=gt.0&select=card_a,card_b,synergy_score")
+    # Note: on utilise une requête directe car fetch_data utilise order=id et synergy_scores n'a pas d'id
+    all_data = []
+    offset = 0
+    page_size = 1000
+
+    while True:
+        url = f"{SUPABASE_URL}/rest/v1/synergy_scores?set_code=eq.{set_code}&format=eq.{fmt}&synergy_score=gt.0&select=card_a,card_b,synergy_score&order=card_a&limit={page_size}&offset={offset}"
+        resp = requests.get(url, headers=HEADERS_SUPABASE)
+
+        if resp.status_code != 200:
+            print(f"   ❌ Erreur synergy_scores: {resp.status_code} - {resp.text[:200]}")
+            break
+
+        data = resp.json()
+        if not data:
+            break
+
+        all_data.extend(data)
+
+        if len(data) < page_size:
+            break
+
+        offset += page_size
+
+    print(f"   ✅ synergy_scores: {len(all_data)} lignes chargées")
+    return all_data
 
 # ==============================================================================
 # 3. HELPERS POUR ANALYSE AVANCÉE
@@ -535,6 +560,51 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     # 6. NOUVELLES MÉTRIQUES
     # ==========================================================================
 
+    # Extraire les cartes non-terrain du squelette pour le calcul de synergie
+    skeleton_card_names = set()
+    for card in final_deck:
+        card_type = card.get('type') or ''
+        card_name = card.get('name', '')
+        # Exclure les terrains de base
+        if 'Land' not in card_type and card_name not in ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']:
+            skeleton_card_names.add(card_name)
+    print(f"      🎯 Squelette: {len(skeleton_card_names)} cartes non-terrain pour calcul synergie")
+
+    # Construire un index des synergies pour accès rapide
+    synergy_index = {}
+    for syn in synergy_data:
+        ca, cb, score = syn['card_a'], syn['card_b'], float(syn['synergy_score'])
+        # Indexer dans les deux sens
+        if ca not in synergy_index:
+            synergy_index[ca] = {}
+        synergy_index[ca][cb] = score
+        if cb not in synergy_index:
+            synergy_index[cb] = {}
+        synergy_index[cb][ca] = score
+
+    # DEBUG: Vérifier le matching
+    print(f"      🔗 Synergy index: {len(synergy_index)} cartes indexées")
+    skeleton_in_index = [c for c in skeleton_card_names if c in synergy_index]
+    print(f"      🔗 Cartes du squelette dans l'index: {len(skeleton_in_index)}/{len(skeleton_card_names)}")
+    if skeleton_card_names and synergy_index:
+        sample_skeleton = list(skeleton_card_names)[:3]
+        sample_index = list(synergy_index.keys())[:3]
+        print(f"      🔗 Exemples squelette: {sample_skeleton}")
+        print(f"      🔗 Exemples index: {sample_index}")
+
+    def calculate_skeleton_synergy(card_name, skeleton_cards, synergy_idx):
+        """Calcule la synergie moyenne d'une carte avec les cartes du squelette"""
+        if card_name not in synergy_idx:
+            return 0.0
+
+        scores = []
+        card_synergies = synergy_idx[card_name]
+        for skeleton_card in skeleton_cards:
+            if skeleton_card != card_name and skeleton_card in card_synergies:
+                scores.append(card_synergies[skeleton_card])
+
+        return statistics.mean(scores) if scores else 0.0
+
     # --- 6.1 SLEEPER CARDS ---
     # Cartes avec ALSA élevé (draftées tard) mais fréquence élevée dans les trophies
     # = Cartes sous-estimées par les joueurs mais qui gagnent
@@ -695,9 +765,9 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         # Fréquence normalisée (0-1)
         freq_score = weighted_count / max_freq_weighted
 
-        # Lift moyen (synergie avec les autres cartes de l'archétype) (0-1)
-        raw_synergy = avg_synergy.get(name, 0)
-        lift_score = min(raw_synergy / 5, 1.0)  # Normalisé sur 5
+        # Synergie moyenne avec les cartes du squelette (0-1)
+        raw_synergy = calculate_skeleton_synergy(name, skeleton_card_names, synergy_index)
+        lift_score = min(raw_synergy / 5, 1.0)  # Normalisé sur 5 (synergy_score va de 0 à ~10)
         if raw_synergy > 0:
             cards_with_synergy += 1
 
