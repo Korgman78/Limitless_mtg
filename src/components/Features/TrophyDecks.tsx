@@ -554,7 +554,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                         <div className="flex items-center gap-2">
                                             <Star size={14} className="text-yellow-400" />
                                             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card Importance Ranking</h4>
-                                            <Tooltip content={<div className="text-center"><div>40% frequency + 30% synergy + 30% WR.</div><div className="text-slate-400 mt-1">WR: normalized (0 to 100) based on deviation (±10%) from format avg.</div></div>}>
+                                            <Tooltip content={<div className="text-center"><div>Score = Frequency + Synergy + WR</div><div className="text-slate-400 mt-1">Synergy: avg with skeleton cards. WR: normalized (0-100) based on ±10% from format avg.</div></div>}>
                                                 <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                             </Tooltip>
                                             <span className="text-[9px] text-slate-600 ml-2">Top 15 cards</span>
@@ -616,16 +616,17 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                     </button>
                                                 </div>
                                                 <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                    {[...skeleton.importance_cards]
-                                                        .sort((a, b) => {
+                                                    {(() => {
+                                                        const sorted = [...skeleton.importance_cards].sort((a, b) => {
                                                             switch (importanceSort) {
                                                                 case 'freq': return (b.freq_score ?? 0) - (a.freq_score ?? 0);
                                                                 case 'synergy': return (b.synergy_score ?? 0) - (a.synergy_score ?? 0);
                                                                 case 'wr': return (b.wr_score ?? 0) - (a.wr_score ?? 0);
                                                                 default: return b.importance - a.importance;
                                                             }
-                                                        })
-                                                        .map((card, idx) => (
+                                                        });
+                                                        const maxImportance = sorted[0]?.importance ?? 1;
+                                                        return sorted.map((card, idx) => (
                                                         <button
                                                             key={card.name}
                                                             onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
@@ -645,10 +646,10 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                                     <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                                                                         <div
                                                                             className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
-                                                                            style={{ width: `${card.importance * 100}%` }}
+                                                                            style={{ width: `${(card.importance / maxImportance) * 100}%` }}
                                                                         />
                                                                     </div>
-                                                                    <span className="text-[10px] font-black text-indigo-400 w-8">{(card.importance * 100).toFixed(0)}%</span>
+                                                                    <span className="text-[10px] font-black text-indigo-400 w-10">{Math.round(card.importance)}</span>
                                                                 </div>
                                                                 <div className="flex gap-3 mt-1">
                                                                     <span className="text-[10px] text-slate-500">
@@ -663,7 +664,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                                 </div>
                                                             </div>
                                                         </button>
-                                                    ))}
+                                                    ));
+                                                    })()}
                                                 </div>
                                             </motion.div>
                                         )}

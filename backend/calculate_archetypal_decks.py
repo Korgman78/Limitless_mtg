@@ -765,29 +765,30 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         # Fréquence normalisée (0-1)
         freq_score = weighted_count / max_freq_weighted
 
-        # Synergie moyenne avec les cartes du squelette (0-1)
+        # Synergie moyenne avec les cartes du squelette
         raw_synergy = calculate_skeleton_synergy(name, skeleton_card_names, synergy_index)
-        lift_score = min(raw_synergy / 5, 1.0)  # Normalisé sur 5 (synergy_score va de 0 à ~10)
+        synergy_score = raw_synergy / 5 * 100  # 5 de synergie = 100 points
         if raw_synergy > 0:
             cards_with_synergy += 1
 
-        # Delta WR (GIH WR - format average, approximé par 55%) (0-1)
+        # Delta WR (GIH WR - format average) normalisé 0-100
         gih_wr = meta.get('gih_wr')
-        delta_wr_score = 0
+        wr_score = 0
         if gih_wr is not None and gih_wr > 0:
             cards_with_gihwr += 1
             delta_wr = gih_wr - format_avg_wr  # Delta par rapport à la moyenne dynamique
-            delta_wr_score = max(0, min(1, (delta_wr + 10) / 20))  # Normalisé [-10, +10] -> [0, 1]
+            wr_score = max(0, min(100, (delta_wr + 10) / 20 * 100))  # Normalisé [-10, +10] -> [0, 100]
 
-        importance = (freq_score * 0.4) + (lift_score * 0.3) + (delta_wr_score * 0.3)
+        # Score total = somme des 3 composantes
+        importance = freq_score * 100 + synergy_score + wr_score
 
         importance_cards.append({
             "name": name,
-            "importance": round(importance, 3),
-            # Composantes individuelles (en %)
+            "importance": round(importance, 1),
+            # Composantes individuelles
             "freq_score": round(freq_score * 100, 0),
-            "synergy_score": round(lift_score * 100, 0),
-            "wr_score": round(delta_wr_score * 100, 0),
+            "synergy_score": round(synergy_score, 0),
+            "wr_score": round(wr_score, 0),
             # Données brutes
             "frequency": round(freq_score * 100, 1),
             "gih_wr": round(gih_wr, 1) if gih_wr else None
