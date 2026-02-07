@@ -8,6 +8,7 @@ export type SkeletonCard = {
     type: string;
     cost: string;
     rarity: string;
+    is_core?: boolean;
 };
 
 interface CmcStackProps {
@@ -72,6 +73,7 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect }) 
                                     {card.count}
                                 </div>
                             )}
+
                         </button>
                     </motion.div>
                 ))}

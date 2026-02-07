@@ -19,6 +19,8 @@ export interface TrendingCard {
 export interface ImportanceCard {
     name: string
     importance: number
+    is_core?: boolean
+    core_rank?: number | null
     // Composantes individuelles (0-100)
     freq_score: number
     synergy_score: number
@@ -26,6 +28,12 @@ export interface ImportanceCard {
     // Données brutes
     frequency: number
     gih_wr: number | null
+}
+
+export interface CoreCard {
+    name: string
+    rank: number
+    frequency: number
 }
 
 export interface ArchetypalSkeleton {
@@ -42,6 +50,7 @@ export interface ArchetypalSkeleton {
         type: string
         cost: string
         rarity: string
+        is_core?: boolean
     }>
     updated_at: string
     sample_size?: number
@@ -52,6 +61,7 @@ export interface ArchetypalSkeleton {
     openness_score?: number
     openness_cards?: number
     importance_cards?: ImportanceCard[]
+    core_cards?: CoreCard[]
     is_alternative?: boolean
 }
 

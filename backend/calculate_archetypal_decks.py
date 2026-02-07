@@ -393,7 +393,28 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
     
     # 3. Calcul de la Synergie "Cluster"
     # On identifie les 15 cartes les plus fréquentes selon les poids
-    pillars = [name for name, _ in card_weights_accum.most_common(15)]
+    weighted_spell_counts = []
+    for name, weighted_count in card_weights_accum.items():
+        meta = card_meta.get(name)
+        if not meta:
+            continue
+        c_type = meta.get('card_type') or meta.get('type_line') or ''
+        if 'Land' in c_type:
+            continue
+        weighted_spell_counts.append((name, weighted_count))
+
+    weighted_spell_counts.sort(key=lambda x: x[1], reverse=True)
+    pillars = [name for name, _ in weighted_spell_counts[:15]]
+    core_set = set(pillars)
+    core_rank_map = {name: idx + 1 for idx, name in enumerate(pillars)}
+    core_cards = [
+        {
+            "name": name,
+            "rank": idx + 1,
+            "frequency": round((weighted_count / max_freq_weighted) * 100, 1) if max_freq_weighted else 0
+        }
+        for idx, (name, weighted_count) in enumerate(weighted_spell_counts[:15])
+    ]
     
     synergy_map = {}
     for syn in synergy_data:
@@ -439,7 +460,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                 "cmc": 0,
                 "type": meta.get('card_type'),
                 "cost": "",
-                "rarity": meta.get('rarity')
+                "rarity": meta.get('rarity'),
+                "is_core": name in core_set
             })
             lands_added += 1
 
@@ -491,7 +513,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                         "cmc": cmc,
                         "type": c_type,
                         "cost": meta.get('card_cost'),
-                        "rarity": meta.get('rarity')
+                        "rarity": meta.get('rarity'),
+                        "is_core": name in core_set
                     })
                     current_curve[cmc] += 1
                     spells_added += 1
@@ -543,7 +566,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
                 "cmc": 0,
                 "type": "Basic Land",
                 "cost": "",
-                "rarity": "common"
+                "rarity": "common",
+                "is_core": False
             })
             lands_added += 1
 
@@ -776,6 +800,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         importance_cards.append({
             "name": name,
             "importance": round(importance, 1),
+            "is_core": name in core_set,
+            "core_rank": core_rank_map.get(name),
             # Composantes individuelles
             "freq_score": round(freq_score * 100, 0),
             "synergy_score": round(synergy_score, 0),
@@ -786,7 +812,7 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         })
 
     importance_cards.sort(key=lambda x: x['importance'], reverse=True)
-    importance_cards = importance_cards[:15]  # Top 15
+    importance_cards = importance_cards[:25]  # Top 25
     print(f"      ⭐ Importance: {len(importance_cards)} cartes, {cards_with_synergy} avec synergie, {cards_with_gihwr} avec GIH WR")
 
     return {
@@ -805,7 +831,8 @@ def build_archetype_skeleton(archetype, decks, card_meta, synergy_data, set_code
         "declining_cards": declining_cards,
         "openness_score": openness_score,
         "openness_cards": cards_for_80pct,
-        "importance_cards": importance_cards
+        "importance_cards": importance_cards,
+        "core_cards": core_cards
     }
 
 # ==============================================================================

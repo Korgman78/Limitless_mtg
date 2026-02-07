@@ -820,7 +820,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             {/* 5. TROPHY DECKS TAB */}
             {activeTab === 'trophies' && (
               <motion.div key="trophies-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                <TrophyDecks activeSet={activeSet} activeFormat={activeFormat} onCardSelect={handleCardSelect} />
+                <TrophyDecks activeSet={activeSet} activeFormat={activeFormat} onCardSelect={handleCardSelect} onFormatChange={setActiveFormat} />
               </motion.div>
             )}
           </AnimatePresence>

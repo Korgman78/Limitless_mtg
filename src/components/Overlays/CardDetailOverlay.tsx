@@ -758,7 +758,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
   // React Query for cross-performance data
   const { data, error, isLoading: crossPerfLoading } = useCardCrossPerf(card.name, activeFormat, activeSet, decks);
-  const globalStats = data?.globalStats || { gih_wr: null, alsa: null, win_rate_history: null };
+  const globalStats = data?.globalStats || { gih_wr: null, alsa: null, win_rate_history: null, alsa_history: null };
   const crossPerf = data?.crossPerf || [];
 
   // React Query for synergy data

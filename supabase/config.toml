@@ -1,0 +1,2 @@
+[functions.deck-analysis]
+verify_jwt = false
