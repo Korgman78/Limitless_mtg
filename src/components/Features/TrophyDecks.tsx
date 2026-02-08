@@ -202,9 +202,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                         activeSet={activeSet}
                         activeFormat={activeFormat}
                         onFormatChange={onFormatChange}
-                        onMatchedArchetype={(archetypeName, _format) => {
+                        onMatchedArchetype={(archetypeName, _format, isAlternative) => {
                             setFilter('all');
-                            setIsAlt(false);
+                            setIsAlt(isAlternative);
                             setSelectedArch(archetypeName);
                         }}
                         className="inline-flex items-center gap-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-widest transition-all"

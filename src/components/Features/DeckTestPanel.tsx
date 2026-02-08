@@ -97,6 +97,7 @@ type DeckAnalysisResult = {
   cacheVersion?: number;
   format: string;
   matchedArchetype: string;
+  matchedIsAlternative?: boolean;
   creatureCount: number;
   skeletonCreatureCount: number;
   creatureRatio: number;
@@ -123,7 +124,7 @@ interface DeckTestPanelProps {
   activeSet: string;
   activeFormat: string;
   onFormatChange?: (format: string) => void;
-  onMatchedArchetype: (archetypeName: string, format: string) => void;
+  onMatchedArchetype: (archetypeName: string, format: string, isAlternative: boolean) => void;
   className?: string;
 }
 
@@ -131,9 +132,10 @@ const BASIC_LAND_NAMES = new Set(['Plains', 'Island', 'Swamp', 'Mountain', 'Fore
 const SEALED_FORMATS = new Set(['Sealed', 'ArenaDirect_Sealed']);
 const ENABLE_SEALED_RECOMMENDATIONS = false;
 const MAX_CMC_BUCKET = 7;
-const DECK_ANALYSIS_CACHE_VERSION = 4;
+const DECK_ANALYSIS_CACHE_VERSION = 5;
 const STRONG_ADD_SYNERGY_MIN = 2.3;
 const STRONG_ADD_MIN_LINKS = 3;
+const VARIANT_SWITCH_MARGIN = 0.04;
 const COLOR_ORDER = ['W', 'U', 'B', 'R', 'G'] as const;
 
 type ManaColor = (typeof COLOR_ORDER)[number];
@@ -446,6 +448,82 @@ const detectArchetypeFromColors = (
   return [...analysisPool].sort(compareSkeletonQuality)[0] || null;
 };
 
+const buildUserNonLandQtyMap = (
+  mainCards: ParsedDeckCard[],
+  metaByName: Record<string, DeckCardMeta>
+): Record<string, number> => {
+  const qtyMap: Record<string, number> = {};
+  for (const card of mainCards) {
+    if (isLandCard(card.name, metaByName)) continue;
+    qtyMap[card.name] = (qtyMap[card.name] || 0) + card.qty;
+  }
+  return qtyMap;
+};
+
+const buildSkeletonNonLandQtyMap = (skeleton: SkeletonWithCore): Record<string, number> => {
+  const qtyMap: Record<string, number> = {};
+  for (const card of skeleton.deck_list || []) {
+    if ((card.type || '').includes('Land')) continue;
+    qtyMap[card.name] = (qtyMap[card.name] || 0) + 1;
+  }
+  return qtyMap;
+};
+
+const weightedJaccard = (left: Record<string, number>, right: Record<string, number>): number => {
+  const names = new Set([...Object.keys(left), ...Object.keys(right)]);
+  if (names.size === 0) return 0;
+
+  let intersection = 0;
+  let union = 0;
+  for (const name of names) {
+    const l = left[name] || 0;
+    const r = right[name] || 0;
+    intersection += Math.min(l, r);
+    union += Math.max(l, r);
+  }
+  return union > 0 ? intersection / union : 0;
+};
+
+type VariantMatchResult = {
+  skeleton: SkeletonWithCore;
+  score: number;
+};
+
+const selectBestSkeletonVariant = (
+  archetypeName: string,
+  allSkeletons: SkeletonWithCore[],
+  userNonLandQtyMap: Record<string, number>
+): VariantMatchResult | null => {
+  const candidates = allSkeletons.filter(
+    (s) => s.archetype_name === archetypeName && (s.deck_list?.length || 0) > 0
+  );
+  if (candidates.length === 0) return null;
+
+  const scored = candidates
+    .map((skeleton) => ({
+      skeleton,
+      score: weightedJaccard(userNonLandQtyMap, buildSkeletonNonLandQtyMap(skeleton)),
+    }))
+    .sort((a, b) => {
+      if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
+      const qualityDelta = compareSkeletonQuality(a.skeleton, b.skeleton);
+      if (qualityDelta !== 0) return qualityDelta;
+      const aAlt = Boolean(a.skeleton.is_alternative);
+      const bAlt = Boolean(b.skeleton.is_alternative);
+      if (aAlt !== bAlt) return aAlt ? 1 : -1;
+      return 0;
+    });
+
+  const bestOverall = scored[0];
+  const bestMain = scored.find((entry) => !entry.skeleton.is_alternative);
+  if (!bestMain) return bestOverall;
+
+  if (bestOverall.skeleton.is_alternative && bestOverall.score < bestMain.score + VARIANT_SWITCH_MARGIN) {
+    return bestMain;
+  }
+  return bestOverall;
+};
+
 export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
   activeSet,
   activeFormat,
@@ -496,9 +574,12 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
     }
   }, [storageKey, deckAnalysis]);
 
-  const fetchDeckMeta = async (cardNames: string[]): Promise<Record<string, DeckCardMeta>> => {
+  const fetchDeckMeta = async (
+    cardNames: string[]
+  ): Promise<{ metaByName: Record<string, DeckCardMeta>; canonicalByName: Record<string, string> }> => {
     const metaByName: Record<string, DeckCardMeta> = {};
-    if (!activeSet || cardNames.length === 0) return metaByName;
+    const canonicalByName: Record<string, string> = {};
+    if (!activeSet || cardNames.length === 0) return { metaByName, canonicalByName };
 
     const withCostQuery = await supabase
       .from('card_list')
@@ -516,7 +597,7 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
     const data = withCostQuery.error ? fallbackQuery?.data : withCostQuery.data;
     const error = withCostQuery.error ? fallbackQuery?.error : withCostQuery.error;
 
-    if (error || !data) return metaByName;
+    if (error || !data) return { metaByName, canonicalByName };
 
     for (const row of data as Array<{
       card_name: string;
@@ -533,14 +614,79 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
         colors: row.colors || null,
         cost: row.card_cost || null,
       };
+      canonicalByName[row.card_name] = row.card_name;
     }
 
-    return metaByName;
+    const hasCardCost = !withCostQuery.error;
+    const missingNames = [...new Set(cardNames)].filter((name) => !canonicalByName[name]);
+
+    if (missingNames.length > 0) {
+      const resolvedRows = await Promise.all(
+        missingNames.map(async (inputName) => {
+          const response = hasCardCost
+            ? await supabase
+                .from('card_list')
+                .select('card_name,card_cmc,card_type,rarity,colors,card_cost')
+                .eq('set_code', activeSet)
+                .ilike('card_name', `${inputName} //%`)
+                .limit(1)
+            : await supabase
+                .from('card_list')
+                .select('card_name,card_cmc,card_type,rarity,colors')
+                .eq('set_code', activeSet)
+                .ilike('card_name', `${inputName} //%`)
+                .limit(1);
+          const { data, error } = response;
+          if (error) return { inputName, row: null as null | {
+            card_name: string;
+            card_cmc: number | null;
+            card_type: string | null;
+            rarity: string | null;
+            colors: string | null;
+            card_cost?: string | null;
+          } };
+          return {
+            inputName,
+            row: (data?.[0] as {
+              card_name: string;
+              card_cmc: number | null;
+              card_type: string | null;
+              rarity: string | null;
+              colors: string | null;
+              card_cost?: string | null;
+            } | undefined) ?? null,
+          };
+        })
+      );
+
+      for (const item of resolvedRows) {
+        if (!item.row) continue;
+        metaByName[item.inputName] = {
+          cmc: Number(item.row.card_cmc ?? 0),
+          type: item.row.card_type || '',
+          rarity: item.row.rarity || null,
+          colors: item.row.colors || null,
+          cost: item.row.card_cost || null,
+        };
+        canonicalByName[item.inputName] = item.row.card_name;
+      }
+    }
+
+    for (const name of [...new Set(cardNames)]) {
+      canonicalByName[name] = canonicalByName[name] || name;
+    }
+
+    return { metaByName, canonicalByName };
   };
 
-  const fetchCardStats = async (cardNames: string[], format: string): Promise<Record<string, DeckCardStat>> => {
+  const fetchCardStats = async (
+    cardNames: string[],
+    format: string,
+    canonicalByName: Record<string, string> = {}
+  ): Promise<Record<string, DeckCardStat>> => {
     const statByName: Record<string, DeckCardStat> = {};
     if (!activeSet || cardNames.length === 0) return statByName;
+    const canonicalNames = [...new Set(cardNames.map((name) => canonicalByName[name] || name))];
 
     const { data, error } = await supabase
       .from('card_stats')
@@ -548,20 +694,25 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
       .eq('set_code', activeSet)
       .eq('format', format)
       .eq('filter_context', 'Global')
-      .in('card_name', cardNames);
+      .in('card_name', canonicalNames);
 
     if (error || !data) return statByName;
 
+    const byCanonical: Record<string, DeckCardStat> = {};
     for (const row of data as Array<{
       card_name: string;
       gih_wr: number | null;
       alsa: number | null;
     }>) {
-      statByName[row.card_name] = {
+      byCanonical[row.card_name] = {
         gih_wr: row.gih_wr,
         alsa: row.alsa,
         frequency: null,
       };
+    }
+    for (const inputName of cardNames) {
+      const canonical = canonicalByName[inputName] || inputName;
+      if (byCanonical[canonical]) statByName[inputName] = byCanonical[canonical];
     }
     return statByName;
   };
@@ -569,10 +720,12 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
   const fetchLocalCardWr = async (
     cardNames: string[],
     format: string,
-    filterContext: string
+    filterContext: string,
+    canonicalByName: Record<string, string> = {}
   ): Promise<Record<string, number | null>> => {
     const wrByName: Record<string, number | null> = {};
     if (!activeSet || cardNames.length === 0 || !filterContext) return wrByName;
+    const canonicalNames = [...new Set(cardNames.map((name) => canonicalByName[name] || name))];
 
     const { data, error } = await supabase
       .from('card_stats')
@@ -580,12 +733,17 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
       .eq('set_code', activeSet)
       .eq('format', format)
       .eq('filter_context', filterContext)
-      .in('card_name', cardNames);
+      .in('card_name', canonicalNames);
 
     if (error || !data) return wrByName;
 
+    const byCanonical: Record<string, number | null> = {};
     for (const row of data as Array<{ card_name: string; gih_wr: number | null }>) {
-      wrByName[row.card_name] = row.gih_wr;
+      byCanonical[row.card_name] = row.gih_wr;
+    }
+    for (const inputName of cardNames) {
+      const canonical = canonicalByName[inputName] || inputName;
+      if (canonical in byCanonical) wrByName[inputName] = byCanonical[canonical];
     }
 
     return wrByName;
@@ -678,7 +836,8 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
         return;
       }
 
-      const analysisPool = (analysisSkeletons as SkeletonWithCore[]).filter(
+      const allSkeletons = analysisSkeletons as SkeletonWithCore[];
+      const analysisPool = allSkeletons.filter(
         (s) => !s.is_alternative && (s.sample_size || 0) >= 20
       );
 
@@ -688,10 +847,8 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
       }
 
       const uniqueNames = [...new Set([...parsedDeck.mainCards, ...parsedDeck.sideboardCards].map((c) => c.name))];
-      const [metaByName, statByName] = await Promise.all([
-        fetchDeckMeta(uniqueNames),
-        fetchCardStats(uniqueNames, analysisFormat),
-      ]);
+      const { metaByName, canonicalByName } = await fetchDeckMeta(uniqueNames);
+      const statByName = await fetchCardStats(uniqueNames, analysisFormat, canonicalByName);
 
       const qtyByName = Object.fromEntries(parsedDeck.mainCards.map((c) => [c.name, c.qty]));
       const mainNonLandNames = parsedDeck.mainCards
@@ -706,9 +863,13 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
         return;
       }
 
+      const userNonLandQtyMap = buildUserNonLandQtyMap(parsedDeck.mainCards, metaByName);
+      const variantMatch = selectBestSkeletonVariant(bestMatch.archetype_name, allSkeletons, userNonLandQtyMap);
+      const matchedSkeleton = variantMatch?.skeleton ?? bestMatch;
+
       const [localWrByName, avgWr] = await Promise.all([
-        fetchLocalCardWr(uniqueNames, analysisFormat, bestMatch.archetype_name),
-        fetchArchetypeAndGlobalAvgWr(analysisFormat, bestMatch.archetype_name),
+        fetchLocalCardWr(uniqueNames, analysisFormat, matchedSkeleton.archetype_name, canonicalByName),
+        fetchArchetypeAndGlobalAvgWr(analysisFormat, matchedSkeleton.archetype_name),
       ]);
 
       const userCurve: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
@@ -725,24 +886,24 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
 
       const nonLandTotal = creatures + spells;
       const creatureRatio = nonLandTotal > 0 ? (creatures / nonLandTotal) * 100 : 0;
-      const expectedCreatureRatio = (bestMatch.creature_ratio || 0) * 100;
-      const skeletonCreatureCount = bestMatch.deck_list.filter((card) => (card.type || '').includes('Creature')).length;
+      const expectedCreatureRatio = (matchedSkeleton.creature_ratio || 0) * 100;
+      const skeletonCreatureCount = matchedSkeleton.deck_list.filter((card) => (card.type || '').includes('Creature')).length;
 
-      const coreCards = (bestMatch.core_cards || []).map((card) => ({
+      const coreCards = (matchedSkeleton.core_cards || []).map((card) => ({
         name: card.name,
         rank: card.rank,
         present: qtyByName[card.name] != null,
       }));
 
       const importanceByName = Object.fromEntries(
-        (bestMatch.importance_cards || []).map((card) => [
+        (matchedSkeleton.importance_cards || []).map((card) => [
           card.name,
           { frequency: card.frequency, is_core: card.is_core },
         ])
       );
 
       const curveRows: CurveRow[] = Array.from({ length: MAX_CMC_BUCKET }, (_, idx) => idx + 1).map((cmc) => {
-        const expected = Number(bestMatch?.avg_mana_curve?.[String(cmc)] || 0);
+        const expected = Number(matchedSkeleton?.avg_mana_curve?.[String(cmc)] || 0);
         const actual = Number(userCurve[cmc] || 0);
         const delta = Number((actual - expected).toFixed(1));
         return { cmc, expected, actual, delta };
@@ -759,19 +920,25 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
         .filter((card) => !mainNonLandSet.has(card.name));
       const sideboardQtyByName = Object.fromEntries(sideboardCandidates.map((card) => [card.name, card.qty]));
       const sideboardCandidateUnique = [...new Set(sideboardCandidates.map((card) => card.name))];
+      const canonicalNameOf = (inputName: string): string => canonicalByName[inputName] || inputName;
 
-      const synergyLookupNames = [...new Set([...mainNonLandUnique, ...sideboardCandidateUnique])];
+      const synergyLookupNames = [
+        ...new Set([...mainNonLandUnique, ...sideboardCandidateUnique].map((name) => canonicalNameOf(name))),
+      ];
       const pairRows = await fetchSynergyRows(synergyLookupNames, analysisFormat);
       const pairMap = buildPairMap(pairRows);
       const coreSet = new Set(coreCards.map((card) => card.name));
       const top25Set = new Set(Object.keys(importanceByName));
-      const top15ImportanceSet = new Set((bestMatch.importance_cards || []).slice(0, 15).map((card) => card.name));
+      const top15ImportanceSet = new Set((matchedSkeleton.importance_cards || []).slice(0, 15).map((card) => card.name));
       const wrBaseline = avgWr.archetypeAvgWr ?? avgWr.globalAvgWr ?? 55;
 
       const lowSynergyCards = mainNonLandUnique
         .map((name) => {
-          const peers = mainNonLandUnique.filter((peer) => peer !== name);
-          const { avg, count } = getAverageSynergy(name, peers, pairMap);
+          const canonicalName = canonicalNameOf(name);
+          const peers = mainNonLandUnique
+            .filter((peer) => peer !== name)
+            .map((peer) => canonicalNameOf(peer));
+          const { avg, count } = getAverageSynergy(canonicalName, peers, pairMap);
           const localWr = localWrByName[name] ?? null;
           const globalWr = statByName[name]?.gih_wr ?? null;
           const wr = localWr ?? globalWr ?? null;
@@ -796,7 +963,9 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
 
       const potentialAdds = sideboardCandidateUnique
         .map((name) => {
-          const { avg, count } = getAverageSynergy(name, mainNonLandUnique, pairMap);
+          const canonicalName = canonicalNameOf(name);
+          const canonicalMain = mainNonLandUnique.map((cardName) => canonicalNameOf(cardName));
+          const { avg, count } = getAverageSynergy(canonicalName, canonicalMain, pairMap);
           const localWr = localWrByName[name] ?? null;
           const globalWr = statByName[name]?.gih_wr ?? null;
           const wr = localWr ?? globalWr ?? null;
@@ -830,7 +999,8 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
       const nextAnalysis: DeckAnalysisResult = {
         cacheVersion: DECK_ANALYSIS_CACHE_VERSION,
         format: analysisFormat,
-        matchedArchetype: bestMatch.archetype_name,
+        matchedArchetype: matchedSkeleton.archetype_name,
+        matchedIsAlternative: Boolean(matchedSkeleton.is_alternative),
         creatureCount: creatures,
         skeletonCreatureCount,
         creatureRatio,
@@ -1033,7 +1203,7 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
   const openMatchedArchetype = () => {
     if (!deckAnalysis) return;
     if (deckAnalysis.format !== activeFormat && onFormatChange) onFormatChange(deckAnalysis.format);
-    onMatchedArchetype(deckAnalysis.matchedArchetype, deckAnalysis.format);
+    onMatchedArchetype(deckAnalysis.matchedArchetype, deckAnalysis.format, Boolean(deckAnalysis.matchedIsAlternative));
     setShowAnalysisModal(false);
     haptics.success();
   };
@@ -1509,9 +1679,9 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
                         {deckAnalysis.lowSynergyCards.map((card) => (
                           <div
                             key={card.name}
-                            className="px-2.5 md:px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-2"
+                            className="px-2.5 md:px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start justify-between gap-2"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-start gap-2 min-w-0">
                               <button
                                 type="button"
                                 className="group relative shrink-0"
@@ -1597,29 +1767,30 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
                                 <p className="text-xs font-semibold text-slate-200 truncate">
                                   {card.qty > 1 ? `${card.qty}x ` : ''}{card.name}
                                 </p>
-                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                <div className="mt-1 flex flex-wrap gap-1">
                                   {card.hasStrongSynergy && (
-                                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-400/30 text-[9px] font-bold text-cyan-200">
-                                      Strong synergy
+                                    <span className="px-1 py-[1px] md:px-1.5 md:py-0.5 rounded bg-cyan-500/10 border border-cyan-400/30 text-[8px] md:text-[9px] font-bold text-cyan-200 whitespace-nowrap">
+                                      <span className="sm:hidden">Strong syn</span>
+                                      <span className="hidden sm:inline">Strong synergy</span>
                                     </span>
                                   )}
                                   {card.hasStrongWr && (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-400/30 text-[9px] font-bold text-emerald-200">
+                                    <span className="px-1 py-[1px] md:px-1.5 md:py-0.5 rounded bg-emerald-500/10 border border-emerald-400/30 text-[8px] md:text-[9px] font-bold text-emerald-200 whitespace-nowrap">
                                       WR +2
                                     </span>
                                   )}
                                   {card.isTop15Importance && (
-                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-400/30 text-[9px] font-bold text-amber-200">
+                                    <span className="px-1 py-[1px] md:px-1.5 md:py-0.5 rounded bg-amber-500/10 border border-amber-400/30 text-[8px] md:text-[9px] font-bold text-amber-200 whitespace-nowrap">
                                       Top 15
                                     </span>
                                   )}
                                 </div>
                               </div>
                             </div>
-                            <div className="flex flex-col items-end leading-tight">
+                            <div className="shrink-0 w-[58px] sm:w-[70px] flex flex-col items-end leading-tight text-right">
                               <span className="text-xs font-black text-indigo-300">{card.matchCount}/3</span>
-                              <span className="text-[10px] text-slate-500">Syn {card.avgSynergy.toFixed(2)}</span>
-                              <span className="text-[10px] text-slate-500">
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap">Syn {card.avgSynergy.toFixed(2)}</span>
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap">
                                 WR {card.wr?.toFixed(1) ?? '--'} {card.wrSource === 'global' ? '(global)' : ''}
                               </span>
                             </div>

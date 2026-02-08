@@ -10,7 +10,8 @@ const BASIC_LAND_NAMES = new Set(["Plains", "Island", "Swamp", "Mountain", "Fore
 const MAX_CMC_BUCKET = 7;
 const STRONG_ADD_SYNERGY_MIN = 2.3;
 const STRONG_ADD_MIN_LINKS = 3;
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
+const VARIANT_SWITCH_MARGIN = 0.04;
 const COLOR_ORDER = ["W", "U", "B", "R", "G"] as const;
 type ManaColor = (typeof COLOR_ORDER)[number];
 
@@ -73,6 +74,7 @@ type DeckAnalysisResult = {
   cacheVersion: number;
   format: string;
   matchedArchetype: string;
+  matchedIsAlternative: boolean;
   creatureCount: number;
   skeletonCreatureCount: number;
   creatureRatio: number;
@@ -107,6 +109,7 @@ type ImportanceCard = {
 };
 
 type SkeletonWithCore = {
+  id?: string;
   archetype_name: string;
   is_alternative?: boolean;
   sample_size?: number;
@@ -118,6 +121,15 @@ type SkeletonWithCore = {
 };
 
 type SynergyRow = { card_a: string; card_b: string; synergy_score: number | null };
+
+type CardListRow = {
+  card_name: string;
+  card_cmc: number | null;
+  card_type: string | null;
+  rarity: string | null;
+  colors: string | null;
+  card_cost?: string | null;
+};
 
 const json = (status: number, payload: unknown) =>
   new Response(JSON.stringify(payload), {
@@ -402,6 +414,82 @@ const detectArchetypeFromColors = (
   return [...analysisPool].sort(compareSkeletonQuality)[0] || null;
 };
 
+const buildUserNonLandQtyMap = (
+  mainCards: ParsedDeckCard[],
+  metaByName: Record<string, DeckCardMeta>,
+): Record<string, number> => {
+  const qtyMap: Record<string, number> = {};
+  for (const card of mainCards) {
+    if (isLandCard(card.name, metaByName)) continue;
+    qtyMap[card.name] = (qtyMap[card.name] || 0) + card.qty;
+  }
+  return qtyMap;
+};
+
+const buildSkeletonNonLandQtyMap = (skeleton: SkeletonWithCore): Record<string, number> => {
+  const qtyMap: Record<string, number> = {};
+  for (const card of skeleton.deck_list || []) {
+    if ((card.type || "").includes("Land")) continue;
+    qtyMap[card.name] = (qtyMap[card.name] || 0) + 1;
+  }
+  return qtyMap;
+};
+
+const weightedJaccard = (left: Record<string, number>, right: Record<string, number>): number => {
+  const names = new Set([...Object.keys(left), ...Object.keys(right)]);
+  if (names.size === 0) return 0;
+
+  let intersection = 0;
+  let union = 0;
+  for (const name of names) {
+    const l = left[name] || 0;
+    const r = right[name] || 0;
+    intersection += Math.min(l, r);
+    union += Math.max(l, r);
+  }
+  return union > 0 ? intersection / union : 0;
+};
+
+type VariantMatchResult = {
+  skeleton: SkeletonWithCore;
+  score: number;
+};
+
+const selectBestSkeletonVariant = (
+  archetypeName: string,
+  allSkeletons: SkeletonWithCore[],
+  userNonLandQtyMap: Record<string, number>,
+): VariantMatchResult | null => {
+  const candidates = allSkeletons.filter(
+    (s) => s.archetype_name === archetypeName && (s.deck_list?.length || 0) > 0,
+  );
+  if (candidates.length === 0) return null;
+
+  const scored = candidates
+    .map((skeleton) => ({
+      skeleton,
+      score: weightedJaccard(userNonLandQtyMap, buildSkeletonNonLandQtyMap(skeleton)),
+    }))
+    .sort((a, b) => {
+      if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
+      const qualityDelta = compareSkeletonQuality(a.skeleton, b.skeleton);
+      if (qualityDelta !== 0) return qualityDelta;
+      const aAlt = Boolean(a.skeleton.is_alternative);
+      const bAlt = Boolean(b.skeleton.is_alternative);
+      if (aAlt !== bAlt) return aAlt ? 1 : -1;
+      return 0;
+    });
+
+  const bestOverall = scored[0];
+  const bestMain = scored.find((entry) => !entry.skeleton.is_alternative);
+  if (!bestMain) return bestOverall;
+
+  if (bestOverall.skeleton.is_alternative && bestOverall.score < bestMain.score + VARIANT_SWITCH_MARGIN) {
+    return bestMain;
+  }
+  return bestOverall;
+};
+
 const sha256Hex = async (input: string): Promise<string> => {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("SHA-256", data);
@@ -419,29 +507,25 @@ const getSupabaseAdmin = () => {
   });
 };
 
-const buildAnalysis = async (
+const mapCardListRowToMeta = (row: CardListRow): DeckCardMeta => ({
+  cmc: Number(row.card_cmc ?? 0),
+  type: row.card_type || "",
+  rarity: row.rarity || null,
+  colors: row.colors || null,
+  cost: row.card_cost || null,
+});
+
+const resolveCardMetaWithSplitFallback = async (
   supabase: ReturnType<typeof createClient>,
   setCode: string,
-  format: string,
-  deckText: string,
-): Promise<DeckAnalysisResult> => {
-  const parsedDeck = parseMtgaDeck(deckText);
-  if (parsedDeck.mainCards.length === 0) {
-    throw new Error('No valid main deck cards found. Paste an MTGA decklist starting with "Deck".');
-  }
-
-  const { data: skeletonsData, error: skeletonsError } = await supabase
-    .from("archetypal_skeletons")
-    .select("archetype_name,is_alternative,sample_size,avg_mana_curve,creature_ratio,deck_list,core_cards,importance_cards")
-    .eq("set_code", setCode)
-    .eq("format", format);
-  if (skeletonsError) throw skeletonsError;
-  const analysisPool = ((skeletonsData || []) as SkeletonWithCore[]).filter(
-    (s) => !s.is_alternative && (s.sample_size || 0) >= 20,
-  );
-  if (analysisPool.length === 0) throw new Error(`No skeletons available for ${format}.`);
-
-  const uniqueNames = [...new Set([...parsedDeck.mainCards, ...parsedDeck.sideboardCards].map((c) => c.name))];
+  inputCardNames: string[],
+): Promise<{
+  metaByInputName: Record<string, DeckCardMeta>;
+  canonicalByInputName: Record<string, string>;
+}> => {
+  const uniqueNames = [...new Set(inputCardNames)];
+  const metaByInputName: Record<string, DeckCardMeta> = {};
+  const canonicalByInputName: Record<string, string> = {};
 
   const withCostQuery = await supabase
     .from("card_list")
@@ -455,27 +539,79 @@ const buildAnalysis = async (
         .eq("set_code", setCode)
         .in("card_name", uniqueNames)
     : null;
-  const metaRows = (withCostQuery.error ? fallbackQuery?.data : withCostQuery.data) || [];
-  const metaError = withCostQuery.error ? fallbackQuery?.error : withCostQuery.error;
-  if (metaError) throw metaError;
+  const exactRows = (withCostQuery.error ? fallbackQuery?.data : withCostQuery.data) || [];
+  const exactError = withCostQuery.error ? fallbackQuery?.error : withCostQuery.error;
+  if (exactError) throw exactError;
 
-  const metaByName: Record<string, DeckCardMeta> = {};
-  for (const row of metaRows as Array<{
-    card_name: string;
-    card_cmc: number | null;
-    card_type: string | null;
-    rarity: string | null;
-    colors: string | null;
-    card_cost?: string | null;
-  }>) {
-    metaByName[row.card_name] = {
-      cmc: Number(row.card_cmc ?? 0),
-      type: row.card_type || "",
-      rarity: row.rarity || null,
-      colors: row.colors || null,
-      cost: row.card_cost || null,
-    };
+  const hasCardCost = !withCostQuery.error;
+  const selectCols = hasCardCost
+    ? "card_name,card_cmc,card_type,rarity,colors,card_cost"
+    : "card_name,card_cmc,card_type,rarity,colors";
+
+  for (const row of exactRows as CardListRow[]) {
+    metaByInputName[row.card_name] = mapCardListRowToMeta(row);
+    canonicalByInputName[row.card_name] = row.card_name;
   }
+
+  const missingNames = uniqueNames.filter((name) => !canonicalByInputName[name]);
+  if (missingNames.length > 0) {
+    const resolvedRows = await Promise.all(
+      missingNames.map(async (inputName) => {
+        const { data, error } = await supabase
+          .from("card_list")
+          .select(selectCols)
+          .eq("set_code", setCode)
+          .ilike("card_name", `${inputName} //%`)
+          .limit(1);
+        if (error) throw error;
+        return { inputName, row: (data?.[0] as CardListRow | undefined) ?? null };
+      }),
+    );
+
+    for (const item of resolvedRows) {
+      if (!item.row) continue;
+      metaByInputName[item.inputName] = mapCardListRowToMeta(item.row);
+      canonicalByInputName[item.inputName] = item.row.card_name;
+    }
+  }
+
+  for (const inputName of uniqueNames) {
+    canonicalByInputName[inputName] = canonicalByInputName[inputName] || inputName;
+  }
+
+  return { metaByInputName, canonicalByInputName };
+};
+
+const buildAnalysis = async (
+  supabase: ReturnType<typeof createClient>,
+  setCode: string,
+  format: string,
+  deckText: string,
+): Promise<DeckAnalysisResult> => {
+  const parsedDeck = parseMtgaDeck(deckText);
+  if (parsedDeck.mainCards.length === 0) {
+    throw new Error('No valid main deck cards found. Paste an MTGA decklist starting with "Deck".');
+  }
+
+  const { data: skeletonsData, error: skeletonsError } = await supabase
+    .from("archetypal_skeletons")
+    .select("id,archetype_name,is_alternative,sample_size,avg_mana_curve,creature_ratio,deck_list,core_cards,importance_cards")
+    .eq("set_code", setCode)
+    .eq("format", format);
+  if (skeletonsError) throw skeletonsError;
+  const allSkeletons = (skeletonsData || []) as SkeletonWithCore[];
+  const analysisPool = allSkeletons.filter(
+    (s) => !s.is_alternative && (s.sample_size || 0) >= 20,
+  );
+  if (analysisPool.length === 0) throw new Error(`No skeletons available for ${format}.`);
+
+  const uniqueNames = [...new Set([...parsedDeck.mainCards, ...parsedDeck.sideboardCards].map((c) => c.name))];
+  const { metaByInputName: metaByName, canonicalByInputName } = await resolveCardMetaWithSplitFallback(
+    supabase,
+    setCode,
+    uniqueNames,
+  );
+  const canonicalNames = [...new Set(uniqueNames.map((name) => canonicalByInputName[name] || name))];
 
   const { data: globalStatsRows, error: globalStatsError } = await supabase
     .from("card_stats")
@@ -483,31 +619,47 @@ const buildAnalysis = async (
     .eq("set_code", setCode)
     .eq("format", format)
     .eq("filter_context", "Global")
-    .in("card_name", uniqueNames);
+    .in("card_name", canonicalNames);
   if (globalStatsError) throw globalStatsError;
-  const statByName: Record<string, DeckCardStat> = {};
+  const statByCanonical: Record<string, DeckCardStat> = {};
   for (const row of (globalStatsRows || []) as Array<{
     card_name: string;
     gih_wr: number | null;
     alsa: number | null;
   }>) {
-    statByName[row.card_name] = { gih_wr: row.gih_wr, alsa: row.alsa, frequency: null };
+    statByCanonical[row.card_name] = { gih_wr: row.gih_wr, alsa: row.alsa, frequency: null };
+  }
+  const statByName: Record<string, DeckCardStat> = {};
+  for (const inputName of uniqueNames) {
+    const canonicalName = canonicalByInputName[inputName] || inputName;
+    const stat = statByCanonical[canonicalName];
+    if (stat) statByName[inputName] = stat;
   }
 
   const bestMatch = detectArchetypeFromColors(parsedDeck.mainCards, analysisPool, metaByName);
   if (!bestMatch) throw new Error("Could not detect a matching archetype.");
+  const userNonLandQtyMap = buildUserNonLandQtyMap(parsedDeck.mainCards, metaByName);
+  const variantMatch = selectBestSkeletonVariant(bestMatch.archetype_name, allSkeletons, userNonLandQtyMap);
+  const matchedSkeleton = variantMatch?.skeleton ?? bestMatch;
 
   const { data: localWrRows, error: localWrError } = await supabase
     .from("card_stats")
     .select("card_name,gih_wr")
     .eq("set_code", setCode)
     .eq("format", format)
-    .eq("filter_context", bestMatch.archetype_name)
-    .in("card_name", uniqueNames);
+    .eq("filter_context", matchedSkeleton.archetype_name)
+    .in("card_name", canonicalNames);
   if (localWrError) throw localWrError;
-  const localWrByName: Record<string, number | null> = {};
+  const localWrByCanonical: Record<string, number | null> = {};
   for (const row of (localWrRows || []) as Array<{ card_name: string; gih_wr: number | null }>) {
-    localWrByName[row.card_name] = row.gih_wr;
+    localWrByCanonical[row.card_name] = row.gih_wr;
+  }
+  const localWrByName: Record<string, number | null> = {};
+  for (const inputName of uniqueNames) {
+    const canonicalName = canonicalByInputName[inputName] || inputName;
+    if (canonicalName in localWrByCanonical) {
+      localWrByName[inputName] = localWrByCanonical[canonicalName];
+    }
   }
 
   const { data: avgRows, error: avgError } = await supabase
@@ -515,14 +667,15 @@ const buildAnalysis = async (
     .select("archetype_name,win_rate")
     .eq("set_code", setCode)
     .eq("format", format)
-    .in("archetype_name", [bestMatch.archetype_name, "All Decks"]);
+    .in("archetype_name", [matchedSkeleton.archetype_name, "All Decks"]);
   if (avgError) throw avgError;
-  const archetypeAvgWr = (avgRows || []).find((r) => r.archetype_name === bestMatch.archetype_name)?.win_rate ?? null;
+  const archetypeAvgWr = (avgRows || []).find((r) => r.archetype_name === matchedSkeleton.archetype_name)?.win_rate ?? null;
   const globalAvgWr = (avgRows || []).find((r) => r.archetype_name === "All Decks")?.win_rate ?? null;
 
   const qtyByName = Object.fromEntries(parsedDeck.mainCards.map((c) => [c.name, c.qty]));
   const mainNonLandNames = parsedDeck.mainCards.map((c) => c.name).filter((name) => !isLandCard(name, metaByName));
   const mainNonLandUnique = [...new Set(mainNonLandNames)];
+  const canonicalNameOf = (inputName: string): string => canonicalByInputName[inputName] || inputName;
 
   const userCurve: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
   let creatures = 0;
@@ -537,21 +690,21 @@ const buildAnalysis = async (
 
   const nonLandTotal = creatures + spells;
   const creatureRatio = nonLandTotal > 0 ? (creatures / nonLandTotal) * 100 : 0;
-  const expectedCreatureRatio = (bestMatch.creature_ratio || 0) * 100;
-  const skeletonCreatureCount = (bestMatch.deck_list || []).filter((card) => (card.type || "").includes("Creature")).length;
+  const expectedCreatureRatio = (matchedSkeleton.creature_ratio || 0) * 100;
+  const skeletonCreatureCount = (matchedSkeleton.deck_list || []).filter((card) => (card.type || "").includes("Creature")).length;
 
-  const coreCards = (bestMatch.core_cards || []).map((card) => ({
+  const coreCards = (matchedSkeleton.core_cards || []).map((card) => ({
     name: card.name,
     rank: card.rank,
     present: qtyByName[card.name] != null,
   }));
 
   const importanceByName = Object.fromEntries(
-    (bestMatch.importance_cards || []).map((card) => [card.name, { frequency: card.frequency, is_core: card.is_core }]),
+    (matchedSkeleton.importance_cards || []).map((card) => [card.name, { frequency: card.frequency, is_core: card.is_core }]),
   );
 
   const curveRows: CurveRow[] = Array.from({ length: MAX_CMC_BUCKET }, (_, idx) => idx + 1).map((cmc) => {
-    const expected = Number(bestMatch?.avg_mana_curve?.[String(cmc)] || 0);
+    const expected = Number(matchedSkeleton?.avg_mana_curve?.[String(cmc)] || 0);
     const actual = Number(userCurve[cmc] || 0);
     const delta = Number((actual - expected).toFixed(1));
     return { cmc, expected, actual, delta };
@@ -567,7 +720,9 @@ const buildAnalysis = async (
   const sideboardQtyByName = Object.fromEntries(sideboardCandidates.map((card) => [card.name, card.qty]));
   const sideboardCandidateUnique = [...new Set(sideboardCandidates.map((card) => card.name))];
 
-  const synergyLookupNames = [...new Set([...mainNonLandUnique, ...sideboardCandidateUnique])];
+  const synergyLookupNames = [
+    ...new Set([...mainNonLandUnique, ...sideboardCandidateUnique].map((name) => canonicalNameOf(name))),
+  ];
   const { data: pairRowsRaw, error: pairError } = await supabase
     .from("synergy_scores")
     .select("card_a,card_b,synergy_score")
@@ -580,13 +735,16 @@ const buildAnalysis = async (
 
   const coreSet = new Set(coreCards.map((card) => card.name));
   const top25Set = new Set(Object.keys(importanceByName));
-  const top15ImportanceSet = new Set((bestMatch.importance_cards || []).slice(0, 15).map((card) => card.name));
+  const top15ImportanceSet = new Set((matchedSkeleton.importance_cards || []).slice(0, 15).map((card) => card.name));
   const wrBaseline = archetypeAvgWr ?? globalAvgWr ?? 55;
 
   const lowSynergyCards = mainNonLandUnique
     .map((name) => {
-      const peers = mainNonLandUnique.filter((peer) => peer !== name);
-      const { avg, count } = getAverageSynergy(name, peers, pairMap);
+      const canonicalName = canonicalNameOf(name);
+      const peers = mainNonLandUnique
+        .filter((peer) => peer !== name)
+        .map((peer) => canonicalNameOf(peer));
+      const { avg, count } = getAverageSynergy(canonicalName, peers, pairMap);
       const localWr = localWrByName[name] ?? null;
       const globalWr = statByName[name]?.gih_wr ?? null;
       const wr = localWr ?? globalWr ?? null;
@@ -611,7 +769,9 @@ const buildAnalysis = async (
 
   const potentialAdds = sideboardCandidateUnique
     .map((name) => {
-      const { avg, count } = getAverageSynergy(name, mainNonLandUnique, pairMap);
+      const canonicalName = canonicalNameOf(name);
+      const canonicalMain = mainNonLandUnique.map((cardName) => canonicalNameOf(cardName));
+      const { avg, count } = getAverageSynergy(canonicalName, canonicalMain, pairMap);
       const localWr = localWrByName[name] ?? null;
       const globalWr = statByName[name]?.gih_wr ?? null;
       const wr = localWr ?? globalWr ?? null;
@@ -640,7 +800,8 @@ const buildAnalysis = async (
   return {
     cacheVersion: CACHE_VERSION,
     format,
-    matchedArchetype: bestMatch.archetype_name,
+    matchedArchetype: matchedSkeleton.archetype_name,
+    matchedIsAlternative: Boolean(matchedSkeleton.is_alternative),
     creatureCount: creatures,
     skeletonCreatureCount,
     creatureRatio,
@@ -687,7 +848,7 @@ Deno.serve(async (req) => {
 
     const normalizedDeck = deckText.replace(/\r\n/g, "\n").trim();
     const deckHash = await sha256Hex(normalizedDeck);
-    const cacheKey = await sha256Hex(`${setCode}|${format}|${deckHash}|v${algoVersion}`);
+    const cacheKey = await sha256Hex(`${setCode}|${format}|${deckHash}|v${algoVersion}|schema${CACHE_VERSION}`);
 
     if (!forceRefresh) {
       const { data: cacheRow } = await supabase
