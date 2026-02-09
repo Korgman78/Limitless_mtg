@@ -23,7 +23,16 @@
       "Bash(npm run dev:*)",
       "Bash(ls:*)",
       "Bash(dir \"C:\\\\Users\\\\rapha\\\\mtg-front-new\\\\arena-overlay\\\\*.png\")",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(python debug_trophy_counts.py:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(gh run list:*)",
+      "Bash(python -c \"\nimport os\nfrom dotenv import load_dotenv\nimport requests\n\nload_dotenv\\(\\)\nurl = os.getenv\\(''VITE_SUPABASE_URL''\\)\nkey = os.getenv\\(''VITE_SUPABASE_KEY''\\)\n\n# Test 1: Compter les decks WU\nheaders = {''apikey'': key, ''Authorization'': f''Bearer {key}''}\nr = requests.get\\(f''{url}/rest/v1/trophy_decks?set_code=eq.ECL&format=eq.PremierDraft&archetype=eq.WU&select=id'', headers={**headers, ''Prefer'': ''count=exact''}\\)\nprint\\(f''WU decks count header: {r.headers.get\\(\"\"content-range\"\", \"\"N/A\"\"\\)}''\\)\nprint\\(f''WU decks in response: {len\\(r.json\\(\\)\\)}''\\)\n\n# Test 2: Vérifier le type de clé\nprint\\(f''Key type: {\"\"service_role\"\" if \"\"service_role\"\" in key else \"\"anon\"\" if \"\"anon\"\" in key else \"\"unknown\"\"}''[:50]\\)\nprint\\(f''Key suffix: ...{key[-15:]}''\\)\n\")",
+      "Bash(git revert:*)",
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "WebSearch",
+      "Bash(npx vite build:*)"
     ]
   }
 }

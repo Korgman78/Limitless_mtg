@@ -8,7 +8,7 @@ import { haptics } from '../../utils/haptics';
 import { getCardImage } from '../../utils/helpers';
 import { CmcStack } from './CmcStack';
 import { InsightCardList } from './InsightCardList';
-import { DeckTestPanel } from './DeckTestPanel';
+import { DeckTestPanel } from './DeckTestPanel/index';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
 
