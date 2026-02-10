@@ -15,9 +15,10 @@ interface CmcStackProps {
     cmc: number;
     cards: SkeletonCard[];
     onCardSelect: (card: SkeletonCard) => void;
+    stackOverlap?: string;
 }
 
-export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect }) => {
+export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, stackOverlap = '-135%' }) => {
     const grouped = useMemo(() => {
         return cards.reduce((acc: (SkeletonCard & { count: number })[], card) => {
             const existing = acc.find(x => x.name === card.name);
@@ -35,7 +36,7 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect }) 
     );
 
     return (
-        <div className="flex flex-col w-[46%] md:flex-1 md:min-w-0 group/stack transition-all hover:z-[100] px-1 md:px-2">
+        <div className="flex flex-col w-[46%] md:flex-1 md:min-w-0 group/stack transition-all hover:z-[100] px-0.5 md:px-1">
             <div className="flex items-center justify-between px-2 mb-2">
                 <span className="text-[16px] font-bold text-white/80">{cmc}</span>
                 <span className="text-[10px] font-bold text-slate-600">({cards.length})</span>
@@ -47,7 +48,7 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect }) 
                         key={`${card.name}-${idx}`}
                         className="relative"
                         style={{
-                            marginTop: idx === 0 ? 0 : '-135%',
+                            marginTop: idx === 0 ? 0 : stackOverlap,
                             zIndex: idx
                         }}
                         whileHover={{
@@ -59,17 +60,17 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect }) 
                     >
                         <button
                             onClick={() => onCardSelect(card)}
-                            className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-[0_15px_45px_rgba(0,0,0,1)] border border-slate-800/80 bg-slate-900 group"
+                            className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.4)] border border-slate-700/40 bg-slate-900 group"
                         >
                             <img
                                 src={getCardImage(card.name)}
                                 alt={card.name}
-                                className="w-full h-full object-cover transition-opacity duration-300 opacity-95 group-hover:opacity-100"
+                                className="w-full h-full object-cover"
                                 loading="lazy"
                             />
 
                             {card.count > 1 && (
-                                <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[11px] font-bold w-6 h-6 rounded-full flex items-center justify-center shadow-lg border border-indigo-300/40 z-[60]">
+                                <div className="absolute top-1 right-1 bg-indigo-600 text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center shadow-lg border border-indigo-300/40 z-[60]">
                                     {card.count}
                                 </div>
                             )}

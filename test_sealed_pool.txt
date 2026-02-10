@@ -1,0 +1,72 @@
+Deck
+9 Island
+8 Mountain
+1 Blossombind
+1 Glen Elendra Guardian
+1 Gravelgill Scoundrel
+1 Noggle the Mind
+1 Omni-Changeling
+1 Stratosoarer
+2 Sunderflock
+1 Swat Away
+1 Tanufel Rimespeaker
+1 Temporal Cleansing
+1 Unexpected Assistance
+2 Flame-Chain Mauler
+1 Flamekin Gildweaver
+1 Goliath Daydreamer
+1 Gristle Glutton
+1 Kulrath Zealot
+1 Soulbright Seeker
+1 Tweeze
+1 Chitinous Graspling
+1 Deceit
+1 Goblin Sharpshooter
+
+Sideboard
+2 Gallant Fowlknight
+1 Keep Out
+1 Pyrrhic Strike
+1 Reluctant Dounguard
+2 Shore Lurker
+2 Spiral into Solitude
+2 Timid Shieldbearer
+1 Winnowing
+1 Aquitect's Defenses
+1 Mirrorform
+1 Pestered Wellguard
+1 Run Away Together
+1 Wild Unraveling
+1 Bile-Vial Boggart
+1 Blighted Blackthorn
+3 Dream Seizer
+1 Gnarlbark Elm
+2 Moonglove Extractor
+1 Moonshadow
+1 Nameless Inversion
+1 Nightmare Sower
+1 Perfect Intimidation
+1 Retched Wretch
+1 Scarblade Scout
+2 Brambleback Brute
+1 Squawkroaster
+1 Assert Perfection
+1 Bristlebane Outrider
+1 Dawn's Light Archer
+1 Gilt-Leaf's Embrace
+1 Lys Alana Informant
+1 Midnight Tilling
+1 Prismabasher
+1 Prismatic Undercurrents
+1 Shimmerwilds Growth
+1 Tend the Sprigs
+1 Vinebred Brawler
+1 Chaos Spewer
+1 Eclipsed Boggart
+1 Eclipsed Merrow
+1 Gangly Stompling
+2 Hovel Hurler
+1 Prideful Feastling
+1 Wary Farmer
+1 Foraging Wickermaw
+1 Mirrormind Crown

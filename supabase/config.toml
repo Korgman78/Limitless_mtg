@@ -1,2 +1,5 @@
 [functions.deck-analysis]
 verify_jwt = false
+
+[functions.sealed-optimizer]
+verify_jwt = false

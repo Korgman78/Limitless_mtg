@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Sparkles, Target } from 'lucide-react';
+import { FlaskConical, Sparkles, Target } from 'lucide-react';
 import { haptics } from '../../../utils/haptics';
+import { SEALED_FORMAT_OPTIONS } from '../../../constants';
 import { useDeckAnalysis } from '../../../hooks/useDeckAnalysis';
+import { usePoolAnalysis } from '../../../hooks/usePoolAnalysis';
 import { DeckImportModal } from './DeckImportModal';
 import { DeckAnalysisModal } from './DeckAnalysisModal';
+import { PoolAnalysisModal } from './PoolAnalysisModal';
 import { CardZoomOverlay } from './CardZoomOverlay';
 
 interface DeckTestPanelProps {
@@ -32,6 +35,36 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
     onFormatChange,
     onMatchedArchetype,
   });
+  const pool = usePoolAnalysis({
+    activeSet,
+    activeFormat,
+    onFormatChange,
+  });
+
+  const zoomedCardName = analysis.zoomedCardName || pool.zoomedCardName;
+
+  // ── Centralized Escape key handler ──────────────────────────────────────
+  // Priority: zoom overlay > analysis/pool modal > import modal
+  const stateRef = useRef({ analysis, pool, zoomedCardName });
+  stateRef.current = { analysis, pool, zoomedCardName };
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const { analysis: a, pool: p, zoomedCardName: z } = stateRef.current;
+      if (z) {
+        a.setZoomedCardName(null);
+        p.setZoomedCardName(null);
+        return;
+      }
+      if (p.showAnalysisModal) { p.setShowAnalysisModal(false); return; }
+      if (a.showAnalysisModal) { a.setShowAnalysisModal(false); return; }
+      if (p.showImportModal) { p.setShowImportModal(false); return; }
+      if (a.showImportModal) { a.setShowImportModal(false); return; }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
 
   return (
     <>
@@ -64,6 +97,32 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
             See My Deck
           </button>
         )}
+
+        {pool.canUsePool && (
+          <button
+            onClick={() => {
+              haptics.light();
+              pool.openImportModal();
+            }}
+            className="h-10 inline-flex items-center gap-2 px-3 rounded-xl bg-fuchsia-500/12 border border-fuchsia-400/30 hover:bg-fuchsia-500/22 text-fuchsia-200 text-[10px] font-bold uppercase tracking-widest transition-all"
+          >
+            <FlaskConical size={13} className="text-fuchsia-300" />
+            Test My Pool
+          </button>
+        )}
+
+        {pool.canUsePool && pool.poolAnalysis && (
+          <button
+            onClick={() => {
+              haptics.light();
+              pool.openLastPool();
+            }}
+            className="h-10 inline-flex items-center gap-2 px-3 rounded-xl bg-teal-500/12 border border-teal-400/30 hover:bg-teal-500/22 text-teal-200 text-[10px] font-bold uppercase tracking-widest transition-all"
+          >
+            <Target size={13} className="text-teal-300" />
+            See My Pool
+          </button>
+        )}
       </div>
 
       {/* Modals */}
@@ -78,6 +137,31 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
             onTextChange={analysis.setDeckImportText}
             onAnalyze={analysis.runDeckAnalysis}
             onClose={() => analysis.setShowImportModal(false)}
+          />
+        )}
+
+        {pool.showImportModal && (
+          <DeckImportModal
+            analysisFormat={pool.analysisFormat}
+            deckImportText={pool.poolImportText}
+            importError={pool.importError}
+            isAnalyzingDeck={pool.isAnalyzingPool}
+            onFormatChange={pool.setAnalysisFormat}
+            onTextChange={pool.setPoolImportText}
+            onAnalyze={pool.runPoolAnalysis}
+            onClose={() => pool.setShowImportModal(false)}
+            title="Test My Pool"
+            subtitle="Paste your MTGA sealed pool and generate the top 3 optimized builds."
+            checklistItems={[
+              '1. Keep the `Deck` header.',
+              '2. Paste your full sealed pool (no cuts).',
+              '3. Confirm format before analysis.',
+              '4. Compare Best Build + alternatives.',
+            ]}
+            inputLabel="MTGA Pool Import"
+            placeholder="Deck\n1 Card Name (SET) 123\n...\n\nSideboard\n..."
+            analyzeLabel="Analyze Pool"
+            formatOptions={SEALED_FORMAT_OPTIONS}
           />
         )}
 
@@ -106,12 +190,34 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
             onZoomCard={analysis.setZoomedCardName}
           />
         )}
+
+        {pool.showAnalysisModal && (
+          <PoolAnalysisModal
+            poolAnalysis={pool.poolAnalysis}
+            isLoading={pool.isAnalyzingPool}
+            selectedBuildIndex={pool.selectedBuildIndex}
+            onSelectBuild={pool.changeBuild}
+            onClose={() => pool.setShowAnalysisModal(false)}
+            onNewPool={() => {
+              pool.setShowAnalysisModal(false);
+              pool.openImportModal();
+            }}
+            onOpenArchetype={() => {
+              pool.openBuildArchetype(onMatchedArchetype);
+              haptics.success();
+            }}
+            onZoomCard={pool.setZoomedCardName}
+          />
+        )}
       </AnimatePresence>
 
       {/* Card zoom */}
       <CardZoomOverlay
-        cardName={analysis.zoomedCardName}
-        onClose={() => analysis.setZoomedCardName(null)}
+        cardName={zoomedCardName}
+        onClose={() => {
+          analysis.setZoomedCardName(null);
+          pool.setZoomedCardName(null);
+        }}
       />
     </>
   );

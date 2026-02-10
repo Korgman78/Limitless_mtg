@@ -33,6 +33,10 @@ export const TRIOS: ColorPair[] = [
   { code: 'BRG', name: 'Jund (BRG)' }
 ];
 
+export const SEALED_FORMAT_OPTIONS = FORMAT_OPTIONS.filter(
+  (opt) => opt.value === 'Sealed' || opt.value === 'ArenaDirect_Sealed',
+);
+
 export const RARITY_STYLES: Record<string, string> = {
   M: 'text-orange-500 border-orange-500/30 bg-orange-500/10',
   R: 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10',

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, X } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../../constants';
+import type { FormatOption } from '../../../types';
 
 interface DeckImportModalProps {
   analysisFormat: string;
@@ -12,6 +13,13 @@ interface DeckImportModalProps {
   onTextChange: (text: string) => void;
   onAnalyze: () => void;
   onClose: () => void;
+  title?: string;
+  subtitle?: string;
+  checklistItems?: string[];
+  inputLabel?: string;
+  placeholder?: string;
+  analyzeLabel?: string;
+  formatOptions?: FormatOption[];
 }
 
 export const DeckImportModal: React.FC<DeckImportModalProps> = ({
@@ -23,6 +31,18 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
   onTextChange,
   onAnalyze,
   onClose,
+  title = 'Test My Deck',
+  subtitle = 'Paste an MTGA decklist, choose format, then run a visual fit audit.',
+  checklistItems = [
+    '1. Keep the `Deck` header.',
+    '2. Include Sideboard to unlock Potential Adds.',
+    '3. One decklist per run.',
+    '4. Confirm format before analysis.',
+  ],
+  inputLabel = 'MTGA Import',
+  placeholder = 'Deck\n1 Card Name (SET) 123\n...\n\nSideboard\n...',
+  analyzeLabel = 'Analyze Deck',
+  formatOptions = FORMAT_OPTIONS,
 }) => (
   <motion.div
     initial={{ opacity: 0 }}
@@ -40,10 +60,10 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
       <div className="p-5 md:p-6 border-b border-slate-800 flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg md:text-xl font-black tracking-tight text-white uppercase">
-            Test My Deck
+            {title}
           </h3>
           <p className="text-[11px] md:text-xs text-slate-400 mt-1">
-            Paste an MTGA decklist, choose format, then run a visual fit audit.
+            {subtitle}
           </p>
         </div>
         <button
@@ -61,10 +81,9 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
             Checklist
           </p>
           <ul className="space-y-2 text-[11px] text-slate-400">
-            <li>1. Keep the `Deck` header.</li>
-            <li>2. Include Sideboard to unlock Potential Adds.</li>
-            <li>3. One decklist per run.</li>
-            <li>4. Confirm format before analysis.</li>
+            {checklistItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
           </ul>
 
           <div>
@@ -76,7 +95,7 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
               onChange={(e) => onFormatChange(e.target.value)}
               className="mt-1.5 w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
             >
-              {FORMAT_OPTIONS.map((opt) => (
+              {formatOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -87,12 +106,12 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
 
         <div className="p-4 md:p-5 space-y-3">
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            MTGA Import
+            {inputLabel}
           </label>
           <textarea
             value={deckImportText}
             onChange={(e) => onTextChange(e.target.value)}
-            placeholder={'Deck\n1 Card Name (SET) 123\n...\n\nSideboard\n...'}
+            placeholder={placeholder}
             className="w-full min-h-[230px] md:min-h-[300px] bg-slate-950/70 border border-slate-700 rounded-2xl p-3 md:p-4 text-xs md:text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-mono"
           />
           {importError && (
@@ -117,7 +136,7 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
           className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-2"
         >
           <Sparkles size={12} />
-          {isAnalyzingDeck ? 'Analyzing...' : 'Analyze Deck'}
+          {isAnalyzingDeck ? 'Analyzing...' : analyzeLabel}
         </button>
       </div>
     </motion.div>
