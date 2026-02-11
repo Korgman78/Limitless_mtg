@@ -58,6 +58,8 @@ VALID_MANA_COLORS = set("WUBRG")
 FIXER_ONLY_EXPLICIT_NAMES = {
     "Firdoch Core",
     "Springleaf Drum",
+    "Shimmerwilds Growth",
+    "Tend the Sprigs",
 }
 
 # Words captured by regex that are NOT creature types
@@ -248,10 +250,21 @@ def _detect_dependencies(oracle_text):
     if not oracle_text:
         return [], None, None
 
+    text = oracle_text.lower()
+
+    # Tribal chooser cards (e.g. "choose a creature type") should not be tied
+    # to a fixed tribe tag in DB. Runtime will evaluate best tribe support.
+    # We store scope="tribal" + empty tags to stay compatible with DB constraints.
+    if re.search(r'choose a creature type', text):
+        if (
+            re.search(r'spells you cast of the chosen type cost', text)
+            or re.search(r'card of the chosen type', text)
+            or re.search(r'permanent of the chosen type', text)
+        ):
+            return [], 7, "tribal"
+
     hard_tags = _extract_tags_from_patterns(oracle_text, HARD_DEPENDENCY_PATTERNS)
     generic_threshold_tags = _extract_generic_threshold_tags(oracle_text)
-
-    text = oracle_text.lower()
 
     if hard_tags or generic_threshold_tags:
         all_tags = set(hard_tags)
@@ -298,11 +311,25 @@ def _detect_fixer_only(name, type_line, oracle_text, is_mana_producer, produced_
     """
     if name in FIXER_ONLY_EXPLICIT_NAMES:
         return True
-    if not is_mana_producer:
-        return False
 
     text = (oracle_text or "").lower()
     tline = (type_line or "").lower()
+
+    # Evolving Wilds remains playable in normal 2-color decks.
+    if name == "Evolving Wilds":
+        return False
+
+    # Generic fetch-land fixer pattern (for other future variants if needed).
+    if "land" in tline:
+        if (
+            "search your library for a basic land card" in text
+            and "put it onto the battlefield tapped" in text
+        ):
+            return True
+
+    if not is_mana_producer:
+        return False
+
     produced_count = len(produced_colors or [])
 
     # Pure artifact fixers without board impact.

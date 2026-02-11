@@ -1,0 +1,74 @@
+# Backend Scripts
+
+Scripts Python d'ETL, enrichissement et outils pour Limitless MTG.
+Tous lisent `.env` a la racine du projet (`SUPABASE_URL` / `SUPABASE_KEY` ou variantes `VITE_*`).
+
+## ETL (orchestre par GitHub Actions)
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `etl_script.py` | Fetch 17Lands + ingestion metagame stats (tous formats) | Configure `TARGET_SET_CODES`, `ALL_FORMATS` en haut du fichier |
+| `etl_script_trophydecks.py` | Scrape trophy decks (7-x) depuis 17Lands | Configure `TARGET_SET_CODES`, `TARGET_FORMATS`, `TARGET_DATE` |
+| `etl_script_synergy.py` | Calcul des synergies inter-cartes (lift scoring) | Configure `TARGET_SET_CODES`, `TARGET_FORMATS` |
+| `calculate_archetypal_decks.py` | Clustering des trophy decks en skeletons d'archetypes | Configure `TARGET_SET_CODES`, `TARGET_FORMATS` |
+
+## Enrichissement cartes
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `populate_card_list.py` | Peuple `card_list` avec les metadonnees d'un set | `python populate_card_list.py` (default: ECL) |
+| `populate_arena_ids.py` | Ajoute les `arena_id` depuis 17Lands | `python populate_arena_ids.py [SET_CODE]` |
+| `scryfall_enrichment.py` | Enrichit avec les donnees Scryfall (type, keywords) | `python scryfall_enrichment.py` (default: ECL) |
+| `enrich_card_tags.py` | Tags tribaux, dependency_tags, is_removal, is_mana_producer | `python enrich_card_tags.py` (default: ECL) |
+
+## Sealed Optimizer
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `calibrate_dependency_thresholds.py` | Calibre `dependency_min_support` depuis les trophy decks sealed | Voir exemples ci-dessous |
+| `test_sealed_optimizer.py` | Test de l'optimizer sur un pool (`test_sealed_pool.txt`) | Voir exemples ci-dessous |
+| `benchmark_sealed_optimizer.py` | Benchmark latence/perf de l'optimizer | `python benchmark_sealed_optimizer.py --set ECL` |
+
+## Debug
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| `debug_trophy_counts.py` | Audit des ecarts `sample_size` vs records reels | `python debug_trophy_counts.py` |
+
+---
+
+## Exemples d'utilisation
+
+### calibrate_dependency_thresholds.py
+
+```bash
+# Dry run : afficher les seuils recommandes pour tout le set
+python backend/calibrate_dependency_thresholds.py --set ECL
+
+# Filtrer sur une seule carte
+python backend/calibrate_dependency_thresholds.py --card "Maralen, Fae Ascendant"
+
+# Ecrire les seuils en BDD
+python backend/calibrate_dependency_thresholds.py --set ECL --update
+```
+
+### test_sealed_optimizer.py
+
+Le pool a tester est lu depuis `test_sealed_pool.txt` a la racine.
+Configuration via variables d'environnement :
+
+```bash
+# Defaults
+python backend/test_sealed_optimizer.py
+
+# Custom weights et parametres
+SEALED_W_POWER=2 SEALED_W_CONSISTENCY=1 SEALED_W_CURVE=1 SEALED_W_SYNERGY=1 \
+SEALED_HC_RESTARTS=2 SEALED_HC_ITERATIONS=35 SEALED_SEED=1337 SEALED_DEBUG=1 \
+python backend/test_sealed_optimizer.py
+```
+
+### benchmark_sealed_optimizer.py
+
+```bash
+python backend/benchmark_sealed_optimizer.py --set ECL --restarts 2 --iterations 35
+```

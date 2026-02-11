@@ -417,6 +417,15 @@ const weightedJaccard = (left: Record<string, number>, right: Record<string, num
 
 // â”€â”€â”€ Karsten mana math â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+// Weight non-land mana producers by their CMC.
+// A 4-CMC dork can't fix your T2 play; count it as a fraction of a source.
+const nonLandSourceWeight = (cmc: number): number => {
+  if (cmc <= 1) return 1.0;
+  if (cmc === 2) return 0.7;
+  if (cmc === 3) return 0.4;
+  return 0.2;
+};
+
 const karstenRequiredSources = (pips: number, cmc: number, isSplash: boolean): number => {
   if (isSplash) return cmc >= 6 ? 3 : cmc >= 4 ? 4 : 6;
   if (pips >= 3) return cmc <= 4 ? 16 : 15;
@@ -467,13 +476,14 @@ const estimateSourcesFromDeck = (
   for (const c of allColors) sources[c] = (demand[c] / totalDemand) * 17;
   if (splashColor) sources[splashColor] = Math.min(4, Math.max(3, sources[splashColor]));
 
-  // Non-land mana producers in deck count as sources
+  // Non-land mana producers in deck count as partial sources (weighted by CMC)
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
     if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
     const produced = extractColors(pc.producedColours || "");
+    const weight = nonLandSourceWeight(pc.cmc);
     for (const color of allColors)
-      if (produced.includes(color)) sources[color] = (sources[color] || 0) + dc.qty;
+      if (produced.includes(color)) sources[color] = (sources[color] || 0) + dc.qty * weight;
   }
   return sources;
 };
@@ -566,10 +576,24 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
       return sum + ((pc.cmc >= n) ? dc.qty : 0);
     }, 0);
 
+  const bestTribalChooseSupport = (ownChangelingSupport = 0): number => {
+    const changelingCount = typeSupport.get("__changeling__") || 0;
+    let bestTypeSupport = 0;
+    for (const [tag, count] of typeSupport.entries()) {
+      if (tag === "__changeling__") continue;
+      if (count > bestTypeSupport) bestTypeSupport = count;
+    }
+    const effectiveChangeling = Math.max(0, changelingCount - ownChangelingSupport);
+    return Math.min(creatureCount, bestTypeSupport + effectiveChangeling);
+  };
+
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
-    if (!pc || pc.dependencyTags.length === 0) continue;
+    if (!pc) continue;
     if (pc.dependencyMinSupport == null) continue;
+    const scope = (pc.dependencyScope || "").toLowerCase();
+    const isTribalChoose = scope === "tribal_choose" || (scope === "tribal" && pc.dependencyTags.length === 0);
+    if (pc.dependencyTags.length === 0 && !isTribalChoose) continue;
     const minSupport = pc.dependencyMinSupport ?? 5;
     const changeling = (typeSupport.get("__changeling__") || 0);
     const ownTypeTokens = extractCreatureSubtypes(pc.type || "");
@@ -577,6 +601,9 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
     const ownChangelingSupport = ownHasChangeling ? dc.qty : 0;
     const specialSupports: number[] = [];
     const tribalTags: string[] = [];
+    if (isTribalChoose) {
+      specialSupports.push(bestTribalChooseSupport(ownChangelingSupport));
+    }
     for (const tag of pc.dependencyTags) {
       if (tag === "instant_sorcery") {
         specialSupports.push(instantSorceryCount);
@@ -626,7 +653,7 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
 
 const isFixerOnlyCard = (pc: PoolCard): boolean => {
   const tags = new Set((pc.dependencyTags || []).map((t) => t.toLowerCase()));
-  if (tags.has("fixer_only") || tags.has("multicolor_only")) return true;
+  if (tags.has("fixer_only")) return true;
   if ((pc.dependencyScope || "").toLowerCase() === "fixer") return true;
   return false;
 };
@@ -738,7 +765,10 @@ const getDependencySupportForCard = (
   ctx: SupportContext,
   selfQtyToExclude = 0,
 ): number => {
-  if (!pc.dependencyTags.length || pc.dependencyMinSupport == null) return Number.POSITIVE_INFINITY;
+  const scope = (pc.dependencyScope || "").toLowerCase();
+  const isTribalChoose = scope === "tribal_choose" || (scope === "tribal" && pc.dependencyTags.length === 0);
+  if (pc.dependencyMinSupport == null) return Number.POSITIVE_INFINITY;
+  if (!pc.dependencyTags.length && !isTribalChoose) return Number.POSITIVE_INFINITY;
 
   const ownTypeTokens = extractCreatureSubtypes(pc.type || "");
   const ownHasChangeling = (pc.oracleText || "").toLowerCase().includes("changeling");
@@ -746,6 +776,14 @@ const getDependencySupportForCard = (
 
   const specialSupports: number[] = [];
   const tribalTags: string[] = [];
+  if (isTribalChoose) {
+    let bestTypeSupport = 0;
+    for (const [, count] of ctx.typeSupport.entries()) {
+      if (count > bestTypeSupport) bestTypeSupport = count;
+    }
+    const effectiveChangeling = Math.max(0, ctx.changelingSupport - ownChangelingSupport);
+    specialSupports.push(Math.min(ctx.creatureCount, bestTypeSupport + effectiveChangeling));
+  }
   for (const tag of pc.dependencyTags) {
     if (tag === "instant_sorcery") {
       specialSupports.push(ctx.instantSorceryCount);
@@ -929,13 +967,29 @@ const computeStructureAdjustment = (
   }
   creatureAdjustment = clamp(creatureAdjustment + creatureCurveAdjustment, -6, 2.2);
 
+  // If creature count is acceptable but the deck is still far from skeleton shape,
+  // apply a light profile malus to avoid over-rewarding "on-target count only".
+  if (
+    creatureCount >= CREATURE_CORRIDOR_MIN &&
+    creatureCount <= CREATURE_CORRIDOR_MAX &&
+    skeletonSimilarity < 0.25
+  ) {
+    const offSkeleton = 0.25 - skeletonSimilarity;
+    const profileOffSkeletonPenalty = Math.min(2.0, offSkeleton * 10);
+    creatureAdjustment = clamp(
+      creatureAdjustment - profileOffSkeletonPenalty,
+      -6,
+      2.2,
+    );
+  }
+
   let removalAdjustment = 0;
   if (removalCount >= TARGET_REMOVAL_MIN + 1) removalAdjustment = 0.5;
   else if (removalCount === TARGET_REMOVAL_MIN) removalAdjustment = 0;
   else if (removalCount === TARGET_REMOVAL_MIN - 1) removalAdjustment = -3;
   else removalAdjustment = -6;
 
-  const skeletonAdjustment = clamp((skeletonSimilarity - 0.12) * 20, -2, 2.5);
+  const skeletonAdjustment = clamp((skeletonSimilarity - 0.25) * 20, -2, 2.5);
 
   const dependencyAdjustment = dependencyPenalty > 0.5
     ? -Math.min(6, dependencyPenalty * 2)
@@ -1373,12 +1427,13 @@ export const determineLands = (
     targetSources[color] = Math.max(0, Math.min(17, blended));
   }
 
-  // Non-land mana producers as sources
+  // Non-land mana producers as partial sources (weighted by CMC)
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
     if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
+    const weight = nonLandSourceWeight(pc.cmc);
     for (const color of allColors)
-      if (extractColors(pc.producedColours || "").includes(color)) currentSources[color] += dc.qty;
+      if (extractColors(pc.producedColours || "").includes(color)) currentSources[color] += dc.qty * weight;
   }
 
   // Utility lands (duals, fetches)
@@ -1468,6 +1523,45 @@ export const determineLands = (
     if (donor && (basicsByColor[donor] || 0) > 1) {
       basicsByColor[donor] -= 1;
       basicsByColor[effectiveSplash] = (basicsByColor[effectiveSplash] || 0) + 1;
+    }
+  }
+
+  // Early-curve floor: ensure enough LAND sources for colors with early-game demand.
+  // Cards requiring a color at CMC <= 3 need reliable T2-T3 access from actual lands,
+  // not from mana producers that arrive later.
+  for (const color of mainColors) {
+    let earlyCurveCards = 0;
+    for (const dc of cards) {
+      const pc = poolMap.get(dc.name);
+      if (!pc) continue;
+      const pips = countRequiredColorPipsForDeck(pc.cost, color, allColors);
+      if (pips > 0 && pc.cmc <= 3) earlyCurveCards += dc.qty;
+    }
+    if (earlyCurveCards === 0) continue;
+    // ~0.7 extra land source per early-curve card on a base of 4
+    const minLandSources = Math.max(5, Math.ceil(4 + earlyCurveCards * 0.7));
+
+    // Count actual land sources (basics + utility lands)
+    let landSources = basicsByColor[color] || 0;
+    for (const util of selectedUtility) {
+      if (util.isFetch || util.produced.includes(color)) landSources++;
+    }
+    let deficit = minLandSources - landSources;
+    if (deficit <= 0) continue;
+
+    // Redistribute basics from the color with the most, but don't starve it below 4.
+    const donors = mainColors
+      .filter((c) => c !== color)
+      .sort((a, b) => (basicsByColor[b] || 0) - (basicsByColor[a] || 0));
+    for (const donor of donors) {
+      if (deficit <= 0) break;
+      const canTake = Math.max(0, (basicsByColor[donor] || 0) - 4);
+      const take = Math.min(deficit, canTake);
+      if (take > 0) {
+        basicsByColor[donor] -= take;
+        basicsByColor[color] += take;
+        deficit -= take;
+      }
     }
   }
 

@@ -182,7 +182,10 @@ export function usePoolAnalysis({
   const [zoomedCardName, setZoomedCardName] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const storageKey = useMemo(
     () => `pool-test-panel:${activeSet}:${activeFormat}`,
