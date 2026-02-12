@@ -27,6 +27,8 @@ export type PoolCard = {
   dependencyTags: string[];
   dependencyMinSupport: number | null;
   dependencyScope: string | null;
+  tokenSupportTags: string[];
+  tokenSupportCount: number;
 };
 
 export type DeckCard = { name: string; qty: number };
@@ -59,6 +61,13 @@ export type ScoreWeights = {
   curve: number;
   synergy: number;
 };
+
+export type SearchProfile =
+  | "skeleton"
+  | "power_mana_safe"
+  | "power_greedy_splash"
+  | "curve_creatures"
+  | "synergy_if_online";
 
 export type DeckStats = {
   creatureCount: number;
@@ -138,6 +147,8 @@ export type CardMeta = {
   dependency_tags?: string[] | null;
   dependency_min_support?: number | null;
   dependency_scope?: string | null;
+  token_support_tags?: string[] | null;
+  token_support_count?: number | null;
 };
 
 export type CardStat = { card_name: string; gih_wr: number | null; filter_context: string };
@@ -156,17 +167,38 @@ export const SYNERGY_WEIGHT = 1;
 export const CURVE_PENALTY_FACTOR = 0.05;
 export const SKELETON_INIT_BONUS = 0.05;
 
-export const NUM_RESTARTS = 2;
-export const ITERATION_LIMIT = 35;
+export const NUM_RESTARTS = 3;
+export const ITERATION_LIMIT = 55;
 const DEFAULT_SPELL_SLOTS = 23;
 const MAX_MAIN_PAIRS = 10;
-const MAX_SPLASH_BASES = 4;
+const MAX_SPLASH_BASES = 6;
+const CANDIDATES_PER_MAIN_ARCHETYPE = 2;
+const CANDIDATES_PER_SPLASH_ARCHETYPE = 2;
+export const DEFAULT_MAX_OPTIMIZE_MS = 10_000;
 
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   power: 2, consistency: 1, curve: 1, synergy: 1,
 };
 
 const DEFAULT_OPTIMIZER_SEED = 1337;
+const TOPK_PER_ARCHETYPE_PRE_RESCORE = 3;
+const TOPK_PER_ARCHETYPE_FINAL = 3;
+const FINAL_DIVERSITY_LAMBDA = 2.2;
+const FINAL_BUILD_COUNT = 3;
+const DEFAULT_SEARCH_PROFILE: SearchProfile = "skeleton";
+
+const VALID_SEARCH_PROFILES = new Set<SearchProfile>([
+  "skeleton",
+  "power_mana_safe",
+  "power_greedy_splash",
+  "curve_creatures",
+  "synergy_if_online",
+]);
+
+const normalizeSearchProfile = (v: unknown): SearchProfile =>
+  VALID_SEARCH_PROFILES.has(v as SearchProfile)
+    ? (v as SearchProfile)
+    : DEFAULT_SEARCH_PROFILE;
 
 const createSeededRng = (seed: number): (() => number) => {
   let t = (Number.isFinite(seed) ? Math.trunc(seed) : DEFAULT_OPTIMIZER_SEED) >>> 0;
@@ -178,6 +210,41 @@ const createSeededRng = (seed: number): (() => number) => {
   };
 };
 
+const hashString32 = (s: string): number => {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+};
+
+const createAttemptRng = (baseSeed: number, archetypeCode: string, attempt: number): (() => number) => {
+  const mixed = (
+    (Math.trunc(baseSeed) >>> 0)
+    ^ hashString32(archetypeCode)
+    ^ (Math.imul((attempt + 1) >>> 0, 0x9E3779B1) >>> 0)
+  ) >>> 0;
+  return createSeededRng(mixed);
+};
+
+const sampleWithoutReplacement = <T>(
+  values: T[],
+  take: number,
+  rng: () => number,
+): T[] => {
+  if (take <= 0 || values.length === 0) return [];
+  const arr = [...values];
+  const n = Math.min(arr.length, take);
+  for (let i = 0; i < n; i++) {
+    const j = i + Math.floor(rng() * (arr.length - i));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr.slice(0, n);
+};
+
 export const COLOR_ORDER = ["W", "U", "B", "R", "G"] as const;
 type ManaColor = (typeof COLOR_ORDER)[number];
 const COLOR_SET = new Set<string>(COLOR_ORDER);
@@ -187,11 +254,32 @@ const isLandType = (t: string | null | undefined): boolean => (t || "").includes
 const COLOR_TO_BASIC: Record<string, string> = {
   W: "Plains", U: "Island", B: "Swamp", R: "Mountain", G: "Forest",
 };
+const BASIC_TO_COLOR: Record<string, string> = {
+  Plains: "W", Island: "U", Swamp: "B", Mountain: "R", Forest: "G",
+};
 
 const PAIRS: string[][] = [];
 for (let i = 0; i < COLOR_ORDER.length; i++)
   for (let j = i + 1; j < COLOR_ORDER.length; j++)
     PAIRS.push([COLOR_ORDER[i], COLOR_ORDER[j]]);
+
+const TRIOS: string[][] = [];
+for (let i = 0; i < COLOR_ORDER.length; i++) {
+  for (let j = i + 1; j < COLOR_ORDER.length; j++) {
+    for (let k = j + 1; k < COLOR_ORDER.length; k++) {
+      TRIOS.push([COLOR_ORDER[i], COLOR_ORDER[j], COLOR_ORDER[k]]);
+    }
+  }
+}
+
+const getMainColorSetsForProfile = (profile: SearchProfile): string[][] => {
+  if (profile === "power_greedy_splash") {
+    // Greedy shard explicitly explores both classic 2-color bases
+    // and 3-color bases (which then allow 4-color splash runs).
+    return [...PAIRS, ...TRIOS];
+  }
+  return PAIRS;
+};
 
 // â”€â”€â”€ Parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -336,12 +424,16 @@ export const buildPoolCards = (
   metaMap: Map<string, CardMeta>,
   wrMap: Map<string, number>,
 ): PoolCard[] => {
-  return parsedPool.map(({ name, qty }) => {
+  // Exclude cards with no WR data at all (neither primary sealed nor fallback format).
+  // Using synthetic defaults (e.g. 50) makes these cards artificially playable.
+  return parsedPool
+    .filter(({ name }) => wrMap.has(name))
+    .map(({ name, qty }) => {
     const meta = metaMap.get(name);
     const type = meta?.card_type || "";
     return {
       name, qty,
-      wr: wrMap.get(name) ?? 50,
+      wr: wrMap.get(name) as number,
       colors: meta?.colors || "",
       cmc: Number(meta?.card_cmc ?? 0),
       cost: meta?.card_cost || null,
@@ -355,8 +447,10 @@ export const buildPoolCards = (
       dependencyTags: (meta?.dependency_tags || []).map((t) => (t || "").toLowerCase().trim()).filter(Boolean),
       dependencyMinSupport: meta?.dependency_min_support ?? null,
       dependencyScope: meta?.dependency_scope ?? null,
+      tokenSupportTags: (meta?.token_support_tags || []).map((t) => (t || "").toLowerCase().trim()).filter(Boolean),
+      tokenSupportCount: Math.max(0, Number(meta?.token_support_count ?? 0) || 0),
     };
-  });
+    });
 };
 
 // â”€â”€â”€ Filter eligible cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -381,25 +475,34 @@ export const buildPairMap = (rows: SynergyRow[]): Record<string, Record<string, 
 };
 
 const getDeckSynergyScore = (
-  cardNames: string[], pairMap: Record<string, Record<string, number>>,
+  cards: DeckCard[], pairMap: Record<string, Record<string, number>>,
 ): number => {
-  const n = cardNames.length;
-  const maxPairs = (n * (n - 1)) / 2;
-  if (maxPairs <= 0) return 0;
-
-  let total = 0;
-  let counted = 0;
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const s = pairMap[cardNames[i]]?.[cardNames[j]];
-      if (s != null) { total += s; counted++; }
+  // Multiset-aware synergy:
+  // - duplicate copies contribute to pair density,
+  // - with diminishing returns for extra copies.
+  const weightedCopies: { name: string; weight: number }[] = [];
+  for (const c of cards) {
+    for (let i = 0; i < c.qty; i++) {
+      const w = i === 0 ? 1.0 : i === 1 ? 0.65 : 0.4;
+      weightedCopies.push({ name: c.name, weight: w });
     }
   }
-  if (counted === 0) return 0;
 
-  const avg = total / counted;
-  const coverage = counted / maxPairs;
-  return avg * coverage * SYNERGY_WEIGHT;
+  const n = weightedCopies.length;
+  if (n <= 1) return 0;
+
+  let weightedTotal = 0;
+  let possibleWeight = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const pairWeight = weightedCopies[i].weight * weightedCopies[j].weight;
+      possibleWeight += pairWeight;
+      const s = pairMap[weightedCopies[i].name]?.[weightedCopies[j].name];
+      if (typeof s === "number") weightedTotal += s * pairWeight;
+    }
+  }
+  if (possibleWeight <= 0) return 0;
+  return (weightedTotal / possibleWeight) * SYNERGY_WEIGHT;
 };
 
 // â”€â”€â”€ Skeleton similarity (weighted Jaccard) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -426,11 +529,15 @@ const nonLandSourceWeight = (cmc: number): number => {
   return 0.2;
 };
 
+// Karsten-style requirements scaled for Limited (40-card, 17-land decks).
+// Targets ~85% on-curve cast probability (between the 80% and 90% tables).
+// Previous values (16/14/10 …) were 60-card constructed numbers — far too strict
+// for sealed where 9/8 land splits are the norm.
 const karstenRequiredSources = (pips: number, cmc: number, isSplash: boolean): number => {
   if (isSplash) return cmc >= 6 ? 3 : cmc >= 4 ? 4 : 6;
-  if (pips >= 3) return cmc <= 4 ? 16 : 15;
-  if (pips === 2) return cmc <= 3 ? 14 : cmc <= 4 ? 13 : 12;
-  return cmc <= 2 ? 10 : cmc <= 3 ? 9 : 8;
+  if (pips >= 3) return cmc <= 3 ? 14 : cmc <= 4 ? 13 : cmc <= 5 ? 12 : 11;
+  if (pips === 2) return cmc <= 2 ? 12 : cmc <= 3 ? 11 : cmc <= 4 ? 10 : 9;
+  return cmc <= 2 ? 8 : cmc <= 3 ? 7 : 6;
 };
 
 const hasActiveSplashDemand = (
@@ -473,8 +580,8 @@ const estimateSourcesFromDeck = (
     for (const c of allColors) sources[c] = even;
     return sources;
   }
-  for (const c of allColors) sources[c] = (demand[c] / totalDemand) * 17;
-  if (splashColor) sources[splashColor] = Math.min(4, Math.max(3, sources[splashColor]));
+  const totalLands = 17;
+  for (const c of allColors) sources[c] = (demand[c] / totalDemand) * totalLands;
 
   // Non-land mana producers in deck count as partial sources (weighted by CMC)
   for (const dc of cards) {
@@ -488,9 +595,46 @@ const estimateSourcesFromDeck = (
   return sources;
 };
 
+const computeSourcesFromLands = (
+  lands: DeckCard[], cards: DeckCard[], poolMap: Map<string, PoolCard>,
+  mainColors: string[], splashColor: string | null,
+): Record<string, number> => {
+  const allColors = [...mainColors, ...(splashColor ? [splashColor] : [])];
+  const sources: Record<string, number> = {};
+  for (const c of allColors) sources[c] = 0;
+
+  for (const land of lands) {
+    const basicColor = BASIC_TO_COLOR[land.name];
+    if (basicColor && allColors.includes(basicColor)) {
+      sources[basicColor] += land.qty;
+    } else {
+      const pc = poolMap.get(land.name);
+      if (!pc) continue;
+      const isFetch = /evolving wilds|terramorphic expanse|fabled passage/i.test(land.name);
+      if (isFetch) {
+        for (const c of allColors) sources[c] += land.qty;
+      } else {
+        for (const c of extractColors(pc.producedColours || pc.colors || ""))
+          if (allColors.includes(c)) sources[c] += land.qty;
+      }
+    }
+  }
+
+  // Non-land mana producers (same weighting as during scoring)
+  for (const dc of cards) {
+    const pc = poolMap.get(dc.name);
+    if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
+    const weight = nonLandSourceWeight(pc.cmc);
+    for (const c of extractColors(pc.producedColours || ""))
+      if (allColors.includes(c)) sources[c] += dc.qty * weight;
+  }
+  return sources;
+};
+
 const computeManaPenalty = (
   cards: DeckCard[], poolMap: Map<string, PoolCard>,
   mainColors: string[], splashColor: string | null,
+  sourcesOverride?: Record<string, number>,
 ): number => {
   const allColors = [...mainColors, ...(splashColor ? [splashColor] : [])];
   const needed: Record<string, number> = {};
@@ -506,11 +650,18 @@ const computeManaPenalty = (
     }
   }
 
-  const estimated = estimateSourcesFromDeck(cards, poolMap, mainColors, splashColor);
+  const estimated = sourcesOverride || estimateSourcesFromDeck(cards, poolMap, mainColors, splashColor);
   let penalty = 0;
   for (const color of allColors) {
     const deficit = (needed[color] || 0) - (estimated[color] || 0);
-    if (deficit > 0) penalty += deficit * 0.012;
+    // Super-linear penalty: small deficits (1-3) are tolerable, but large
+    // deficits (5+) are catastrophically bad for castability.
+    // Linear 0.012 up to 3, then accelerates with a quadratic kicker.
+    if (deficit > 0) {
+      const base = deficit * 0.012;
+      const kicker = Math.max(0, deficit - 3);
+      penalty += base + kicker * kicker * 0.0025;
+    }
   }
 
   if (splashColor) {
@@ -552,6 +703,20 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
     // Changeling counts as full tribal support (MTG rules: all creature types).
     if ((pc.oracleText || "").toLowerCase().includes("changeling"))
       typeSupport.set("__changeling__", (typeSupport.get("__changeling__") || 0) + dc.qty);
+  }
+  // Non-creature token producers can provide real tribal support.
+  for (const dc of cards) {
+    const pc = poolMap.get(dc.name);
+    if (!pc) continue;
+    if (pc.isCreature) continue;
+    const tokenTags = pc.tokenSupportTags || [];
+    const tokenCountPerCopy = Math.max(0, pc.tokenSupportCount || 0);
+    if (!tokenTags.length || tokenCountPerCopy <= 0) continue;
+    const supportQty = tokenCountPerCopy * dc.qty;
+    creatureCount += supportQty;
+    for (const tag of tokenTags) {
+      typeSupport.set(tag, (typeSupport.get(tag) || 0) + supportQty);
+    }
   }
 
   let penalty = 0;
@@ -646,7 +811,15 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
     // This intentionally makes off-plan cards (e.g. tribal payoffs without tribe)
     // very unlikely to survive hill-climbing swaps.
     const perCopyPenalty = Math.min(2.8, 0.6 + ratioMissing * 3.0);
-    penalty += perCopyPenalty * dc.qty;
+    // Multiple copies of an off-plan hard-dependency card are significantly worse.
+    // Copy weights: 1st=1.0, 2nd=1.7, 3rd+=2.3 each.
+    let copyWeight = 0;
+    for (let i = 1; i <= dc.qty; i++) {
+      if (i === 1) copyWeight += 1.0;
+      else if (i === 2) copyWeight += 1.7;
+      else copyWeight += 2.3;
+    }
+    penalty += perCopyPenalty * copyWeight;
   }
   return penalty;
 };
@@ -748,6 +921,16 @@ const buildSupportContext = (cards: PoolCard[]): SupportContext => {
     if ((pc.oracleText || "").toLowerCase().includes("changeling")) {
       changelingSupport += qty;
     }
+
+    const tokenTags = pc.tokenSupportTags || [];
+    const tokenCountPerCopy = Math.max(0, pc.tokenSupportCount || 0);
+    if (!pc.isCreature && tokenTags.length > 0 && tokenCountPerCopy > 0) {
+      const supportQty = tokenCountPerCopy * qty;
+      creatureCount += supportQty;
+      for (const tag of tokenTags) {
+        typeSupport.set(tag, (typeSupport.get(tag) || 0) + supportQty);
+      }
+    }
   }
 
   return {
@@ -828,12 +1011,79 @@ const getCardUtilityScore = (
   _skeleton: Skeleton | null,
   formatMean: number,
   jitter = 0,
+  searchProfile: SearchProfile = DEFAULT_SEARCH_PROFILE,
+  mainColors: string[] = [],
+  splashColor: string | null = null,
+  supportCtx: SupportContext | null = null,
 ): number => {
   let score = pc.wr;
 
   const wrFloor = formatMean - 2;
   if (pc.wr < wrFloor) {
     score -= (wrFloor - pc.wr);
+  }
+
+  const allColors = [...mainColors, ...(splashColor ? [splashColor] : [])];
+  const mainSet = new Set(mainColors);
+  const cardColors = new Set(extractColors(pc.colors));
+  const maxMainPips = Math.max(
+    0,
+    ...mainColors.map((c) => countRequiredColorPipsForDeck(pc.cost, c, allColors)),
+  );
+  const splashPips = splashColor
+    ? countRequiredColorPipsForDeck(pc.cost, splashColor, allColors)
+    : 0;
+  const isSplashOnly = !!splashColor &&
+    cardColors.has(splashColor) &&
+    ![...cardColors].some((c) => mainSet.has(c));
+  const isBomb = pc.wr >= formatMean + 10 || /mythic|rare/i.test(pc.rarity || "");
+
+  switch (searchProfile) {
+    case "power_mana_safe": {
+      score += (pc.wr - formatMean) * 0.18;
+      if (maxMainPips >= 3) score -= 1.2;
+      else if (maxMainPips === 2) score -= 0.45;
+      if (isSplashOnly && pc.cmc < 4) score -= 1.5;
+      if (isSplashOnly && splashPips > 1) score -= 0.9;
+      break;
+    }
+    case "power_greedy_splash": {
+      score += (pc.wr - formatMean) * 0.24;
+      if (isBomb) score += 0.7;
+      if (isSplashOnly && pc.cmc >= 4 && splashPips <= 1) score += 0.9;
+      if (isSplashOnly && pc.cmc < 4) score -= 0.65;
+      if (maxMainPips >= 3) score -= 0.35;
+      break;
+    }
+    case "curve_creatures": {
+      if (pc.isCreature) {
+        if (pc.cmc >= 2 && pc.cmc <= 4) score += 1.0;
+        else if (pc.cmc <= 5) score += 0.5;
+      } else if (pc.cmc === 2) {
+        score -= 0.8;
+      }
+      if (pc.isRemoval) score += 0.25;
+      break;
+    }
+    case "synergy_if_online": {
+      if (pc.dependencyMinSupport != null) {
+        const ctx = supportCtx ?? buildSupportContext([pc]);
+        const support = getDependencySupportForCard(pc, ctx, 0);
+        const need = Math.max(1, pc.dependencyMinSupport);
+        if (support >= need) {
+          score += 1.1 + Math.min(0.6, ((support - need) / need) * 0.6);
+        } else {
+          const missingRatio = (need - support) / need;
+          score -= 1.5 + missingRatio * 1.8;
+        }
+      } else if (pc.isCreature && pc.cmc <= 4) {
+        score += 0.2;
+      }
+      break;
+    }
+    case "skeleton":
+    default:
+      break;
   }
 
   return score + jitter;
@@ -861,7 +1111,9 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
 const normalizeWrScore = (wrScore: number, formatMean: number): number => {
-  return clamp(50 + (wrScore - formatMean) * 6, 0, 100);
+  // Linear normalization centered on format average:
+  // -4 pts vs format => 0, format average => 50, +4 pts => 100.
+  return clamp(((wrScore - formatMean + 4) / 8) * 100, 0, 100);
 };
 
 const normalizeSynergyScore = (synergyScore: number): number => {
@@ -949,9 +1201,12 @@ const computeStructureAdjustment = (
       }
     }
   }
+  // Global severity bump on all CMC buckets (no special-case bucket logic).
+  creatureCurvePenalty *= 1.35;
+
   let creatureCurveAdjustment = 0;
   if (creatureCurvePenalty > 0) {
-    creatureCurveAdjustment = -Math.min(6, creatureCurvePenalty);
+    creatureCurveAdjustment = -Math.min(8, creatureCurvePenalty);
   } else if (evaluatedBuckets > 0 && creatureCount >= creatureTarget - 1) {
     creatureCurveAdjustment = 0.4;
   }
@@ -965,7 +1220,7 @@ const computeStructureAdjustment = (
   if (nonCreatureDupOver > 0) {
     creatureAdjustment -= Math.min(2, nonCreatureDupOver * 0.6);
   }
-  creatureAdjustment = clamp(creatureAdjustment + creatureCurveAdjustment, -6, 2.2);
+  creatureAdjustment = clamp(creatureAdjustment + creatureCurveAdjustment, -8, 2.2);
 
   // If creature count is acceptable but the deck is still far from skeleton shape,
   // apply a light profile malus to avoid over-rewarding "on-target count only".
@@ -978,7 +1233,7 @@ const computeStructureAdjustment = (
     const profileOffSkeletonPenalty = Math.min(2.0, offSkeleton * 10);
     creatureAdjustment = clamp(
       creatureAdjustment - profileOffSkeletonPenalty,
-      -6,
+      -8,
       2.2,
     );
   }
@@ -992,14 +1247,11 @@ const computeStructureAdjustment = (
   const skeletonAdjustment = clamp((skeletonSimilarity - 0.25) * 20, -2, 2.5);
 
   const dependencyAdjustment = dependencyPenalty > 0.5
-    ? -Math.min(6, dependencyPenalty * 2)
+    ? -Math.min(10, dependencyPenalty)
     : 0;
 
-  const totalAdjustment = clamp(
-    creatureAdjustment + removalAdjustment + skeletonAdjustment + dependencyAdjustment,
-    -10,
-    5,
-  );
+  const totalAdjustment =
+    creatureAdjustment + removalAdjustment + skeletonAdjustment + dependencyAdjustment;
 
   return {
     creatureAdjustment,
@@ -1063,8 +1315,7 @@ export const calculateDeckScore = (
   }
   const wrScore = wrSum / n;
 
-  const uniqueNames = [...new Set(cards.map((c) => c.name))];
-  const synergyScore = getDeckSynergyScore(uniqueNames, pairMap);
+  const synergyScore = getDeckSynergyScore(cards, pairMap);
 
   let skeletonSimilarity = 0;
   if (skeleton) {
@@ -1122,7 +1373,7 @@ export const calculateDeckScore = (
   const consistencyAdjustment = 0;
   const curveAdjustment = 0;
   const totalAdjustment = structureAdjustment.totalAdjustment;
-  const score = clamp(baseScore + totalAdjustment, 0, 100);
+  const score = baseScore + totalAdjustment;
 
   return {
     score,
@@ -1150,11 +1401,88 @@ export const calculateDeckScore = (
     stats: { creatureCount, removalCount, avgCmc: n > 0 ? cmcSum / n : 0, totalCards: n, skeletonSimilarity },
   };
 };
+
+export const scoreDeckWithResolvedLands = (
+  cards: DeckCard[],
+  pool: PoolCard[],
+  pairMap: Record<string, Record<string, number>>,
+  mainColors: string[],
+  splashColor: string | null,
+  skeleton: Skeleton | null,
+  scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
+  formatMean = 55,
+): {
+  score: number;
+  breakdown: ScoreBreakdown;
+  stats: DeckStats;
+  lands: DeckCard[];
+} => {
+  const initial = calculateDeckScore(
+    cards,
+    pool,
+    pairMap,
+    mainColors,
+    splashColor,
+    skeleton,
+    scoreWeights,
+    formatMean,
+  );
+
+  const lands = determineLands(cards, pool, mainColors, splashColor);
+  const poolMap = new Map<string, PoolCard>();
+  for (const pc of pool) poolMap.set(pc.name, pc);
+
+  const actualSources = computeSourcesFromLands(
+    lands,
+    cards,
+    poolMap,
+    mainColors,
+    splashColor,
+  );
+  const actualManaPenalty = computeManaPenalty(
+    cards,
+    poolMap,
+    mainColors,
+    splashColor,
+    actualSources,
+  );
+  const actualConsistency = normalizeConsistencyScore(actualManaPenalty);
+
+  const totalWeight =
+    scoreWeights.power +
+    scoreWeights.synergy +
+    scoreWeights.consistency +
+    scoreWeights.curve;
+
+  const baseScore = (
+    scoreWeights.power * initial.breakdown.wrNormalized +
+    scoreWeights.synergy * initial.breakdown.synergyNormalized +
+    scoreWeights.consistency * actualConsistency +
+    scoreWeights.curve * initial.breakdown.curveScore
+  ) / Math.max(1e-6, totalWeight);
+
+  const score = baseScore + initial.breakdown.totalAdjustment;
+
+  return {
+    score,
+    lands,
+    stats: initial.stats,
+    breakdown: {
+      ...initial.breakdown,
+      manaPenalty: actualManaPenalty,
+      consistencyScore: actualConsistency,
+      qualityScore: baseScore,
+    },
+  };
+};
 const initCompetitive = (
   eligible: PoolCard[],
   skeleton: Skeleton | null,
   targetSpells: number,
   formatMean: number,
+  mainColors: string[],
+  splashColor: string | null,
+  searchProfile: SearchProfile,
   jitterStrength = 0,
   rng: () => number = Math.random,
 ): DeckCard[] => {
@@ -1166,9 +1494,22 @@ const initCompetitive = (
   }
 
   const utilityByName = new Map<string, number>();
+  const supportCtx = buildSupportContext(eligible);
   for (const pc of eligible) {
     const jitter = jitterStrength > 0 ? (rng() - 0.5) * jitterStrength : 0;
-    utilityByName.set(pc.name, getCardUtilityScore(pc, skeleton, formatMean, jitter));
+    utilityByName.set(
+      pc.name,
+      getCardUtilityScore(
+        pc,
+        skeleton,
+        formatMean,
+        jitter,
+        searchProfile,
+        mainColors,
+        splashColor,
+        supportCtx,
+      ),
+    );
   }
 
   const deckMap = new Map<string, number>();
@@ -1204,40 +1545,76 @@ const initCompetitive = (
     return best;
   };
 
-  // 1) Seed with a few skeleton anchors (only if still sensible by utility).
+  // 1) Optional skeleton anchors.
+  // Skeleton profile starts closest to trophy shape; others only keep a tiny anchor.
   if (skeleton) {
+    const anchorCap = searchProfile === "skeleton" ? 7 : 3;
     const anchors = (skeleton.deck_list || [])
       .filter((s) => !(s.type || "").includes("Land"))
       .map((s) => s.name)
       .filter((name, idx, arr) => arr.indexOf(name) === idx)
       .filter((name) => eligibleMap.has(name))
       .sort((a, b) => (utilityByName.get(b) || -999) - (utilityByName.get(a) || -999))
-      .slice(0, 7);
+      .slice(0, anchorCap);
     for (const name of anchors) {
-      if (total >= Math.min(targetSpells, 7)) break;
+      if (total >= Math.min(targetSpells, anchorCap)) break;
       addOne(name);
     }
   }
 
-  // 2) Force interaction floor first.
-  while (total < targetSpells && removalCount < TARGET_REMOVAL_MIN) {
-    const cand = bestCandidate((pc) => pc.isRemoval);
-    if (!cand) break;
-    addOne(cand.name);
-  }
+  const fillRemovalFloor = (targetRemoval: number) => {
+    while (total < targetSpells && removalCount < targetRemoval) {
+      const cand = bestCandidate((pc) => pc.isRemoval);
+      if (!cand) break;
+      addOne(cand.name);
+    }
+  };
 
-  // 3) Ensure creature backbone close to skeleton target.
-  while (total < targetSpells && creatureCount < creatureTarget) {
-    const cand = bestCandidate((pc) => pc.isCreature);
-    if (!cand) break;
-    addOne(cand.name);
-  }
+  const fillCreatureBackbone = (targetCreature: number, preferEarly = false) => {
+    while (total < targetSpells && creatureCount < targetCreature) {
+      const cand = bestCandidate((pc) =>
+        pc.isCreature && (!preferEarly || (pc.cmc >= 2 && pc.cmc <= 4))
+      ) || bestCandidate((pc) => pc.isCreature);
+      if (!cand) break;
+      addOne(cand.name);
+    }
+  };
 
-  // 4) Fill remaining slots with best contextual utility.
-  while (total < targetSpells) {
-    const cand = bestCandidate(() => true);
-    if (!cand) break;
-    addOne(cand.name);
+  const fillBest = () => {
+    while (total < targetSpells) {
+      const cand = bestCandidate(() => true);
+      if (!cand) break;
+      addOne(cand.name);
+    }
+  };
+
+  switch (searchProfile) {
+    case "curve_creatures":
+      fillCreatureBackbone(creatureTarget + 1, true);
+      fillRemovalFloor(TARGET_REMOVAL_MIN);
+      fillBest();
+      break;
+    case "power_greedy_splash":
+      fillRemovalFloor(Math.max(2, TARGET_REMOVAL_MIN - 1));
+      fillCreatureBackbone(Math.max(creatureTarget - 1, CREATURE_CORRIDOR_MIN - 1), false);
+      fillBest();
+      break;
+    case "power_mana_safe":
+      fillRemovalFloor(TARGET_REMOVAL_MIN);
+      fillCreatureBackbone(creatureTarget, false);
+      fillBest();
+      break;
+    case "synergy_if_online":
+      fillCreatureBackbone(creatureTarget, true);
+      fillRemovalFloor(TARGET_REMOVAL_MIN);
+      fillBest();
+      break;
+    case "skeleton":
+    default:
+      fillRemovalFloor(TARGET_REMOVAL_MIN);
+      fillCreatureBackbone(creatureTarget, false);
+      fillBest();
+      break;
   }
 
   return [...deckMap.entries()].map(([name, qty]) => ({ name, qty }));
@@ -1254,15 +1631,35 @@ export const hillClimbOptimize = (
   skeleton: Skeleton | null, targetSpells: number,
   scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
   formatMean = 55,
+  searchProfile: SearchProfile = DEFAULT_SEARCH_PROFILE,
   hcRestarts = NUM_RESTARTS,
   hcIterationLimit = ITERATION_LIMIT,
   rng: () => number = Math.random,
+  optimizeDeadlineMs?: number,
 ): { deck: DeckCard[]; score: number; breakdown: ScoreBreakdown; stats: DeckStats } => {
+  const hardDeadline = Number.isFinite(Number(optimizeDeadlineMs))
+    ? Number(optimizeDeadlineMs)
+    : null;
+  const isTimeUp = () => hardDeadline != null && Date.now() >= hardDeadline;
+
   const eligibleMap = new Map<string, PoolCard>();
   for (const pc of eligible) eligibleMap.set(pc.name, pc);
+  const supportCtx = buildSupportContext(eligible);
   const utilityByName = new Map<string, number>();
   for (const pc of eligible) {
-    utilityByName.set(pc.name, getCardUtilityScore(pc, skeleton, formatMean));
+    utilityByName.set(
+      pc.name,
+      getCardUtilityScore(
+        pc,
+        skeleton,
+        formatMean,
+        0,
+        searchProfile,
+        mainColors,
+        splashColor,
+        supportCtx,
+      ),
+    );
   }
 
   let bestDeck: DeckCard[] = [];
@@ -1291,12 +1688,17 @@ export const hillClimbOptimize = (
   let bestStats: DeckStats = { creatureCount: 0, removalCount: 0, avgCmc: 0, totalCards: 0, skeletonSimilarity: 0 };
 
   for (let restart = 0; restart < hcRestarts; restart++) {
+    if (isTimeUp()) break;
+    const restartJitter = 0.9 + restart * 0.8;
     let currentDeck = initCompetitive(
       eligible,
       skeleton,
       targetSpells,
       formatMean,
-      restart === 0 ? 0 : 2.2,
+      mainColors,
+      splashColor,
+      searchProfile,
+      restartJitter,
       rng,
     );
 
@@ -1305,21 +1707,31 @@ export const hillClimbOptimize = (
     let current = calculateDeckScore(currentDeck, eligible, pairMap, mainColors, splashColor, skeleton, scoreWeights, formatMean);
 
     for (let iter = 0; iter < hcIterationLimit; iter++) {
+      if (isTimeUp()) break;
       let improved = false;
-      const inDeck = deckCardSet(currentDeck);
+      const deckQtyByName = new Map<string, number>();
+      for (const c of currentDeck) deckQtyByName.set(c.name, c.qty);
       const creatureTarget = getCreatureTarget(skeleton, targetSpells);
-      const utilitySideboard = eligible
-        .filter((pc) => !inDeck.has(pc.name))
+      // Copy-aware neighborhood:
+      // allow adding a card if deck currently has fewer copies than pool availability.
+      // This fixes local optima where a premium 2-of can't be re-added once reduced to 1x.
+      const eligibleForAdd = eligible.filter((pc) => (deckQtyByName.get(pc.name) || 0) < pc.qty);
+      const utilitySideboard = eligibleForAdd
         .sort((a, b) => (utilityByName.get(b.name) || b.wr) - (utilityByName.get(a.name) || a.wr))
         .slice(0, 10);
       const creatureSideboard = current.stats.creatureCount < creatureTarget
-        ? eligible
-            .filter((pc) => !inDeck.has(pc.name) && pc.isCreature)
+        ? eligibleForAdd
+            .filter((pc) => pc.isCreature)
             .sort((a, b) => (utilityByName.get(b.name) || b.wr) - (utilityByName.get(a.name) || a.wr))
             .slice(0, 8)
         : [];
       const sideboardMap = new Map<string, PoolCard>();
       for (const card of [...utilitySideboard, ...creatureSideboard]) sideboardMap.set(card.name, card);
+      const randomSideTake = Math.max(2, Math.floor((utilitySideboard.length + creatureSideboard.length) * 0.3));
+      const randomSidePool = eligibleForAdd.filter((pc) => !sideboardMap.has(pc.name));
+      for (const pc of sampleWithoutReplacement(randomSidePool, randomSideTake, rng)) {
+        sideboardMap.set(pc.name, pc);
+      }
       const sideboard = [...sideboardMap.values()];
       if (sideboard.length === 0) break;
 
@@ -1334,22 +1746,61 @@ export const hillClimbOptimize = (
           (utilityByName.get(b.name) || eligibleMap.get(b.name)?.wr || 50);
       }).slice(0, 7);
       const cutNames = new Set(baseCuts.map((c) => c.name));
-      const cutCandidates = [...baseCuts, ...excessDuplicates.filter((c) => !cutNames.has(c.name))];
+      const randomCutTake = Math.max(2, Math.floor(baseCuts.length * 0.3));
+      const randomCutPool = currentDeck.filter((c) => !cutNames.has(c.name));
+      const randomCuts = sampleWithoutReplacement(randomCutPool, randomCutTake, rng);
+      const cutCandidates = [...baseCuts, ...excessDuplicates.filter((c) => !cutNames.has(c.name)), ...randomCuts];
+
+      const buildSwap = (addCard: PoolCard, cutCandidate: DeckCard) => {
+        const di = currentDeck.findIndex((c) => c.name === cutCandidate.name);
+        if (di < 0) return null;
+        const newDeck = currentDeck
+          .map((c, i) => i === di ? (c.qty > 1 ? { name: c.name, qty: c.qty - 1 } : null) : c)
+          .filter((c): c is DeckCard => c != null && c.qty > 0);
+
+        const ei = newDeck.findIndex((c) => c.name === addCard.name);
+        if (ei >= 0) newDeck[ei] = { name: addCard.name, qty: newDeck[ei].qty + 1 };
+        else newDeck.push({ name: addCard.name, qty: 1 });
+        const newResult = calculateDeckScore(
+          newDeck,
+          eligible,
+          pairMap,
+          mainColors,
+          splashColor,
+          skeleton,
+          scoreWeights,
+          formatMean,
+        );
+        return { newDeck, newResult };
+      };
 
       for (const addCard of sideboard) {
-        for (const cutCandidate of cutCandidates) {
-          const di = currentDeck.findIndex((c) => c.name === cutCandidate.name);
-          if (di < 0) continue;
+        if (isTimeUp()) break;
+        // CMC-aware neighborhood:
+        // favor "replace role with role" swaps first (same/near CMC),
+        // then fall back to global cut candidates.
+        const focusedCuts = new Map<string, DeckCard>();
+        for (const c of cutCandidates) focusedCuts.set(c.name, c);
+        const addCmc = Number(addCard.cmc || 0);
+        for (const c of currentDeck) {
+          const cutCmc = Number(eligibleMap.get(c.name)?.cmc || 0);
+          if (Math.abs(cutCmc - addCmc) <= 1) focusedCuts.set(c.name, c);
+        }
+        const cutsForAdd = [...focusedCuts.values()].sort((a, b) => {
+          const aCmc = Number(eligibleMap.get(a.name)?.cmc || 0);
+          const bCmc = Number(eligibleMap.get(b.name)?.cmc || 0);
+          const da = Math.abs(aCmc - addCmc);
+          const db = Math.abs(bCmc - addCmc);
+          if (da !== db) return da - db;
+          return (utilityByName.get(a.name) || eligibleMap.get(a.name)?.wr || 50) -
+            (utilityByName.get(b.name) || eligibleMap.get(b.name)?.wr || 50);
+        });
 
-          const newDeck = currentDeck
-            .map((c, i) => i === di ? (c.qty > 1 ? { name: c.name, qty: c.qty - 1 } : null) : c)
-            .filter((c): c is DeckCard => c != null && c.qty > 0);
-
-          const ei = newDeck.findIndex((c) => c.name === addCard.name);
-          if (ei >= 0) newDeck[ei] = { name: addCard.name, qty: newDeck[ei].qty + 1 };
-          else newDeck.push({ name: addCard.name, qty: 1 });
-
-          const newResult = calculateDeckScore(newDeck, eligible, pairMap, mainColors, splashColor, skeleton, scoreWeights, formatMean);
+        for (const cutCandidate of cutsForAdd) {
+          if (isTimeUp()) break;
+          const swap = buildSwap(addCard, cutCandidate);
+          if (!swap) continue;
+          const { newDeck, newResult } = swap;
           if (newResult.score > current.score + 0.001) {
             currentDeck = newDeck;
             current = newResult;
@@ -1359,7 +1810,32 @@ export const hillClimbOptimize = (
         }
         if (improved) break;
       }
-      if (!improved) break;
+      if (!improved) {
+        // Small simulated-annealing window to escape local minima:
+        // allow a few mildly negative moves early in the run.
+        const annealIters = Math.min(10, hcIterationLimit);
+        if (iter < annealIters && sideboard.length > 0 && cutCandidates.length > 0) {
+          if (isTimeUp()) break;
+          const temp = Math.max(0.06, 0.55 * (1 - iter / Math.max(1, annealIters)));
+          let accepted = false;
+          for (let t = 0; t < 4; t++) {
+            if (isTimeUp()) break;
+            const addCard = sideboard[Math.floor(rng() * sideboard.length)];
+            const cutCard = cutCandidates[Math.floor(rng() * cutCandidates.length)];
+            const swap = buildSwap(addCard, cutCard);
+            if (!swap) continue;
+            const delta = swap.newResult.score - current.score;
+            if (delta > 0 || Math.exp(delta / Math.max(0.01, temp)) > rng()) {
+              currentDeck = swap.newDeck;
+              current = swap.newResult;
+              accepted = true;
+              break;
+            }
+          }
+          if (accepted) continue;
+        }
+        break;
+      }
     }
 
     if (current.score > bestScore) {
@@ -1457,6 +1933,8 @@ export const determineLands = (
 
   const selectedUtility: typeof utilityCandidates = [];
   const remaining = [...utilityCandidates];
+  const utilityLandSources: Record<string, number> = {};
+  for (const c of allColors) utilityLandSources[c] = 0;
 
   while (selectedUtility.length < landCount && remaining.length > 0) {
     const deficits: Record<string, number> = {};
@@ -1474,95 +1952,165 @@ export const determineLands = (
 
     const picked = remaining.splice(bestIdx, 1)[0];
     selectedUtility.push(picked);
-    if (picked.isFetch) { for (const c of allColors) currentSources[c]++; }
-    else { for (const c of picked.produced) currentSources[c]++; }
+    if (picked.isFetch) {
+      for (const c of allColors) {
+        currentSources[c]++;
+        utilityLandSources[c]++;
+      }
+    } else {
+      for (const c of picked.produced) {
+        currentSources[c]++;
+        utilityLandSources[c]++;
+      }
+    }
   }
 
-  const computeLandSources = (basics: Record<string, number>): Record<string, number> => {
-    const sources: Record<string, number> = {};
-    for (const c of allColors) sources[c] = (currentSources[c] || 0) + (basics[c] || 0);
-    return sources;
-  };
-
-  const objective = (sources: Record<string, number>): number => {
-    let value = 0;
-    for (const c of allColors) {
-      const deficit = Math.max(0, (targetSources[c] || 0) - (sources[c] || 0));
-      value += deficit * deficit;
-    }
-    return value;
-  };
-
-  // Allocate basics by minimizing global source-deficit objective.
+  // Allocate basics by exhaustive search over compositions.
+  // Objective mixes:
+  // 1) Karsten source deficits
+  // 2) card-level castability adequacy (on-curve pressure)
+  // 3) soft main-color balance regularization
+  // 4) splash/basic sanity and early-color land floors
   const basicsToAssign = Math.max(0, landCount - selectedUtility.length);
   const basicsByColor: Record<string, number> = {};
   for (const c of allColors) basicsByColor[c] = 0;
 
-  for (let i = 0; i < basicsToAssign; i++) {
-    let bestColor = allColors[0];
+  if (allColors.length > 0 && basicsToAssign > 0) {
+    // Strong early-land floors for main colors.
+    // We relax only if the floor system is infeasible for the available basics.
+    const mainLandFloor: Record<string, number> = {};
+    for (const c of mainColors) {
+      let earlyDemand = 0;
+      for (const dc of cards) {
+        const pc = poolMap.get(dc.name);
+        if (!pc) continue;
+        const pips = countRequiredColorPipsForDeck(pc.cost, c, allColors);
+        if (pips <= 0) continue;
+        if ((pc.cmc || 0) <= 3) earlyDemand += dc.qty * Math.max(1, pips);
+      }
+      const floor = earlyDemand > 0 ? Math.max(5, Math.ceil(4 + earlyDemand * 0.45)) : 4;
+      mainLandFloor[c] = floor;
+    }
+    const computeMinBasicsNeeded = (): number => {
+      let needed = 0;
+      for (const c of mainColors) needed += Math.max(0, (mainLandFloor[c] || 0) - (utilityLandSources[c] || 0));
+      return needed;
+    };
+    while (computeMinBasicsNeeded() > basicsToAssign) {
+      const reducible = [...mainColors]
+        .filter((c) => (mainLandFloor[c] || 0) > 4)
+        .sort((a, b) => (mainLandFloor[b] || 0) - (mainLandFloor[a] || 0));
+      if (reducible.length === 0) break;
+      mainLandFloor[reducible[0]] -= 1;
+    }
+
+    const colors = [...allColors];
+    const comp = new Array<number>(colors.length).fill(0);
     let bestObj = Number.POSITIVE_INFINITY;
-    for (const c of allColors) {
-      basicsByColor[c] += 1;
-      const obj = objective(computeLandSources(basicsByColor));
-      basicsByColor[c] -= 1;
-      if (obj < bestObj - 1e-9) {
-        bestObj = obj;
-        bestColor = c;
-      } else if (Math.abs(obj - bestObj) <= 1e-9 && (pipDemand[c] || 0) > (pipDemand[bestColor] || 0)) {
-        bestColor = c;
+    let bestComp = [...comp];
+
+    const evaluateComposition = (counts: number[]): number => {
+      const basics: Record<string, number> = {};
+      for (let i = 0; i < colors.length; i++) basics[colors[i]] = counts[i] || 0;
+
+      const sources: Record<string, number> = {};
+      for (const c of colors) sources[c] = (currentSources[c] || 0) + (basics[c] || 0);
+
+      // 1) Karsten deficits by color.
+      let deficitPenalty = 0;
+      for (const c of colors) {
+        const deficit = Math.max(0, (targetSources[c] || 0) - (sources[c] || 0));
+        deficitPenalty += deficit * deficit;
       }
-    }
-    basicsByColor[bestColor] += 1;
-  }
 
-  // Safety rule: if a splash is active, keep at least one basic of splash color
-  // whenever we play any basics at all. This avoids awkward manabases where
-  // fetch/fixing exists but no target basic for the splash.
-  if (effectiveSplash && basicsToAssign > 0 && (basicsByColor[effectiveSplash] || 0) === 0) {
-    const donor = [...mainColors].sort((a, b) => (basicsByColor[b] || 0) - (basicsByColor[a] || 0))[0];
-    if (donor && (basicsByColor[donor] || 0) > 1) {
-      basicsByColor[donor] -= 1;
-      basicsByColor[effectiveSplash] = (basicsByColor[effectiveSplash] || 0) + 1;
-    }
-  }
-
-  // Early-curve floor: ensure enough LAND sources for colors with early-game demand.
-  // Cards requiring a color at CMC <= 3 need reliable T2-T3 access from actual lands,
-  // not from mana producers that arrive later.
-  for (const color of mainColors) {
-    let earlyCurveCards = 0;
-    for (const dc of cards) {
-      const pc = poolMap.get(dc.name);
-      if (!pc) continue;
-      const pips = countRequiredColorPipsForDeck(pc.cost, color, allColors);
-      if (pips > 0 && pc.cmc <= 3) earlyCurveCards += dc.qty;
-    }
-    if (earlyCurveCards === 0) continue;
-    // ~0.7 extra land source per early-curve card on a base of 4
-    const minLandSources = Math.max(5, Math.ceil(4 + earlyCurveCards * 0.7));
-
-    // Count actual land sources (basics + utility lands)
-    let landSources = basicsByColor[color] || 0;
-    for (const util of selectedUtility) {
-      if (util.isFetch || util.produced.includes(color)) landSources++;
-    }
-    let deficit = minLandSources - landSources;
-    if (deficit <= 0) continue;
-
-    // Redistribute basics from the color with the most, but don't starve it below 4.
-    const donors = mainColors
-      .filter((c) => c !== color)
-      .sort((a, b) => (basicsByColor[b] || 0) - (basicsByColor[a] || 0));
-    for (const donor of donors) {
-      if (deficit <= 0) break;
-      const canTake = Math.max(0, (basicsByColor[donor] || 0) - 4);
-      const take = Math.min(deficit, canTake);
-      if (take > 0) {
-        basicsByColor[donor] -= take;
-        basicsByColor[color] += take;
-        deficit -= take;
+      // 2) Card-level castability adequacy (multi-color aware).
+      let castabilityPenalty = 0;
+      for (const dc of cards) {
+        const pc = poolMap.get(dc.name);
+        if (!pc) continue;
+        let hasRequirement = false;
+        let adequacy = 1;
+        for (const c of colors) {
+          const pips = countRequiredColorPipsForDeck(pc.cost, c, colors);
+          if (pips <= 0) continue;
+          hasRequirement = true;
+          const req = karstenRequiredSources(pips, pc.cmc || 0, effectiveSplash === c);
+          const src = sources[c] || 0;
+          const colorAdequacy = req > 0 ? clamp(src / req, 0, 1) : 1;
+          adequacy *= colorAdequacy;
+        }
+        if (!hasRequirement) continue;
+        const cmc = pc.cmc || 0;
+        const cmcWeight = cmc <= 2 ? 1.7 : cmc === 3 ? 1.3 : cmc === 4 ? 1.0 : 0.7;
+        const cardPenalty = (1 - adequacy) * (1 - adequacy) * cmcWeight;
+        castabilityPenalty += cardPenalty * dc.qty;
       }
-    }
+
+      // 3) Main color balance regularization (soft, demand-aware).
+      let balancePenalty = 0;
+      if (mainColors.length >= 2) {
+        const demandTotal = mainColors.reduce((s, c) => s + (pipDemand[c] || 0), 0);
+        const sourceTotal = mainColors.reduce((s, c) => s + (sources[c] || 0), 0);
+        if (demandTotal > 0 && sourceTotal > 0) {
+          for (const c of mainColors) {
+            const demandShare = (pipDemand[c] || 0) / demandTotal;
+            const sourceShare = (sources[c] || 0) / sourceTotal;
+            balancePenalty += Math.pow(sourceShare - demandShare, 2);
+          }
+        }
+        for (let i = 0; i < mainColors.length; i++) {
+          for (let j = i + 1; j < mainColors.length; j++) {
+            const diff = Math.abs((sources[mainColors[i]] || 0) - (sources[mainColors[j]] || 0));
+            if (diff > 3) balancePenalty += Math.pow(diff - 3, 2) * 0.35;
+          }
+        }
+      }
+
+      // 4) Splash/basic sanity + early-color land floors (land-only).
+      let splashPenalty = 0;
+      if (effectiveSplash) {
+        const splashLandSources = (utilityLandSources[effectiveSplash] || 0) + (basics[effectiveSplash] || 0);
+        if (splashLandSources <= 0) splashPenalty += 1.2;
+      }
+
+      // Hard-ish floor for early main-color access from LANDS only.
+      // If unmet, the composition is heavily penalized.
+      let earlyFloorPenalty = 0;
+      for (const c of mainColors) {
+        const minLandSources = mainLandFloor[c] || 0;
+        if (minLandSources <= 0) continue;
+        const landSources = (utilityLandSources[c] || 0) + (basics[c] || 0);
+        const deficit = Math.max(0, minLandSources - landSources);
+        earlyFloorPenalty += deficit * deficit * 40;
+      }
+
+      return (
+        deficitPenalty +
+        castabilityPenalty * 2.6 +
+        balancePenalty * 6 +
+        splashPenalty +
+        earlyFloorPenalty
+      );
+    };
+
+    const search = (idx: number, remainingCount: number): void => {
+      if (idx === colors.length - 1) {
+        comp[idx] = remainingCount;
+        const obj = evaluateComposition(comp);
+        if (obj < bestObj - 1e-9) {
+          bestObj = obj;
+          bestComp = [...comp];
+        }
+        return;
+      }
+      for (let x = 0; x <= remainingCount; x++) {
+        comp[idx] = x;
+        search(idx + 1, remainingCount - x);
+      }
+    };
+
+    search(0, basicsToAssign);
+    for (let i = 0; i < colors.length; i++) basicsByColor[colors[i]] = bestComp[i] || 0;
   }
 
   const lands: DeckCard[] = [];
@@ -1593,6 +2141,28 @@ const findBestSkeleton = (colorCode: string, skeletons: Skeleton[]): Skeleton | 
 const deckSignature = (cards: DeckCard[]): string =>
   [...cards].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `${c.name}:${c.qty}`).join("|");
 
+const toQtyMap = (cards: DeckCard[]): Map<string, number> => {
+  const m = new Map<string, number>();
+  for (const c of cards) m.set(c.name, (m.get(c.name) || 0) + c.qty);
+  return m;
+};
+
+const multisetJaccard = (a: DeckCard[], b: DeckCard[]): number => {
+  const ma = toQtyMap(a);
+  const mb = toQtyMap(b);
+  const keys = new Set<string>([...ma.keys(), ...mb.keys()]);
+  let inter = 0;
+  let uni = 0;
+  for (const k of keys) {
+    const qa = ma.get(k) || 0;
+    const qb = mb.get(k) || 0;
+    inter += Math.min(qa, qb);
+    uni += Math.max(qa, qb);
+  }
+  if (uni <= 0) return 0;
+  return inter / uni;
+};
+
 
 // Main optimizer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1604,11 +2174,17 @@ export const optimizePool = (
   formatMean = 55,
   debug = false,
   debugLimit = 20,
+  searchProfile: SearchProfile = DEFAULT_SEARCH_PROFILE,
   hcRestarts = NUM_RESTARTS,
   hcIterationLimit = ITERATION_LIMIT,
   seed = DEFAULT_OPTIMIZER_SEED,
+  maxOptimizeMs = DEFAULT_MAX_OPTIMIZE_MS,
 ): SealedOptimizerResult => {
-  const rng = createSeededRng(seed);
+  const activeSearchProfile = normalizeSearchProfile(searchProfile);
+  const budgetMs = Math.max(1_000, Math.min(10_000, Number(maxOptimizeMs) || DEFAULT_MAX_OPTIMIZE_MS));
+  const optimizeDeadline = Date.now() + budgetMs;
+  const isBudgetExhausted = () => Date.now() >= optimizeDeadline;
+  let budgetExhausted = false;
   const results: {
     score: number; archetype: string; mainColors: string[];
     splashColor: string | null; deck: DeckCard[];
@@ -1625,28 +2201,39 @@ export const optimizePool = (
     reason: string;
   }[] = [];
 
-  const preRankedPairs = [...PAIRS]
-    .map((pair) => {
-      const pairEligible = filterEligibleCards(poolCards, pair, null).filter((pc) => !isLandType(pc.type));
-      if (pairEligible.length === 0) return { pair, support: -9999 };
+  const mainColorSets = getMainColorSetsForProfile(activeSearchProfile);
+  const preRankedMainSets = [...mainColorSets]
+    .map((mainColors) => {
+      const eligible = filterEligibleCards(poolCards, mainColors, null).filter((pc) => !isLandType(pc.type));
+      if (eligible.length === 0) return { mainColors, support: -9999 };
+      const supportCtx = buildSupportContext(eligible);
 
       const utilities: number[] = [];
-      for (const pc of pairEligible) {
-        const util = getCardUtilityScore(pc, null, formatMean);
+      for (const pc of eligible) {
+        const util = getCardUtilityScore(
+          pc,
+          null,
+          formatMean,
+          0,
+          activeSearchProfile,
+          mainColors,
+          null,
+          supportCtx,
+        );
         for (let i = 0; i < pc.qty; i++) utilities.push(util);
       }
       utilities.sort((a, b) => b - a);
       const topPlayable = utilities.slice(0, DEFAULT_SPELL_SLOTS);
       const baseScore = topPlayable.reduce((sum, v) => sum + v, 0);
-      return { pair, support: baseScore };
+      return { mainColors, support: baseScore };
     })
     .sort((a, b) => b.support - a.support);
 
-  const rankedPairs = preRankedPairs.slice(0, MAX_MAIN_PAIRS).map((item) => item.pair);
+  const rankedMainSets = preRankedMainSets.slice(0, MAX_MAIN_PAIRS).map((item) => item.mainColors);
   if (debug) {
-    const selectedSet = new Set(rankedPairs.map((p) => p.join("")));
-    for (const item of preRankedPairs) {
-      const code = item.pair.join("");
+    const selectedSet = new Set(rankedMainSets.map((p) => p.join("")));
+    for (const item of preRankedMainSets) {
+      const code = item.mainColors.join("");
       const reason =
         item.support <= -9999
           ? "no_eligible_cards_for_pair"
@@ -1668,10 +2255,21 @@ export const optimizePool = (
     splashColor: string | null; deck: DeckCard[];
     breakdown: ScoreBreakdown; stats: DeckStats; signature: string;
   }[] = [];
-  for (const pair of rankedPairs) {
-    const pairCode = pair.join("");
-    const skeleton = findBestSkeleton(pair.join(""), skeletons);
-    const eligible = filterEligibleCards(poolCards, pair, null).filter((pc) => !isLandType(pc.type));
+  for (const mainColors of rankedMainSets) {
+    if (isBudgetExhausted()) {
+      budgetExhausted = true;
+      if (debug) {
+        debugPairDiagnostics.push({
+          stage: "main_eval",
+          archetype: mainColors.join(""),
+          reason: "budget_exhausted_before_pair",
+        });
+      }
+      break;
+    }
+    const pairCode = mainColors.join("");
+    const skeleton = findBestSkeleton(mainColors.join(""), skeletons);
+    const eligible = filterEligibleCards(poolCards, mainColors, null).filter((pc) => !isLandType(pc.type));
     if (eligible.length < DEFAULT_SPELL_SLOTS * 0.6) {
       if (debug) {
         debugPairDiagnostics.push({
@@ -1684,31 +2282,67 @@ export const optimizePool = (
       continue;
     }
 
-    const result = hillClimbOptimize(
-      eligible,
-      pairMap,
-      pair,
-      null,
-      skeleton,
-      DEFAULT_SPELL_SLOTS,
-      scoreWeights,
-      formatMean,
-      hcRestarts,
-      hcIterationLimit,
-      rng,
-    );
-    if (result.deck.length <= 0) {
-      if (debug) {
-        debugPairDiagnostics.push({
-          stage: "main_eval",
-          archetype: pairCode,
-          eligibleCount: eligible.length,
-          reason: "empty_deck_after_optimize",
-        });
+    for (let attempt = 0; attempt < CANDIDATES_PER_MAIN_ARCHETYPE; attempt++) {
+      if (isBudgetExhausted()) {
+        budgetExhausted = true;
+        if (debug) {
+          debugPairDiagnostics.push({
+            stage: "main_eval",
+            archetype: pairCode,
+            eligibleCount: eligible.length,
+            reason: `budget_exhausted_a${attempt + 1}`,
+          });
+        }
+        break;
       }
-      continue;
-    }
-    if (result.breakdown.consistencyScore < 20) {
+      const attemptRng = createAttemptRng(seed, pairCode, attempt);
+      const result = hillClimbOptimize(
+        eligible,
+        pairMap,
+        mainColors,
+        null,
+        skeleton,
+        DEFAULT_SPELL_SLOTS,
+        scoreWeights,
+        formatMean,
+        activeSearchProfile,
+        hcRestarts,
+        hcIterationLimit,
+        attemptRng,
+        optimizeDeadline,
+      );
+      if (result.deck.length <= 0) {
+        if (debug) {
+          debugPairDiagnostics.push({
+            stage: "main_eval",
+            archetype: pairCode,
+            eligibleCount: eligible.length,
+            reason: `empty_deck_after_optimize_a${attempt + 1}`,
+          });
+        }
+        continue;
+      }
+      if (result.breakdown.consistencyScore < 20) {
+        if (debug) {
+          debugPairDiagnostics.push({
+            stage: "main_eval",
+            archetype: pairCode,
+            eligibleCount: eligible.length,
+            score: Number(result.score.toFixed(2)),
+            consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
+            removalCount: result.stats.removalCount,
+            reason: `failed_consistency_gate_a${attempt + 1}`,
+          });
+        }
+        continue;
+      }
+      const accepted = {
+          score: result.score, archetype: mainColors.join(""), mainColors: [...mainColors],
+          splashColor: null, deck: result.deck, breakdown: result.breakdown,
+          stats: result.stats, signature: deckSignature(result.deck),
+        };
+      results.push(accepted);
+      acceptedMainResults.push(accepted);
       if (debug) {
         debugPairDiagnostics.push({
           stage: "main_eval",
@@ -1717,29 +2351,11 @@ export const optimizePool = (
           score: Number(result.score.toFixed(2)),
           consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
           removalCount: result.stats.removalCount,
-          reason: "failed_consistency_gate",
+          reason: `accepted_main_a${attempt + 1}`,
         });
       }
-      continue;
     }
-    const accepted = {
-        score: result.score, archetype: pair.join(""), mainColors: [...pair],
-        splashColor: null, deck: result.deck, breakdown: result.breakdown,
-        stats: result.stats, signature: deckSignature(result.deck),
-      };
-    results.push(accepted);
-    acceptedMainResults.push(accepted);
-    if (debug) {
-      debugPairDiagnostics.push({
-        stage: "main_eval",
-        archetype: pairCode,
-        eligibleCount: eligible.length,
-        score: Number(result.score.toFixed(2)),
-        consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
-        removalCount: result.stats.removalCount,
-        reason: "accepted_main",
-      });
-    }
+    if (budgetExhausted) break;
   }
 
   // Try splash for top base pairs
@@ -1762,8 +2378,30 @@ export const optimizePool = (
     }
   }
   for (const base of topPairs) {
+    if (isBudgetExhausted()) {
+      budgetExhausted = true;
+      if (debug) {
+        debugPairDiagnostics.push({
+          stage: "splash_eval",
+          archetype: base.mainColors.join(""),
+          reason: "budget_exhausted_before_base_splash",
+        });
+      }
+      break;
+    }
     const skeleton = findBestSkeleton(base.mainColors.join(""), skeletons);
     for (const splash of COLOR_ORDER) {
+      if (isBudgetExhausted()) {
+        budgetExhausted = true;
+        if (debug) {
+          debugPairDiagnostics.push({
+            stage: "splash_eval",
+            archetype: base.mainColors.join("") + splash.toLowerCase(),
+            reason: "budget_exhausted_before_splash",
+          });
+        }
+        break;
+      }
       if (base.mainColors.includes(splash)) continue;
       const eligible = filterEligibleCards(poolCards, base.mainColors, splash).filter((pc) => !isLandType(pc.type));
       const splashCode = base.mainColors.join("") + splash.toLowerCase();
@@ -1784,31 +2422,66 @@ export const optimizePool = (
         .join("");
       const trioSkeleton = findBestSkeleton(trioCode, skeletons);
 
-      const result = hillClimbOptimize(
-        eligible,
-        pairMap,
-        base.mainColors,
-        splash,
-        trioSkeleton || skeleton,
-        DEFAULT_SPELL_SLOTS,
-        scoreWeights,
-        formatMean,
-        hcRestarts,
-        hcIterationLimit,
-        rng,
-      );
-      if (result.deck.length <= 0) {
-        if (debug) {
-          debugPairDiagnostics.push({
-            stage: "splash_eval",
-            archetype: splashCode,
-            eligibleCount: eligible.length,
-            reason: "empty_deck_after_optimize",
-          });
+      for (let attempt = 0; attempt < CANDIDATES_PER_SPLASH_ARCHETYPE; attempt++) {
+        if (isBudgetExhausted()) {
+          budgetExhausted = true;
+          if (debug) {
+            debugPairDiagnostics.push({
+              stage: "splash_eval",
+              archetype: splashCode,
+              eligibleCount: eligible.length,
+              reason: `budget_exhausted_a${attempt + 1}`,
+            });
+          }
+          break;
         }
-        continue;
-      }
-      if (result.breakdown.consistencyScore < 20) {
+        const attemptRng = createAttemptRng(seed, splashCode, attempt);
+        const result = hillClimbOptimize(
+          eligible,
+          pairMap,
+          base.mainColors,
+          splash,
+          trioSkeleton || skeleton,
+          DEFAULT_SPELL_SLOTS,
+          scoreWeights,
+          formatMean,
+          activeSearchProfile,
+          hcRestarts,
+          hcIterationLimit,
+          attemptRng,
+          optimizeDeadline,
+        );
+        if (result.deck.length <= 0) {
+          if (debug) {
+            debugPairDiagnostics.push({
+              stage: "splash_eval",
+              archetype: splashCode,
+              eligibleCount: eligible.length,
+              reason: `empty_deck_after_optimize_a${attempt + 1}`,
+            });
+          }
+          continue;
+        }
+        if (result.breakdown.consistencyScore < 20) {
+          if (debug) {
+            debugPairDiagnostics.push({
+              stage: "splash_eval",
+              archetype: splashCode,
+              eligibleCount: eligible.length,
+              score: Number(result.score.toFixed(2)),
+              consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
+              removalCount: result.stats.removalCount,
+              reason: `failed_consistency_gate_a${attempt + 1}`,
+            });
+          }
+          continue;
+        }
+        results.push({
+            score: result.score, archetype: base.mainColors.join("") + splash.toLowerCase(),
+            mainColors: [...base.mainColors], splashColor: splash,
+            deck: result.deck, breakdown: result.breakdown,
+            stats: result.stats, signature: deckSignature(result.deck),
+          });
         if (debug) {
           debugPairDiagnostics.push({
             stage: "splash_eval",
@@ -1817,29 +2490,13 @@ export const optimizePool = (
             score: Number(result.score.toFixed(2)),
             consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
             removalCount: result.stats.removalCount,
-            reason: "failed_consistency_gate",
+            reason: `accepted_splash_a${attempt + 1}`,
           });
         }
-        continue;
       }
-      results.push({
-          score: result.score, archetype: base.mainColors.join("") + splash.toLowerCase(),
-          mainColors: [...base.mainColors], splashColor: splash,
-          deck: result.deck, breakdown: result.breakdown,
-          stats: result.stats, signature: deckSignature(result.deck),
-        });
-      if (debug) {
-        debugPairDiagnostics.push({
-          stage: "splash_eval",
-          archetype: splashCode,
-          eligibleCount: eligible.length,
-          score: Number(result.score.toFixed(2)),
-          consistencyScore: Number(result.breakdown.consistencyScore.toFixed(2)),
-          removalCount: result.stats.removalCount,
-          reason: "accepted_splash",
-        });
-      }
+      if (budgetExhausted) break;
     }
+    if (budgetExhausted) break;
   }
 
   // Sort by THE score, dedup, take top 3
@@ -1863,57 +2520,176 @@ export const optimizePool = (
     return { ...r, activeSplash, resolvedArchetype: archetype };
   });
 
-  // Keep only the best deck per resolved archetype label (e.g. UR once, URw once).
-  const seenArchetypes = new Set<string>();
-  const onePerArchetype = resolved.filter((r) => {
-    if (seenArchetypes.has(r.resolvedArchetype)) return false;
-    seenArchetypes.add(r.resolvedArchetype);
-    return true;
-  });
+  // Keep top-K candidates per resolved archetype label BEFORE re-scoring.
+  // This avoids freezing each archetype to a single local optimum too early.
+  const perArchetypePreRescore = new Map<string, typeof resolved>();
+  for (const r of resolved) {
+    const arr = perArchetypePreRescore.get(r.resolvedArchetype) || [];
+    if (arr.length < TOPK_PER_ARCHETYPE_PRE_RESCORE) {
+      arr.push(r);
+      perArchetypePreRescore.set(r.resolvedArchetype, arr);
+    }
+  }
+  const candidatesForRescore = [...perArchetypePreRescore.values()].flat();
 
-  const top3 = onePerArchetype.slice(0, 3);
-
-  // Post-processing: compute display metadata
-
-  const builds: SealedDeckResult[] = top3.map((r, idx) => {
+  // Re-score ALL candidates with actual optimized land allocation.
+  // During hill-climbing, computeManaPenalty used estimateSourcesFromDeck (proportional
+  // heuristic over 17 generic lands). Now we run determineLands for each candidate and
+  // recompute manaPenalty / consistencyScore / baseScore / score with real sources.
+  const totalWeight = scoreWeights.power + scoreWeights.synergy + scoreWeights.consistency + scoreWeights.curve;
+  const rescored = candidatesForRescore.map((r) => {
     const lands = determineLands(r.deck, poolCards, r.mainColors, r.activeSplash);
+    const actualSources = computeSourcesFromLands(lands, r.deck, poolMap, r.mainColors, r.activeSplash);
+    const manaPenalty = computeManaPenalty(r.deck, poolMap, r.mainColors, r.activeSplash, actualSources);
+    const consistencyScore = normalizeConsistencyScore(manaPenalty);
+
+    // Collect mana debug info (stored on candidate, included in debugCandidates)
+    let manaDebug: string | undefined;
+    if (debug) {
+      const allC = [...r.mainColors, ...(r.activeSplash ? [r.activeSplash] : [])];
+      const dbgNeeded: Record<string, { needed: number; card: string; pips: number; cmc: number }> = {};
+      for (const c of allC) dbgNeeded[c] = { needed: 0, card: "", pips: 0, cmc: 0 };
+      for (const dc of r.deck) {
+        const pc = poolMap.get(dc.name);
+        if (!pc) continue;
+        for (const color of allC) {
+          const pips = countRequiredColorPipsForDeck(pc.cost, color, allC);
+          if (pips > 0) {
+            const req = karstenRequiredSources(pips, pc.cmc || 0, r.activeSplash === color);
+            if (req > dbgNeeded[color].needed) {
+              dbgNeeded[color] = { needed: req, card: dc.name, pips, cmc: pc.cmc || 0 };
+            }
+          }
+        }
+      }
+      manaDebug = allC.map((c) => {
+        const n = dbgNeeded[c];
+        const src = actualSources[c] || 0;
+        const def = Math.max(0, n.needed - src);
+        return `${c}:need${n.needed}(${n.card} ${n.pips}p@${n.cmc})have${src.toFixed(1)} def${def.toFixed(1)}`;
+      }).join(" | ");
+    }
+    const baseScore = (
+      scoreWeights.power * r.breakdown.wrNormalized +
+      scoreWeights.synergy * r.breakdown.synergyNormalized +
+      scoreWeights.consistency * consistencyScore +
+      scoreWeights.curve * r.breakdown.curveScore
+    ) / Math.max(1e-6, totalWeight);
+    const score = baseScore + r.breakdown.totalAdjustment;
     return {
-      rank: idx + 1,
-      score: Number(r.score.toFixed(2)),
-      archetype: r.resolvedArchetype,
-      mainColors: r.mainColors,
-      splashColor: r.activeSplash,
-      cards: r.deck,
+      ...r,
       lands,
-      stats: {
-        ...r.stats,
-        avgCmc: Number(r.stats.avgCmc.toFixed(2)),
-        totalCards: totalQty(r.deck) + totalQty(lands),
-        skeletonSimilarity: Number(r.stats.skeletonSimilarity.toFixed(3)),
-      },
-      scoreBreakdown: {
-        wrScore: Number(r.breakdown.wrScore.toFixed(2)),
-        synergyScore: Number(r.breakdown.synergyScore.toFixed(4)),
-        wrNormalized: Number(r.breakdown.wrNormalized.toFixed(2)),
-        synergyNormalized: Number(r.breakdown.synergyNormalized.toFixed(2)),
-        qualityScore: Number(r.breakdown.qualityScore.toFixed(2)),
-        consistencyScore: Number(r.breakdown.consistencyScore.toFixed(2)),
-        curveScore: Number(r.breakdown.curveScore.toFixed(2)),
-        skeletonSimilarity: Number(r.breakdown.skeletonSimilarity.toFixed(3)),
-        creatureTarget: Number(r.breakdown.creatureTarget.toFixed(2)),
-        curvePenalty: Number(r.breakdown.curvePenalty.toFixed(4)),
-        manaPenalty: Number(r.breakdown.manaPenalty.toFixed(4)),
-        dependencyPenalty: Number(r.breakdown.dependencyPenalty.toFixed(4)),
-        consistencyAdjustment: Number(r.breakdown.consistencyAdjustment.toFixed(2)),
-        curveAdjustment: Number(r.breakdown.curveAdjustment.toFixed(2)),
-        skeletonAdjustment: Number(r.breakdown.skeletonAdjustment.toFixed(2)),
-        creatureAdjustment: Number(r.breakdown.creatureAdjustment.toFixed(2)),
-        removalAdjustment: Number(r.breakdown.removalAdjustment.toFixed(2)),
-        dependencyAdjustment: Number(r.breakdown.dependencyAdjustment.toFixed(2)),
-        totalAdjustment: Number(r.breakdown.totalAdjustment.toFixed(2)),
-      },
+      score,
+      breakdown: { ...r.breakdown, manaPenalty, consistencyScore, qualityScore: baseScore },
+      manaDebug,
     };
   });
+
+  // Keep top-K rescored variants per archetype until final selection.
+  // This preserves intra-archetype alternatives (e.g. WG variants with/without
+  // specific pip-heavy cards) instead of collapsing too early to one local optimum.
+  const rescoredGrouped = new Map<string, typeof rescored>();
+  for (const r of rescored) {
+    const arr = rescoredGrouped.get(r.resolvedArchetype) || [];
+    arr.push(r);
+    rescoredGrouped.set(r.resolvedArchetype, arr);
+  }
+  const topPerArchetype = [...rescoredGrouped.values()]
+    .flatMap((arr) => arr.sort((a, b) => b.score - a.score).slice(0, TOPK_PER_ARCHETYPE_FINAL))
+    .sort((a, b) => b.score - a.score);
+
+  const uniqueCandidatePool: typeof topPerArchetype = [];
+  const seenCandidateSigs = new Set<string>();
+  for (const c of topPerArchetype) {
+    if (seenCandidateSigs.has(c.signature)) continue;
+    seenCandidateSigs.add(c.signature);
+    uniqueCandidatePool.push(c);
+  }
+
+  // Final diversified top-3 (MMR-style) over full candidate pool.
+  // Prefer distinct archetypes first, then fallback to best remaining MMR.
+  const selected: typeof uniqueCandidatePool = [];
+  const remaining = [...uniqueCandidatePool];
+  const usedArchetypes = new Set<string>();
+
+  while (selected.length < FINAL_BUILD_COUNT && remaining.length > 0) {
+    let bestIdx = -1;
+    let bestMmr = -Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const cand = remaining[i];
+      if (usedArchetypes.has(cand.resolvedArchetype)) continue;
+      let maxSim = 0;
+      for (const pick of selected) {
+        maxSim = Math.max(maxSim, multisetJaccard(cand.deck, pick.deck));
+      }
+      const mmrScore = cand.score - FINAL_DIVERSITY_LAMBDA * maxSim;
+      if (mmrScore > bestMmr) {
+        bestMmr = mmrScore;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) break;
+    const picked = remaining.splice(bestIdx, 1)[0];
+    selected.push(picked);
+    usedArchetypes.add(picked.resolvedArchetype);
+  }
+
+  while (selected.length < FINAL_BUILD_COUNT && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestMmr = -Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const cand = remaining[i];
+      let maxSim = 0;
+      for (const pick of selected) {
+        maxSim = Math.max(maxSim, multisetJaccard(cand.deck, pick.deck));
+      }
+      const mmrScore = cand.score - FINAL_DIVERSITY_LAMBDA * maxSim;
+      if (mmrScore > bestMmr) {
+        bestMmr = mmrScore;
+        bestIdx = i;
+      }
+    }
+    selected.push(remaining.splice(bestIdx, 1)[0]);
+  }
+  const top3 = selected;
+
+  // Post-processing: compute display metadata
+  const builds: SealedDeckResult[] = top3.map((r, idx) => ({
+    rank: idx + 1,
+    score: Number(r.score.toFixed(2)),
+    archetype: r.resolvedArchetype,
+    mainColors: r.mainColors,
+    splashColor: r.activeSplash,
+    cards: r.deck,
+    lands: r.lands,
+    stats: {
+      ...r.stats,
+      avgCmc: Number(r.stats.avgCmc.toFixed(2)),
+      totalCards: totalQty(r.deck) + totalQty(r.lands),
+      skeletonSimilarity: Number(r.stats.skeletonSimilarity.toFixed(3)),
+    },
+    scoreBreakdown: {
+      wrScore: Number(r.breakdown.wrScore.toFixed(2)),
+      synergyScore: Number(r.breakdown.synergyScore.toFixed(4)),
+      wrNormalized: Number(r.breakdown.wrNormalized.toFixed(2)),
+      synergyNormalized: Number(r.breakdown.synergyNormalized.toFixed(2)),
+      qualityScore: Number(r.breakdown.qualityScore.toFixed(2)),
+      consistencyScore: Number(r.breakdown.consistencyScore.toFixed(2)),
+      curveScore: Number(r.breakdown.curveScore.toFixed(2)),
+      skeletonSimilarity: Number(r.breakdown.skeletonSimilarity.toFixed(3)),
+      creatureTarget: Number(r.breakdown.creatureTarget.toFixed(2)),
+      curvePenalty: Number(r.breakdown.curvePenalty.toFixed(4)),
+      manaPenalty: Number(r.breakdown.manaPenalty.toFixed(4)),
+      dependencyPenalty: Number(r.breakdown.dependencyPenalty.toFixed(4)),
+      consistencyAdjustment: Number(r.breakdown.consistencyAdjustment.toFixed(2)),
+      curveAdjustment: Number(r.breakdown.curveAdjustment.toFixed(2)),
+      skeletonAdjustment: Number(r.breakdown.skeletonAdjustment.toFixed(2)),
+      creatureAdjustment: Number(r.breakdown.creatureAdjustment.toFixed(2)),
+      removalAdjustment: Number(r.breakdown.removalAdjustment.toFixed(2)),
+      dependencyAdjustment: Number(r.breakdown.dependencyAdjustment.toFixed(2)),
+      totalAdjustment: Number(r.breakdown.totalAdjustment.toFixed(2)),
+    },
+  }));
 
   return {
     setCode: "",
@@ -1925,7 +2701,7 @@ export const optimizePool = (
       ? debugPairDiagnostics.slice(0, Math.max(10, Math.min(200, debugLimit * 10)))
       : undefined,
     debugCandidates: debug
-      ? onePerArchetype.slice(0, Math.max(1, Math.min(50, debugLimit))).map((r) => ({
+      ? rescored.slice(0, Math.max(1, Math.min(50, debugLimit))).map((r) => ({
           archetype: r.resolvedArchetype,
           score: Number(r.score.toFixed(2)),
           qualityScore: Number(r.breakdown.qualityScore.toFixed(2)),
@@ -1937,6 +2713,7 @@ export const optimizePool = (
           manaPenalty: Number(r.breakdown.manaPenalty.toFixed(4)),
           curvePenalty: Number(r.breakdown.curvePenalty.toFixed(4)),
           dependencyPenalty: Number(r.breakdown.dependencyPenalty.toFixed(4)),
+          manaDebug: r.manaDebug,
         }))
       : undefined,
   };

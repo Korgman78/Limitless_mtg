@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+import time
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -18,10 +19,13 @@ weights = {
 }
 debug = os.getenv("SEALED_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
 debug_limit = int(os.getenv("SEALED_DEBUG_LIMIT", "20"))
-hc_restarts = int(os.getenv("SEALED_HC_RESTARTS", "2"))
-hc_iterations = int(os.getenv("SEALED_HC_ITERATIONS", "35"))
+hc_restarts = int(os.getenv("SEALED_HC_RESTARTS", "3"))
+hc_iterations = int(os.getenv("SEALED_HC_ITERATIONS", "55"))
 seed = int(os.getenv("SEALED_SEED", "1337"))
-retry_on_limit = os.getenv("SEALED_RETRY_ON_LIMIT", "1").lower() in {"1", "true", "yes", "on"}
+max_opt_ms = int(os.getenv("SEALED_MAX_OPTIMIZE_MS", "10000"))
+async_mode = os.getenv("SEALED_ASYNC", "1").lower() in {"1", "true", "yes", "on"}
+poll_interval_s = float(os.getenv("SEALED_ASYNC_POLL_INTERVAL", "0.8"))
+poll_timeout_s = float(os.getenv("SEALED_ASYNC_TIMEOUT", "60"))
 
 COLOR_TO_BASIC = {
     "W": "Plains",
@@ -54,45 +58,119 @@ def format_archetype_display(build: dict) -> str:
         label += str(splash).lower()
     return label
 
-def call_optimizer(restarts: int, iterations: int):
+def call_optimizer(payload: dict):
     return requests.post(
         f"{SUPABASE_URL}/functions/v1/sealed-optimizer",
         headers={
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json",
         },
-        json={
-            "setCode": "ECL",
-            "format": os.getenv("SEALED_OPTIMIZER_FORMAT", "ArenaDirect_Sealed"),
-            "poolText": pool_text,
-            "scoreWeights": weights,
-            "hcRestarts": restarts,
-            "hcIterations": iterations,
-            "seed": seed,
-            "debug": debug,
-            "debugLimit": debug_limit,
-        },
+        json=payload,
         timeout=30,
     )
 
 
 used_hc_restarts = hc_restarts
 used_hc_iterations = hc_iterations
-resp = call_optimizer(used_hc_restarts, used_hc_iterations)
-if resp.status_code == 546 and retry_on_limit:
-    fallback_restarts = 1
-    fallback_iterations = 25
-    print(
-        f"WORKER_LIMIT sur {used_hc_restarts}x{used_hc_iterations}, "
-        f"retry en {fallback_restarts}x{fallback_iterations}...\n"
-    )
-    resp = call_optimizer(fallback_restarts, fallback_iterations)
-    used_hc_restarts = fallback_restarts
-    used_hc_iterations = fallback_iterations
+base_payload = {
+    "setCode": "ECL",
+    "format": os.getenv("SEALED_OPTIMIZER_FORMAT", "ArenaDirect_Sealed"),
+    "poolText": pool_text,
+    "scoreWeights": weights,
+    "hcRestarts": used_hc_restarts,
+    "hcIterations": used_hc_iterations,
+    "seed": seed,
+    "maxOptimizeMs": max_opt_ms,
+    "debug": debug,
+    "debugLimit": debug_limit,
+}
 
-data = resp.json()
-if resp.status_code != 200:
-    print(f"Erreur {resp.status_code}:")
+if async_mode:
+    submit_payload = {
+        **base_payload,
+        "action": "submit",
+        "async": True,
+    }
+    submit_resp = call_optimizer(submit_payload)
+    submit_data = submit_resp.json()
+    if submit_resp.status_code != 202:
+        print(f"Erreur submit {submit_resp.status_code}:")
+        print(json.dumps(submit_data, indent=2)[:3000])
+        raise SystemExit(1)
+
+    job_id = submit_data.get("jobId")
+    if not job_id:
+        print("Erreur: réponse async sans jobId.")
+        print(json.dumps(submit_data, indent=2)[:3000])
+        raise SystemExit(1)
+
+    started = time.time()
+    data = None
+    status_code = 202
+    while True:
+        if time.time() - started > poll_timeout_s:
+            print(f"Timeout async après {poll_timeout_s:.1f}s (jobId={job_id}).")
+            raise SystemExit(1)
+        time.sleep(poll_interval_s)
+        status_resp = call_optimizer({"action": "status", "jobId": job_id})
+        status_code = status_resp.status_code
+        status_data = status_resp.json()
+        if status_code == 202:
+            continue
+        if status_code != 200:
+            print(f"Erreur status {status_code}:")
+            print(json.dumps(status_data, indent=2)[:3000])
+            raise SystemExit(1)
+        if status_data.get("status") == "failed":
+            print("Job async en erreur:")
+            print(json.dumps(status_data.get("error"), indent=2)[:3000])
+            raise SystemExit(1)
+        if status_data.get("status") == "done":
+            data = {
+                "result": status_data.get("result"),
+                "computeTimeMs": status_data.get("computeTimeMs"),
+            }
+            break
+    resp_status = 200
+else:
+    resp = call_optimizer(base_payload)
+    first_data = resp.json()
+    if resp.status_code == 202 and isinstance(first_data, dict) and first_data.get("jobId"):
+        job_id = first_data.get("jobId")
+        started = time.time()
+        data = None
+        status_code = 202
+        while True:
+            if time.time() - started > poll_timeout_s:
+                print(f"Timeout async après {poll_timeout_s:.1f}s (jobId={job_id}).")
+                raise SystemExit(1)
+            time.sleep(poll_interval_s)
+            status_resp = call_optimizer({"action": "status", "jobId": job_id})
+            status_code = status_resp.status_code
+            status_data = status_resp.json()
+            if status_code == 202:
+                continue
+            if status_code != 200:
+                print(f"Erreur status {status_code}:")
+                print(json.dumps(status_data, indent=2)[:3000])
+                raise SystemExit(1)
+            if status_data.get("status") == "failed":
+                print("Job async en erreur:")
+                print(json.dumps(status_data.get("error"), indent=2)[:3000])
+                raise SystemExit(1)
+            if status_data.get("status") == "done":
+                data = {
+                    "result": status_data.get("result"),
+                    "computeTimeMs": status_data.get("computeTimeMs"),
+                }
+                break
+        resp_status = 200
+    else:
+        data = first_data
+        resp_status = resp.status_code
+
+if resp_status != 200:
+    print(f"Erreur {resp_status}:")
     print(json.dumps(data, indent=2)[:3000])
 else:
     result = data["result"]
@@ -119,10 +197,13 @@ else:
     if debug:
         print("Debug candidates (quality vs adjustments):")
         for c in result.get("debugCandidates", []):
+            mana_dbg = c.get("manaDebug", "")
+            mana_suffix = f"\n         {mana_dbg}" if mana_dbg else ""
             print(
                 f"  {c['archetype']:>4} | score {c['score']:>6} = Q {c['qualityScore']:>6} + Adj {c['totalAdjustment']:>6}"
                 f" | Cons {c['consistencyScore']:>5} | Curve {c['curveScore']:>5}"
                 f" | Crea {c['creatureCount']:>2} | Rem {c['removalCount']:>2}"
+                f"{mana_suffix}"
             )
         print()
 

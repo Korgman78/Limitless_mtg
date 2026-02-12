@@ -1,9 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, Clock, Copy, Layers, Sparkles, Target, Users, X, Zap } from 'lucide-react';
 import { ManaIcons, Tooltip } from '../../Common';
 import { CmcStack, type SkeletonCard } from '../CmcStack';
-import type { PoolAnalysisCache, SealedDeckResult } from '../../../hooks/usePoolAnalysis';
+import type {
+  PoolAnalysisCache,
+  PoolOptimizationProgress,
+  SealedDeckResult,
+} from '../../../hooks/usePoolAnalysis';
 
 type BuildCurveRow = {
   cmc: number;
@@ -109,15 +113,20 @@ const buildCmcStacks = (
 interface PoolAnalysisModalProps {
   poolAnalysis: PoolAnalysisCache | null;
   isLoading: boolean;
+  loadingProgress?: PoolOptimizationProgress | null;
   selectedBuildIndex: number;
+  selectedTab: 'build' | 'user';
+  userDeckBuild: SealedDeckResult | null;
   onSelectBuild: (index: number) => void;
+  onSelectUserDeck: () => void;
+  onTestCustomDeck: () => void;
   onClose: () => void;
   onNewPool: () => void;
   onOpenArchetype: () => void;
   onZoomCard: (name: string) => void;
 }
 
-// ─── Unified section header style ───────────────────────────────────────────
+// â”€â”€â”€ Unified section header style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -137,8 +146,13 @@ const SectionHeader: React.FC<{
 export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   poolAnalysis,
   isLoading,
+  loadingProgress,
   selectedBuildIndex,
+  selectedTab,
+  userDeckBuild,
   onSelectBuild,
+  onSelectUserDeck,
+  onTestCustomDeck,
   onClose,
   onNewPool,
   onOpenArchetype,
@@ -148,7 +162,10 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   const result = poolAnalysis?.result;
   const metaByName = poolAnalysis?.metaByName || {};
   const computeTimeMs = poolAnalysis?.computeTimeMs ?? null;
-  const selectedBuild = result?.builds[selectedBuildIndex] || result?.builds[0] || null;
+  const selectedBuild =
+    selectedTab === 'user' && userDeckBuild
+      ? userDeckBuild
+      : result?.builds[selectedBuildIndex] || result?.builds[0] || null;
 
   const curveRows = useMemo(
     () => (selectedBuild ? buildSpellCurve(selectedBuild, metaByName) : []),
@@ -183,6 +200,64 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   // Escape key is handled centrally in DeckTestPanel/index.tsx
 
   if (isLoading) {
+    const progressTotal = Math.max(0, Number(loadingProgress?.total || 0));
+    const progressDone = Math.max(0, Number(loadingProgress?.done || 0));
+    const progressRunning = Math.max(0, Number(loadingProgress?.running || 0));
+    const progressQueued = Math.max(0, Number(loadingProgress?.queued || 0));
+    const progressFailed = Math.max(0, Number(loadingProgress?.failed || 0));
+    const hasShardProgress = progressTotal > 0;
+    const estimatedProgressPct = hasShardProgress
+      ? clamp(((progressDone + progressRunning * 0.5) / progressTotal) * 100, 0, 100)
+      : null;
+    const progressPctLabel = hasShardProgress
+      ? `${Math.round(estimatedProgressPct ?? 0)}%`
+      : 'Starting...';
+    const phaseLabel = !hasShardProgress
+      ? 'Initializing optimizer'
+      : progressDone >= progressTotal
+        ? 'Finalizing recommendations'
+        : progressRunning > 0
+          ? 'Exploring deck variants'
+          : progressQueued > 0
+            ? 'Waiting for shard workers'
+            : 'Preparing shard queue';
+    const waitingForWorkers =
+      hasShardProgress &&
+      progressDone < progressTotal &&
+      progressRunning === 0 &&
+      progressQueued > 0;
+
+    type ShardState = 'done' | 'running' | 'queued' | 'failed';
+    const shardStates: ShardState[] = [];
+    if (hasShardProgress) {
+      for (let i = 0; i < progressDone; i += 1) shardStates.push('done');
+      for (let i = 0; i < progressRunning; i += 1) shardStates.push('running');
+      for (let i = 0; i < progressQueued; i += 1) shardStates.push('queued');
+      for (let i = 0; i < progressFailed; i += 1) shardStates.push('failed');
+      while (shardStates.length < progressTotal) shardStates.push('queued');
+      if (shardStates.length > progressTotal) shardStates.length = progressTotal;
+    }
+
+    const shardProfiles = [
+      { key: 'skeleton', title: 'Skeleton guided', subtitle: 'Archetype trophy baseline' },
+      { key: 'power_mana_safe', title: 'Power mana-safe', subtitle: 'WR focused, stable castability' },
+      { key: 'power_greedy_splash', title: 'Greedy splash bombs', subtitle: 'Higher risk, higher ceiling' },
+      { key: 'curve_creatures', title: 'Curve creatures', subtitle: 'Tempo + board presence plan' },
+      { key: 'synergy_if_online', title: 'Synergy online', subtitle: 'Enable payoff thresholds' },
+    ];
+    const shardCards = Array.from({ length: hasShardProgress ? progressTotal : shardProfiles.length }).map((_, i) => {
+      const profile = shardProfiles[i] ?? {
+        key: `shard_${i + 1}`,
+        title: `Shard ${i + 1}`,
+        subtitle: 'Exploration worker',
+      };
+      return {
+        ...profile,
+        index: i,
+        status: (shardStates[i] ?? 'queued') as ShardState,
+      };
+    });
+
     return (
       <motion.div
         initial={{ opacity: 0 }}
@@ -208,6 +283,17 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
               <p className="text-xs mt-1 text-slate-300">
                 Running sealed optimizer and evaluating top 3 builds...
               </p>
+              <p className="text-[11px] mt-2 text-indigo-200 font-semibold">
+                {phaseLabel}
+              </p>
+              {progressTotal > 0 && (
+                <p className="text-[11px] mt-1 text-slate-400">
+                  Shards: {progressDone}/{progressTotal} done
+                  {' | '}running {progressRunning}
+                  {' | '}queued {progressQueued}
+                  {progressFailed > 0 ? ` | failed ${progressFailed}` : ''}
+                </p>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -218,7 +304,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
           </div>
 
           <div className="p-6 md:p-8 space-y-6">
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center gap-5">
               <div className="relative w-20 h-20">
                 <motion.div
                   className="absolute inset-0 rounded-full border-2 border-indigo-400/30"
@@ -234,34 +320,84 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                   <Sparkles size={18} className="text-indigo-300" />
                 </div>
               </div>
+              <div className="min-w-[88px]">
+                <p className="text-2xl font-black text-white leading-none">
+                  {progressPctLabel}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">overall progress</p>
+              </div>
             </div>
 
             <div className="space-y-3">
-              <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                <motion.div
-                  className="h-full w-1/2 bg-gradient-to-r from-indigo-500 via-fuchsia-400 to-cyan-400"
-                  animate={{ x: ['-35%', '135%'] }}
-                  transition={{ repeat: Infinity, duration: 1.3, ease: 'easeInOut' }}
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {['Reading pool', 'Computing scores', 'Ranking builds'].map((label, index) => (
+              {hasShardProgress && shardStates.length > 0 && (
+                <div
+                  className="grid gap-1.5 rounded-xl border border-slate-800 bg-slate-950/45 p-2.5 w-full"
+                  style={{ gridTemplateColumns: `repeat(${Math.max(1, progressTotal)}, minmax(0, 1fr))` }}
+                >
+                  {shardStates.map((state, index) => (
+                    <motion.div
+                      key={`${state}-${index}`}
+                      title={`Shard ${index + 1}: ${state}`}
+                      className={`h-3.5 rounded-md ${
+                        state === 'done'
+                          ? 'bg-emerald-400'
+                          : state === 'running'
+                            ? 'bg-cyan-400'
+                            : state === 'failed'
+                              ? 'bg-rose-400'
+                              : 'bg-slate-600'
+                      }`}
+                      animate={state === 'running' ? { opacity: [0.45, 1, 0.45] } : undefined}
+                      transition={state === 'running' ? { repeat: Infinity, duration: 1 } : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+                {shardCards.map((item, index) => (
                   <motion.div
-                    key={label}
-                    className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-center"
-                    animate={{ opacity: [0.45, 1, 0.45] }}
+                    key={`${item.key}-${item.index}`}
+                    className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5"
+                    animate={item.status === 'running' ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
                     transition={{
-                      repeat: Infinity,
-                      duration: 1.6,
-                      delay: index * 0.2,
+                      repeat: item.status === 'running' ? Infinity : 0,
+                      duration: 1.2,
+                      delay: index * 0.08,
                     }}
                   >
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                      {label}
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">
+                        Shard {item.index + 1}
+                      </p>
+                      <span
+                        className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                          item.status === 'done'
+                            ? 'text-emerald-200 bg-emerald-500/25'
+                            : item.status === 'running'
+                              ? 'text-cyan-200 bg-cyan-500/25'
+                              : item.status === 'failed'
+                                ? 'text-rose-200 bg-rose-500/25'
+                                : 'text-slate-300 bg-slate-700/45'
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-semibold text-white leading-tight">
+                      {item.title}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-500 leading-tight">
+                      {item.subtitle}
                     </p>
                   </motion.div>
                 ))}
               </div>
+              {waitingForWorkers && (
+                <p className="text-[11px] text-amber-300/90">
+                  Waiting for available workers. Processing resumes automatically.
+                </p>
+              )}
             </div>
           </div>
         </motion.div>
@@ -359,7 +495,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
               Pool Optimization Dashboard
             </p>
             <h3 className="text-xl md:text-2xl font-black tracking-tight text-white mt-1 flex items-center gap-2">
-              <span>Best Build:</span>
+              <span>{selectedTab === 'user' ? 'User Deck:' : 'Best Build:'}</span>
               <ManaIcons colors={selectedBuild.mainColors.join('')} size="sm" />
               <span className="text-indigo-300">{selectedBuild.archetype}</span>
             </h3>
@@ -375,7 +511,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                   key={`${build.archetype}-${index}`}
                   onClick={() => onSelectBuild(index)}
                   className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    index === selectedBuildIndex
+                    selectedTab === 'build' && index === selectedBuildIndex
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-900/70 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
                   }`}
@@ -383,6 +519,18 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                   {index === 0 ? 'Best Build' : `Alternative ${index}`}
                 </button>
               ))}
+              {userDeckBuild && (
+                <button
+                  onClick={onSelectUserDeck}
+                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    selectedTab === 'user'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-900/70 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
+                  }`}
+                >
+                  User Deck
+                </button>
+              )}
             </div>
           </div>
           <button
@@ -394,23 +542,25 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
         </div>
 
         <div className="p-4 md:p-6 space-y-5">
-          {/* ── Recommended Deck List ─────────────────────────────────── */}
+          {/* â”€â”€ Recommended Deck List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Recommended Deck List
-                <span className="ml-2 text-slate-600">
-                  ({selectedBuild.stats.totalCards} cards{selectedBuild.splashColor ? ` · splash ${selectedBuild.splashColor}` : ''})
-                </span>
-              </h4>
-              <button
-                onClick={copyDeckList}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-wider transition-colors"
-              >
-                <Copy size={11} />
-                {didCopy ? 'Copied' : 'Copy Decklist'}
-              </button>
-            </div>
+            <SectionHeader
+              icon={<Layers size={13} className="text-indigo-300" />}
+              title="Recommended Deck List"
+              trailing={(
+                <button
+                  onClick={copyDeckList}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                >
+                  <Copy size={11} />
+                  {didCopy ? 'Copied' : 'Copy Decklist'}
+                </button>
+              )}
+            />
+            <p className="text-[10px] text-slate-500 mb-3">
+              {selectedBuild.stats.totalCards} cards
+              {selectedBuild.splashColor ? ` | splash ${selectedBuild.splashColor}` : ''}
+            </p>
             <div className="-mx-4 md:-mx-6 px-4 md:px-6 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] [scrollbar-color:theme(colors.slate.700)_transparent]">
               <div className="flex flex-nowrap items-start gap-0 md:gap-1 min-w-[700px] [&>div]:flex-1 [&>div]:min-w-0 [&>div]:w-auto">
                 {cmcRange.map((cmc) => (
@@ -425,7 +575,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
             </div>
           </div>
 
-          {/* ── Global Score ──────────────────────────────────────────── */}
+          {/* â”€â”€ Global Score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="rounded-3xl border border-indigo-500/25 bg-indigo-500/10 p-4 md:p-5">
             <div className="flex items-center gap-2">
               <Zap size={13} className="text-indigo-300" />
@@ -456,7 +606,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
               <span className="text-4xl md:text-5xl font-black text-white">
                 {selectedBuild.score.toFixed(2)}
               </span>
-              <span className="text-sm text-slate-400 pb-1">/100</span>
+              
             </div>
             <p className="mt-2 text-[11px] text-slate-300">
               Final = Base Axes {baseScore.toFixed(2)} + Structure{' '}
@@ -465,7 +615,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
             </p>
           </div>
 
-          {/* ── Composite Axes + Structure Adjustments ────────────────── */}
+          {/* â”€â”€ Composite Axes + Structure Adjustments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-3">
               <SectionHeader
@@ -487,13 +637,13 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                             </p>
                             <p className="text-[10px] text-slate-400">
                               {axis.label === 'Power' &&
-                                `Normalized card quality from contextual WR in this build. Weight: ${axis.weight}× in final composite.`}
+                                `Normalized card quality from contextual WR in this build. Weight: ${axis.weight}x in final composite.`}
                               {axis.label === 'Synergy' &&
-                                `Internal pair synergy quality of selected cards. Weight: ${axis.weight}× in final composite.`}
+                                `Internal pair synergy quality of selected cards. Weight: ${axis.weight}x in final composite.`}
                               {axis.label === 'Consistency' &&
-                                `Mana castability reliability (Karsten-style source adequacy). Weight: ${axis.weight}× in final composite.`}
+                                `Mana castability reliability (Karsten-style source adequacy). Weight: ${axis.weight}x in final composite.`}
                               {axis.label === 'Curve' &&
-                                `How close the mana curve is to target shape. Weight: ${axis.weight}× in final composite.`}
+                                `How close the mana curve is to target shape. Weight: ${axis.weight}x in final composite.`}
                             </p>
                           </div>
                         }
@@ -608,7 +758,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
             </div>
           </div>
 
-          {/* ── Spell Curve + Composition ─────────────────────────────── */}
+          {/* â”€â”€ Spell Curve + Composition â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
               <SectionHeader
@@ -709,6 +859,12 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
             Load New Pool
           </button>
           <button
+            onClick={onTestCustomDeck}
+            className="px-4 py-2 rounded-xl border border-indigo-500/50 text-indigo-200 hover:text-white hover:border-indigo-400 text-xs font-bold uppercase tracking-wider transition-colors"
+          >
+            Test Custom Deck
+          </button>
+          <button
             onClick={onOpenArchetype}
             className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
           >
@@ -720,3 +876,4 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     </motion.div>
   );
 };
+

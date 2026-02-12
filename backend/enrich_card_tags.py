@@ -82,6 +82,13 @@ EXCLUDED_DEPENDENCY_WORDS = {
     'elk', 'worm', 'shapeshifter', 'copy', 'rest', 'chosen', 'number',
 }
 
+TOKEN_COUNT_WORDS = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+TOKEN_TYPE_CLAUSE_RE = re.compile(r"create ([^.]*?) creature tokens?", re.IGNORECASE)
+
 HARD_DEPENDENCY_PATTERNS = [
     # Triggered / conditional support checks
     re.compile(r'(?:whenever|if)\s+(?:(?:an?|another)\s+)?([A-Z][a-z]+)\s+(?:creature\s+)?you control', re.IGNORECASE),
@@ -118,6 +125,7 @@ def fetch_scryfall_set(set_code):
     """Recupere toutes les cartes d'un set depuis Scryfall avec pagination."""
     print(f"Recuperation du set {set_code} sur Scryfall...")
     cards = []
+    raw_cards = []
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
 
     while url:
@@ -128,19 +136,45 @@ def fetch_scryfall_set(set_code):
 
         data = resp.json()
         for c in data.get('data', []):
-            card = _extract_card_data(c, set_code)
-            if card:
-                cards.append(card)
+            raw_cards.append(c)
 
         url = data.get('next_page')
         if url:
             time.sleep(0.1)
 
+    known_creature_types = _extract_set_creature_types(raw_cards)
+    for c in raw_cards:
+        card = _extract_card_data(c, set_code, known_creature_types)
+        if card:
+            cards.append(card)
+
     print(f"  {len(cards)} cartes recuperees depuis Scryfall.")
     return cards
 
 
-def _extract_card_data(c, set_code):
+def _extract_set_creature_types(raw_cards):
+    """Build a set-aware creature-type dictionary from Scryfall type lines."""
+    types = set()
+
+    def extract_from_type_line(type_line):
+        if not type_line or "Creature" not in type_line:
+            return
+        parts = re.split(r'—|â€”|-', type_line)
+        rhs = parts[1] if len(parts) > 1 else ""
+        for tok in rhs.split():
+            t = _singularize(tok.strip().lower())
+            if len(t) >= 3 and t not in EXCLUDED_DEPENDENCY_WORDS:
+                types.add(t)
+
+    for c in raw_cards:
+        extract_from_type_line(c.get("type_line", ""))
+        for face in c.get("card_faces", []) or []:
+            extract_from_type_line(face.get("type_line", ""))
+
+    return types
+
+
+def _extract_card_data(c, set_code, known_creature_types):
     """Extrait les champs utiles d'une carte Scryfall."""
     name = c.get('name')
     if not name:
@@ -168,6 +202,7 @@ def _extract_card_data(c, set_code):
     # Detection removal
     is_removal = _detect_removal(all_text)
     dependency_tags, dependency_min_support, dependency_scope = _detect_dependencies(all_text)
+    token_support_tags, token_support_count = _detect_token_support(all_text, known_creature_types)
     is_fixer_only = _detect_fixer_only(
         name=name,
         type_line=type_line,
@@ -189,6 +224,8 @@ def _extract_card_data(c, set_code):
         "dependency_tags": dependency_tags,
         "dependency_min_support": dependency_min_support,
         "dependency_scope": dependency_scope,
+        "token_support_tags": token_support_tags,
+        "token_support_count": token_support_count,
     }
 
 
@@ -339,6 +376,48 @@ def _detect_fixer_only(name, type_line, oracle_text, is_mana_producer, produced_
 
     return False
 
+
+def _detect_token_support(oracle_text, known_creature_types):
+    """
+    Detect token-producer support for tribal dependencies.
+    Returns (token_support_tags, token_support_count).
+    """
+    if not oracle_text:
+        return [], None
+
+    text = oracle_text.lower()
+    tags = set()
+    total_tokens = 0
+
+    for m in TOKEN_TYPE_CLAUSE_RE.finditer(text):
+        clause = (m.group(1) or "").strip()
+        if not clause:
+            continue
+
+        qty = 1
+        first_word = clause.split()[0] if clause.split() else ""
+        if first_word.isdigit():
+            qty = max(1, int(first_word))
+        elif first_word in TOKEN_COUNT_WORDS:
+            qty = TOKEN_COUNT_WORDS[first_word]
+        elif " x " in clause or clause.startswith("x "):
+            # Variable token counts are treated as at least one support body.
+            qty = 1
+
+        found_types = set()
+        for t in known_creature_types:
+            if re.search(rf"\b{re.escape(t)}s?\b", clause):
+                found_types.add(t)
+
+        if found_types:
+            tags.update(found_types)
+            total_tokens += qty
+
+    if not tags:
+        return [], None
+
+    return sorted(tags), max(1, total_tokens)
+
 # ==============================================================================
 # 3. UPSERT SUPABASE
 # ==============================================================================
@@ -360,6 +439,35 @@ def upsert_to_supabase(cards):
             print(f"  Erreur Batch {i // batch_size + 1}: {resp.text}")
         else:
             print(f"  Batch {i // batch_size + 1} OK.")
+
+
+def upsert_tokens_only_to_supabase(cards):
+    """
+    Batch upsert token support columns only.
+    Keeps existing manual dependency/removal calibrations untouched.
+    """
+    if not cards:
+        print("Aucune carte a upserter (tokens-only).")
+        return
+
+    payload = [{
+        "card_name": c["card_name"],
+        "set_code": c["set_code"],
+        "token_support_tags": c.get("token_support_tags") or [],
+        "token_support_count": c.get("token_support_count"),
+    } for c in cards]
+
+    print(f"Upsert tokens-only de {len(payload)} cartes vers card_list...")
+    batch_size = 500
+    for i in range(0, len(payload), batch_size):
+        chunk = payload[i:i + batch_size]
+        url = f"{SUPABASE_URL}/rest/v1/card_list?on_conflict=card_name,set_code"
+        resp = requests.post(url, json=chunk, headers=HEADERS_SUPABASE)
+
+        if resp.status_code >= 400:
+            print(f"  Erreur Batch tokens-only {i // batch_size + 1}: {resp.text}")
+        else:
+            print(f"  Batch tokens-only {i // batch_size + 1} OK.")
 
 # ==============================================================================
 # 4. REVIEW MODE
@@ -387,6 +495,7 @@ def print_stats(cards):
     removal_cards = [c for c in cards if c['is_removal']]
     mana_cards = [c for c in cards if c['is_mana_producer']]
     dependency_cards = [c for c in cards if c.get('dependency_tags')]
+    token_support_cards = [c for c in cards if c.get('token_support_tags')]
     hard_dependency_cards = [c for c in dependency_cards if c.get('dependency_min_support') is not None]
     other_dependency_cards = [c for c in dependency_cards if c.get('dependency_min_support') is None]
 
@@ -397,6 +506,7 @@ def print_stats(cards):
     print(f"Removal       : {len(removal_cards)}")
     print(f"Mana producers: {len(mana_cards)}")
     print(f"Dependency tags: {len(dependency_cards)}")
+    print(f"Token support tags: {len(token_support_cards)}")
     print(f"  - hard_dependency (min_support set): {len(hard_dependency_cards)}")
     print(f"  - no-threshold (to clean): {len(other_dependency_cards)}")
 
@@ -416,6 +526,12 @@ def print_stats(cards):
         scope = c.get("dependency_scope")
         print(f"  {c['card_name']} -> [{tags}] min={mins} scope={scope}")
 
+    print(f"\n--- Token Supports ({len(token_support_cards)}) ---")
+    for c in sorted(token_support_cards, key=lambda x: x['card_name']):
+        tags = ",".join(c.get("token_support_tags") or [])
+        count = c.get("token_support_count")
+        print(f"  {c['card_name']} -> [{tags}] count={count}")
+
 # ==============================================================================
 # MAIN
 # ==============================================================================
@@ -423,6 +539,7 @@ def print_stats(cards):
 if __name__ == "__main__":
     target = TARGET_SET.upper()
     review_mode = "--review" in sys.argv
+    tokens_only_mode = "--tokens-only" in sys.argv
 
     print(f"Demarrage enrichissement pour le set : {target}")
     start_time = time.time()
@@ -436,6 +553,8 @@ if __name__ == "__main__":
     # 3. Review mode
     if review_mode:
         review_untagged(cards)
+    elif tokens_only_mode:
+        upsert_tokens_only_to_supabase(cards)
     else:
         # 4. Upsert
         upsert_to_supabase(cards)

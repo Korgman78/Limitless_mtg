@@ -71,7 +71,17 @@ export type PoolAnalysisCache = {
   result: SealedOptimizerResult;
   metaByName: Record<string, PoolCardMeta>;
   selectedBuildIndex: number;
+  selectedTab: 'build' | 'user';
+  userDeckBuild: SealedDeckResult | null;
   computeTimeMs: number | null;
+};
+
+export type PoolOptimizationProgress = {
+  total: number;
+  queued: number;
+  running: number;
+  done: number;
+  failed: number;
 };
 
 type CardListRow = {
@@ -83,8 +93,10 @@ type CardListRow = {
   rarity?: string | null;
 };
 
-const POOL_ANALYSIS_CACHE_VERSION = 2;
+const POOL_ANALYSIS_CACHE_VERSION = 3;
 const POOL_ANALYSIS_TIMEOUT_MS = 25_000;
+const POOL_ANALYSIS_JOB_POLL_MS = 800;
+const POOL_ANALYSIS_JOB_TIMEOUT_MS = 90_000;
 
 const mapMetaRow = (row: CardListRow): PoolCardMeta => ({
   cmc: Number(row.card_cmc ?? 0),
@@ -175,11 +187,18 @@ export function usePoolAnalysis({
   const [poolImportText, setPoolImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [isAnalyzingPool, setIsAnalyzingPool] = useState(false);
+  const [poolOptimizationProgress, setPoolOptimizationProgress] =
+    useState<PoolOptimizationProgress | null>(null);
   const [poolAnalysis, setPoolAnalysis] = useState<PoolAnalysisCache | null>(
     null,
   );
   const [selectedBuildIndex, setSelectedBuildIndex] = useState(0);
+  const [selectedTab, setSelectedTab] = useState<'build' | 'user'>('build');
   const [zoomedCardName, setZoomedCardName] = useState<string | null>(null);
+  const [showCustomDeckModal, setShowCustomDeckModal] = useState(false);
+  const [customDeckText, setCustomDeckText] = useState('');
+  const [customDeckError, setCustomDeckError] = useState<string | null>(null);
+  const [isAnalyzingCustomDeck, setIsAnalyzingCustomDeck] = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -208,9 +227,17 @@ export function usePoolAnalysis({
         localStorage.removeItem(storageKey);
         return;
       }
-      setPoolAnalysis(parsed);
+      const hydrated: PoolAnalysisCache = {
+        ...parsed,
+        selectedTab: parsed.selectedTab === 'user' ? 'user' : 'build',
+        userDeckBuild: parsed.userDeckBuild || null,
+      };
+      setPoolAnalysis(hydrated);
       setSelectedBuildIndex(
-        Math.max(0, Math.min(parsed.selectedBuildIndex ?? 0, parsed.result.builds.length - 1)),
+        Math.max(0, Math.min(hydrated.selectedBuildIndex ?? 0, hydrated.result.builds.length - 1)),
+      );
+      setSelectedTab(
+        hydrated.selectedTab === 'user' && hydrated.userDeckBuild ? 'user' : 'build',
       );
     } catch {
       // Ignore cache parse errors.
@@ -223,16 +250,20 @@ export function usePoolAnalysis({
       const payload: PoolAnalysisCache = {
         ...poolAnalysis,
         selectedBuildIndex,
+        selectedTab,
       };
       localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch {
       // Ignore cache write errors.
     }
-  }, [storageKey, poolAnalysis, selectedBuildIndex]);
+  }, [storageKey, poolAnalysis, selectedBuildIndex, selectedTab]);
 
   const openImportModal = () => {
     setPoolImportText('');
     setImportError(null);
+    setPoolOptimizationProgress(null);
+    setCustomDeckError(null);
+    setShowCustomDeckModal(false);
     setAnalysisFormat(canUsePool ? activeFormat : 'ArenaDirect_Sealed');
     setShowImportModal(true);
   };
@@ -250,31 +281,104 @@ export function usePoolAnalysis({
     }
 
     setIsAnalyzingPool(true);
+    setPoolOptimizationProgress(null);
     setShowImportModal(false);
     setShowAnalysisModal(true);
 
     try {
-      const invokePromise = supabase.functions.invoke('sealed-optimizer', {
+      const submitPromise = supabase.functions.invoke('sealed-optimizer', {
         body: {
+          action: 'submit',
+          async: true,
           setCode: activeSet,
           format: analysisFormat,
           poolText: poolImportText,
         },
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
+      const submitTimeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error('Pool analysis timed out (25s). Try reducing pool size or retry.')),
+          () => reject(new Error('Pool analysis submit timed out (25s). Try again.')),
           POOL_ANALYSIS_TIMEOUT_MS,
         ),
       );
 
-      const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
+      const { data: submitData, error: submitError } = await Promise.race([submitPromise, submitTimeoutPromise]);
 
       if (!mountedRef.current) return;
 
-      if (error || !data?.result?.builds?.length) {
-        throw new Error(error?.message || data?.error || 'Pool analysis failed.');
+      if (submitError) {
+        const msg = submitError.message || 'Pool analysis submit failed.';
+        if (msg.toLowerCase().includes('sealed_optimizer_jobs')) {
+          throw new Error(
+            'Supabase setup missing: table `sealed_optimizer_jobs` is required for async pool optimization. Run the SQL provided by the backend.',
+          );
+        }
+        throw new Error(msg);
+      }
+
+      // Backward-compat: if backend returns sync shape directly.
+      let data = submitData as
+        | {
+            result?: SealedOptimizerResult;
+            computeTimeMs?: number;
+            jobId?: string;
+            status?: string;
+            error?: unknown;
+            progress?: PoolOptimizationProgress;
+          }
+        | null;
+
+      if (!data?.result?.builds?.length) {
+        const jobId = data?.jobId;
+        if (!jobId) {
+          throw new Error('Pool analysis failed (missing job id).');
+        }
+        if (data?.progress) {
+          setPoolOptimizationProgress(data.progress);
+        }
+
+        const startedAt = Date.now();
+        // Poll job status until done/failed/timeout.
+        while (mountedRef.current) {
+          if (Date.now() - startedAt > POOL_ANALYSIS_JOB_TIMEOUT_MS) {
+            throw new Error('Pool analysis timed out while optimizing (90s). Try again.');
+          }
+          await new Promise((resolve) => setTimeout(resolve, POOL_ANALYSIS_JOB_POLL_MS));
+
+          const { data: statusData, error: statusError } = await supabase.functions.invoke('sealed-optimizer', {
+            body: {
+              action: 'status',
+              jobId,
+            },
+          });
+
+          if (!mountedRef.current) return;
+
+          if (statusError) {
+            throw new Error(statusError.message || 'Pool analysis polling failed.');
+          }
+
+          const statusPayload = (statusData as
+            | { status?: string; progress?: PoolOptimizationProgress; error?: { message?: string } | null }
+            | null);
+          if (statusPayload?.progress) {
+            setPoolOptimizationProgress(statusPayload.progress);
+          }
+          const status = String(statusPayload?.status || '');
+          if (status === 'done') {
+            data = statusData as { result?: SealedOptimizerResult; computeTimeMs?: number };
+            break;
+          }
+          if (status === 'failed') {
+            const errObj = statusPayload?.error;
+            throw new Error(errObj?.message || 'Pool optimization job failed.');
+          }
+        }
+      }
+
+      if (!data?.result?.builds?.length) {
+        throw new Error('Pool analysis failed.');
       }
 
       const result = data.result as SealedOptimizerResult;
@@ -298,11 +402,15 @@ export function usePoolAnalysis({
         result,
         metaByName,
         selectedBuildIndex: 0,
+        selectedTab: 'build',
+        userDeckBuild: null,
         computeTimeMs,
       };
 
       setPoolAnalysis(cache);
       setSelectedBuildIndex(0);
+      setSelectedTab('build');
+      setPoolOptimizationProgress(null);
     } catch (err) {
       if (!mountedRef.current) return;
       const message =
@@ -310,6 +418,7 @@ export function usePoolAnalysis({
           ? err.message
           : 'Pool analysis failed. Try again.';
       setImportError(message);
+      setPoolOptimizationProgress(null);
       setShowAnalysisModal(false);
       setShowImportModal(true);
     } finally {
@@ -323,11 +432,15 @@ export function usePoolAnalysis({
     if (!poolAnalysis) return;
     const safe = Math.max(0, Math.min(index, poolAnalysis.result.builds.length - 1));
     setSelectedBuildIndex(safe);
+    setSelectedTab('build');
   };
 
   const openBuildArchetype = (onMatchedArchetype: (archetypeName: string, format: string, isAlternative: boolean) => void) => {
     if (!poolAnalysis) return;
-    const build = poolAnalysis.result.builds[selectedBuildIndex];
+    const build =
+      selectedTab === 'user' && poolAnalysis.userDeckBuild
+        ? poolAnalysis.userDeckBuild
+        : poolAnalysis.result.builds[selectedBuildIndex];
     if (!build) return;
     const archetype = build.mainColors.join('');
     if (analysisFormat !== activeFormat && onFormatChange) {
@@ -335,6 +448,73 @@ export function usePoolAnalysis({
     }
     onMatchedArchetype(archetype, analysisFormat, false);
     setShowAnalysisModal(false);
+  };
+
+  const openCustomDeckModal = () => {
+    if (!poolAnalysis) return;
+    setCustomDeckError(null);
+    setCustomDeckText('');
+    setShowCustomDeckModal(true);
+  };
+
+  const selectUserDeckTab = () => {
+    if (!poolAnalysis?.userDeckBuild) return;
+    setSelectedTab('user');
+  };
+
+  const runCustomDeckScore = async () => {
+    if (!poolAnalysis) return;
+    setCustomDeckError(null);
+    if (!customDeckText.trim()) {
+      setCustomDeckError('Paste a valid decklist before testing.');
+      return;
+    }
+    setIsAnalyzingCustomDeck(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sealed-optimizer', {
+        body: {
+          action: 'score_custom_deck',
+          setCode: activeSet,
+          format: analysisFormat,
+          deckText: customDeckText,
+          scoreWeights: poolAnalysis.result.weightsApplied,
+        },
+      });
+      if (error) {
+        throw new Error(error.message || 'Custom deck scoring failed.');
+      }
+
+      const payload = data as
+        | {
+            build?: SealedDeckResult;
+            metaByName?: Record<string, PoolCardMeta>;
+          }
+        | null;
+      if (!payload?.build) {
+        throw new Error('Custom deck scoring failed (no build returned).');
+      }
+
+      const mergedMeta: Record<string, PoolCardMeta> = {
+        ...poolAnalysis.metaByName,
+        ...(payload.metaByName || {}),
+      };
+
+      setPoolAnalysis({
+        ...poolAnalysis,
+        metaByName: mergedMeta,
+        userDeckBuild: payload.build,
+        selectedTab: 'user',
+      });
+      setSelectedTab('user');
+      setShowCustomDeckModal(false);
+      setCustomDeckText('');
+    } catch (err) {
+      setCustomDeckError(
+        err instanceof Error ? err.message : 'Custom deck scoring failed.',
+      );
+    } finally {
+      setIsAnalyzingCustomDeck(false);
+    }
   };
 
   return {
@@ -349,13 +529,24 @@ export function usePoolAnalysis({
     setPoolImportText,
     importError,
     isAnalyzingPool,
+    poolOptimizationProgress,
     poolAnalysis,
     selectedBuildIndex,
+    selectedTab,
     zoomedCardName,
     setZoomedCardName,
+    showCustomDeckModal,
+    setShowCustomDeckModal,
+    customDeckText,
+    setCustomDeckText,
+    customDeckError,
+    isAnalyzingCustomDeck,
     openImportModal,
     openLastPool,
     runPoolAnalysis,
+    openCustomDeckModal,
+    runCustomDeckScore,
+    selectUserDeckTab,
     changeBuild,
     openBuildArchetype,
   };

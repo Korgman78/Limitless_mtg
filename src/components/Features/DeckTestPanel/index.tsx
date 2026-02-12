@@ -195,8 +195,13 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
           <PoolAnalysisModal
             poolAnalysis={pool.poolAnalysis}
             isLoading={pool.isAnalyzingPool}
+            loadingProgress={pool.poolOptimizationProgress}
             selectedBuildIndex={pool.selectedBuildIndex}
+            selectedTab={pool.selectedTab}
+            userDeckBuild={pool.poolAnalysis?.userDeckBuild || null}
             onSelectBuild={pool.changeBuild}
+            onSelectUserDeck={pool.selectUserDeckTab}
+            onTestCustomDeck={pool.openCustomDeckModal}
             onClose={() => pool.setShowAnalysisModal(false)}
             onNewPool={() => {
               pool.setShowAnalysisModal(false);
@@ -207,6 +212,33 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
               haptics.success();
             }}
             onZoomCard={pool.setZoomedCardName}
+          />
+        )}
+
+        {pool.showCustomDeckModal && (
+          <DeckImportModal
+            analysisFormat={pool.analysisFormat}
+            deckImportText={pool.customDeckText}
+            importError={pool.customDeckError}
+            isAnalyzingDeck={pool.isAnalyzingCustomDeck}
+            onFormatChange={() => {
+              // Custom deck score uses current pool format; format switch disabled by design.
+            }}
+            onTextChange={pool.setCustomDeckText}
+            onAnalyze={pool.runCustomDeckScore}
+            onClose={() => pool.setShowCustomDeckModal(false)}
+            title="Test Custom Deck"
+            subtitle="Paste a custom decklist and score it with the same sealed grading model."
+            checklistItems={[
+              '1. Use main deck only (Sideboard ignored).',
+              '2. You can include lands or only spells.',
+              '3. Scores use the same axes as optimizer builds.',
+              '4. Result is saved as a User Deck tab.',
+            ]}
+            inputLabel="Custom Decklist"
+            placeholder="Deck\n1 Card Name\n..."
+            analyzeLabel="Test Deck"
+            formatOptions={SEALED_FORMAT_OPTIONS.filter((o) => o.value === pool.analysisFormat)}
           />
         )}
       </AnimatePresence>
