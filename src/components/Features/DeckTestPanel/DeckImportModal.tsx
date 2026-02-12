@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, X } from 'lucide-react';
+import { Loader2, Sparkles, X } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../../constants';
 import type { FormatOption } from '../../../types';
 
@@ -135,7 +135,11 @@ export const DeckImportModal: React.FC<DeckImportModalProps> = ({
           disabled={isAnalyzingDeck}
           className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-2"
         >
-          <Sparkles size={12} />
+          {isAnalyzingDeck ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Sparkles size={12} />
+          )}
           {isAnalyzingDeck ? 'Analyzing...' : analyzeLabel}
         </button>
       </div>
