@@ -1,6 +1,19 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, Clock, Copy, Layers, Sparkles, Target, Users, X, Zap } from 'lucide-react';
+import {
+  BarChart3,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Copy,
+  Layers,
+  Search,
+  Sparkles,
+  Target,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
 import { ManaIcons, Tooltip } from '../../Common';
 import { CmcStack, type SkeletonCard } from '../CmcStack';
 import type {
@@ -13,6 +26,8 @@ type BuildCurveRow = {
   cmc: number;
   count: number;
 };
+
+type AxisKey = 'power' | 'synergy' | 'consistency' | 'curve';
 
 const COLOR_ORDER = ['W', 'U', 'B', 'R', 'G'] as const;
 
@@ -159,6 +174,8 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   onZoomCard,
 }) => {
   const [didCopy, setDidCopy] = useState(false);
+  const [activeAxis, setActiveAxis] = useState<AxisKey>('power');
+  const [expandedCurveComponentId, setExpandedCurveComponentId] = useState<string | null>(null);
   const result = poolAnalysis?.result;
   const metaByName = poolAnalysis?.metaByName || {};
   const computeTimeMs = poolAnalysis?.computeTimeMs ?? null;
@@ -415,46 +432,342 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   const spellRatio = 100 - creatureRatio;
 
   const b = selectedBuild.scoreBreakdown;
+  const synergyBaseNormalized = Number.isFinite(b.synergyBaseNormalized)
+    ? b.synergyBaseNormalized
+    : b.synergyNormalized - b.dependencyAdjustment;
+  const curveBaseScore = Number.isFinite(b.curveBaseScore)
+    ? b.curveBaseScore
+    : b.curveScore - b.removalAdjustment;
   const baseScore = b.qualityScore;
-  const structureAdjustment = b.totalAdjustment;
+  const totalWeight =
+    result.weightsApplied.power +
+    result.weightsApplied.synergy +
+    result.weightsApplied.consistency +
+    result.weightsApplied.curve;
+  const toFixed2NoRound = (value: number): string => {
+    if (!Number.isFinite(value)) return '0.00';
+    const truncated =
+      value < 0
+        ? Math.ceil(value * 100) / 100
+        : Math.floor(value * 100) / 100;
+    return truncated.toFixed(2);
+  };
+  const signed = (value: number) => `${value >= 0 ? '+' : ''}${toFixed2NoRound(value)}`;
+  const dependencyAxisScale =
+    Number.isFinite(b.dependencyAxisScale) && b.dependencyAxisScale > 0
+      ? b.dependencyAxisScale
+      : totalWeight / Math.max(1e-6, result.weightsApplied.synergy);
+  const dependencyAxisDelta =
+    Number.isFinite(b.dependencyAxisDelta)
+      ? b.dependencyAxisDelta
+      : b.dependencyAdjustment * dependencyAxisScale;
+  const removalAxisScale =
+    Number.isFinite(b.removalAxisScale) && b.removalAxisScale > 0
+      ? b.removalAxisScale
+      : totalWeight / Math.max(1e-6, result.weightsApplied.curve);
+  const removalAxisDelta =
+    Number.isFinite(b.removalAxisDelta)
+      ? b.removalAxisDelta
+      : b.removalAdjustment * removalAxisScale;
+  const curveTopHeavyPenalty = Number.isFinite(b.curveTopHeavyPenalty) ? b.curveTopHeavyPenalty : 0;
+  const curveSkeletonPenalty = Number.isFinite(b.curveSkeletonPenalty) ? b.curveSkeletonPenalty : 0;
+  const curveEarlyCreaturePenalty = Number.isFinite(b.curveEarlyCreaturePenalty) ? b.curveEarlyCreaturePenalty : 0;
+  const curveCreatureCorridorPenalty = Number.isFinite(b.curveCreatureCorridorPenalty) ? b.curveCreatureCorridorPenalty : 0;
+  const curveTopHeavyScale =
+    Number.isFinite(b.curveTopHeavyScale) && b.curveTopHeavyScale > 0 ? b.curveTopHeavyScale : 90;
+  const curveSkeletonScale =
+    Number.isFinite(b.curveSkeletonScale) && b.curveSkeletonScale > 0 ? b.curveSkeletonScale : 90;
+  const curveEarlyCreatureScale =
+    Number.isFinite(b.curveEarlyCreatureScale) && b.curveEarlyCreatureScale > 0 ? b.curveEarlyCreatureScale : 90;
+  const curveCreatureCorridorScale =
+    Number.isFinite(b.curveCreatureCorridorScale) && b.curveCreatureCorridorScale > 0
+      ? b.curveCreatureCorridorScale
+      : 90;
+  const curveTopHeavyDelta = -curveTopHeavyScale * curveTopHeavyPenalty;
+  const curveSkeletonDelta = -curveSkeletonScale * curveSkeletonPenalty;
+  const curveEarlyCreatureDelta = -curveEarlyCreatureScale * curveEarlyCreaturePenalty;
+  const curveCreatureCorridorDelta = -curveCreatureCorridorScale * curveCreatureCorridorPenalty;
+  const curveComponents = [
+    {
+      id: 'top-heavy',
+      label: 'Top Heavy',
+      tooltip: 'Penalizes too many expensive spells compared to early curve stability.',
+      raw: curveTopHeavyPenalty,
+      scale: curveTopHeavyScale,
+      delta: curveTopHeavyDelta,
+    },
+    {
+      id: 'skeleton-shape',
+      label: 'Skeleton',
+      tooltip: 'Penalizes distance from trophy skeleton curve for this archetype.',
+      raw: curveSkeletonPenalty,
+      scale: curveSkeletonScale,
+      delta: curveSkeletonDelta,
+    },
+    {
+      id: 'early-creature',
+      label: 'Early Creature',
+      tooltip: 'Penalizes missing creature presence in CMC 2-3 buckets.',
+      raw: curveEarlyCreaturePenalty,
+      scale: curveEarlyCreatureScale,
+      delta: curveEarlyCreatureDelta,
+    },
+    {
+      id: 'creature-corridor',
+      label: 'Creature Corridor',
+      tooltip: 'Penalizes total creature count outside the configured corridor.',
+      raw: curveCreatureCorridorPenalty,
+      scale: curveCreatureCorridorScale,
+      delta: curveCreatureCorridorDelta,
+    },
+    {
+      id: 'removal',
+      label: 'Removal',
+      tooltip: 'Removal profile adjustment: >=4 removals no penalty, 3 => -3, <=2 => -6.',
+      raw: b.removalAdjustment,
+      scale: removalAxisScale,
+      delta: removalAxisDelta,
+    },
+  ] as const;
 
   const axisRows = [
     {
+      id: 'power' as AxisKey,
       label: 'Power',
       value: b.wrNormalized,
-      raw: `${b.wrScore.toFixed(2)} WR`,
       weight: result.weightsApplied.power,
       color: 'from-emerald-500 to-teal-400',
     },
     {
+      id: 'synergy' as AxisKey,
       label: 'Synergy',
       value: b.synergyNormalized,
-      raw: b.synergyScore.toFixed(3),
       weight: result.weightsApplied.synergy,
       color: 'from-fuchsia-500 to-violet-400',
     },
     {
+      id: 'consistency' as AxisKey,
       label: 'Consistency',
       value: b.consistencyScore,
-      raw: `mana penalty ${b.manaPenalty.toFixed(3)}`,
       weight: result.weightsApplied.consistency,
       color: 'from-cyan-500 to-sky-400',
     },
     {
-      label: 'Curve',
+      id: 'curve' as AxisKey,
+      label: 'Curve & Structure',
       value: b.curveScore,
-      raw: `curve penalty ${b.curvePenalty.toFixed(3)}`,
       weight: result.weightsApplied.curve,
       color: 'from-amber-500 to-orange-400',
     },
   ];
 
-  const adjustments = [
-    { label: 'Skeleton Fit', value: b.skeletonAdjustment },
-    { label: 'Creature Profile', value: b.creatureAdjustment },
-    { label: 'Removal Profile', value: b.removalAdjustment },
-    { label: 'Dependency Safety', value: b.dependencyAdjustment },
-  ];
+  const selectedAxis = axisRows.find((row) => row.id === activeAxis) || axisRows[0];
+  const axisTheme: Record<
+    AxisKey,
+    {
+      tabActive: string;
+      tabInactive: string;
+      tabInactiveText: string;
+      cardActive: string;
+      cardInactive: string;
+      chip: string;
+    }
+  > = {
+    power: {
+      tabActive: 'border-emerald-400/55 bg-emerald-500/12 text-emerald-100',
+      tabInactive: 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-100/90 hover:border-emerald-400/45 hover:bg-emerald-500/[0.10]',
+      tabInactiveText: 'text-emerald-200/80',
+      cardActive: 'border-emerald-400/65 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_0_35px_rgba(16,185,129,0.15)]',
+      cardInactive: 'border-emerald-500/25 bg-emerald-500/[0.05] hover:bg-emerald-500/[0.08] hover:border-emerald-400/40',
+      chip: 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30',
+    },
+    synergy: {
+      tabActive: 'border-fuchsia-400/55 bg-fuchsia-500/12 text-fuchsia-100',
+      tabInactive: 'border-fuchsia-500/30 bg-fuchsia-500/[0.06] text-fuchsia-100/90 hover:border-fuchsia-400/45 hover:bg-fuchsia-500/[0.10]',
+      tabInactiveText: 'text-fuchsia-200/80',
+      cardActive: 'border-fuchsia-400/65 bg-fuchsia-500/12 shadow-[0_0_0_1px_rgba(244,114,182,0.25),0_0_35px_rgba(217,70,239,0.15)]',
+      cardInactive: 'border-fuchsia-500/25 bg-fuchsia-500/[0.05] hover:bg-fuchsia-500/[0.08] hover:border-fuchsia-400/40',
+      chip: 'bg-fuchsia-500/15 text-fuchsia-200 border border-fuchsia-400/30',
+    },
+    consistency: {
+      tabActive: 'border-cyan-400/55 bg-cyan-500/12 text-cyan-100',
+      tabInactive: 'border-cyan-500/30 bg-cyan-500/[0.06] text-cyan-100/90 hover:border-cyan-400/45 hover:bg-cyan-500/[0.10]',
+      tabInactiveText: 'text-cyan-200/80',
+      cardActive: 'border-cyan-400/65 bg-cyan-500/12 shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_0_35px_rgba(14,165,233,0.15)]',
+      cardInactive: 'border-cyan-500/25 bg-cyan-500/[0.05] hover:bg-cyan-500/[0.08] hover:border-cyan-400/40',
+      chip: 'bg-cyan-500/15 text-cyan-200 border border-cyan-400/30',
+    },
+    curve: {
+      tabActive: 'border-amber-400/55 bg-amber-500/12 text-amber-100',
+      tabInactive: 'border-amber-500/30 bg-amber-500/[0.06] text-amber-100/90 hover:border-amber-400/45 hover:bg-amber-500/[0.10]',
+      tabInactiveText: 'text-amber-200/80',
+      cardActive: 'border-amber-400/65 bg-amber-500/12 shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_0_35px_rgba(249,115,22,0.15)]',
+      cardInactive: 'border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/[0.08] hover:border-amber-400/40',
+      chip: 'bg-amber-500/15 text-amber-200 border border-amber-400/30',
+    },
+  };
+  const selectedAxisContributionByKey: Record<AxisKey, number> = {
+    power: Number.isFinite(b.powerWeightedContribution)
+      ? b.powerWeightedContribution
+      : (b.wrNormalized * result.weightsApplied.power) / Math.max(1e-6, totalWeight),
+    synergy: Number.isFinite(b.synergyWeightedContribution)
+      ? b.synergyWeightedContribution
+      : (b.synergyNormalized * result.weightsApplied.synergy) / Math.max(1e-6, totalWeight),
+    consistency: Number.isFinite(b.consistencyWeightedContribution)
+      ? b.consistencyWeightedContribution
+      : (b.consistencyScore * result.weightsApplied.consistency) / Math.max(1e-6, totalWeight),
+    curve: Number.isFinite(b.curveWeightedContribution)
+      ? b.curveWeightedContribution
+      : (b.curveScore * result.weightsApplied.curve) / Math.max(1e-6, totalWeight),
+  };
+  const axisRowsWithContribution = axisRows.map((axis) => {
+    const contribution = selectedAxisContributionByKey[axis.id];
+    return {
+      ...axis,
+      contribution,
+      weightSharePct: (axis.weight / Math.max(1e-6, totalWeight)) * 100,
+      contributionSharePct: (Math.max(0, contribution) / Math.max(1e-6, baseScore)) * 100,
+    };
+  });
+  const selectedAxisMetric =
+    axisRowsWithContribution.find((row) => row.id === selectedAxis.id) || axisRowsWithContribution[0];
+  const curveComponentByStepLabel: Record<string, string> = {
+    'top heavy delta': 'top-heavy',
+    'skeleton delta': 'skeleton-shape',
+    'early creature delta': 'early-creature',
+    'creature corridor delta': 'creature-corridor',
+    'removal delta': 'removal',
+  };
+  const synergyComponent = {
+    id: 'dependency',
+    raw: b.dependencyAdjustment,
+    scale: dependencyAxisScale,
+    delta: dependencyAxisDelta,
+    tooltip: 'Dependency safety adjustment translated into synergy axis points.',
+  } as const;
+  const synergyComponentByStepLabel: Record<string, string> = {
+    'dependency delta': 'dependency',
+  };
+  const consistencyRawDelta = -(b.manaPenalty * 450);
+  const consistencyClampDelta = b.consistencyScore - (100 + consistencyRawDelta);
+  const axisDetails: Record<
+    AxisKey,
+    {
+      title: string;
+      subtitle: string;
+      formula: string;
+      waterfall: Array<{
+        label: string;
+        value: number;
+        kind: 'base' | 'delta' | 'final';
+        tooltip?: string;
+      }>;
+      rows: Array<{ label: string; value: string; tone?: 'neutral' | 'good' | 'bad' }>;
+    }
+  > = {
+    power: {
+      title: 'Power Axis',
+      subtitle: 'Card quality from contextual WR.',
+      formula: 'Axis score = WR normalized',
+      waterfall: [
+        {
+          label: 'Axis score',
+          value: b.wrNormalized,
+          kind: 'final',
+          tooltip: 'Normalized contextual WR for the selected build.',
+        },
+      ],
+      rows: [
+        { label: 'Raw WR', value: `${toFixed2NoRound(b.wrScore)}%` },
+        { label: 'Normalized axis', value: toFixed2NoRound(b.wrNormalized) },
+      ],
+    },
+    synergy: {
+      title: 'Synergy Axis',
+      subtitle: 'Base synergy + dependency safety adjustment.',
+      formula: 'Synergy axis = Synergy base + (Dependency raw x Dependency scale)',
+      waterfall: [
+        {
+          label: 'Base synergy',
+          value: synergyBaseNormalized,
+          kind: 'base',
+          tooltip: 'Pair synergy signal before dependency safety adjustment.',
+        },
+        {
+          label: 'Dependency delta',
+          value: dependencyAxisDelta,
+          kind: 'delta',
+          tooltip: 'Dependency penalty translated into axis points.',
+        },
+        {
+          label: 'Final axis',
+          value: b.synergyNormalized,
+          kind: 'final',
+        },
+      ],
+      rows: [
+        { label: 'Base synergy axis', value: toFixed2NoRound(synergyBaseNormalized) },
+        { label: 'Dependency scale', value: `x${toFixed2NoRound(dependencyAxisScale)}` },
+        {
+          label: 'Dependency adjustment (raw)',
+          value: signed(b.dependencyAdjustment),
+          tone: b.dependencyAdjustment >= 0 ? 'good' : 'bad',
+        },
+        {
+          label: 'Dependency axis delta',
+          value: signed(dependencyAxisDelta),
+          tone: dependencyAxisDelta >= 0 ? 'good' : 'bad',
+        },
+        { label: 'Final synergy axis', value: toFixed2NoRound(b.synergyNormalized) },
+      ],
+    },
+    consistency: {
+      title: 'Consistency Axis',
+      subtitle: 'Mana castability reliability.',
+      formula: 'Consistency axis = 100 - (Mana penalty x 450), clamped to [0, 100]',
+      waterfall: [
+        {
+          label: 'Start',
+          value: 100,
+          kind: 'base',
+          tooltip: 'Consistency starts at 100 and decreases with mana strain.',
+        },
+        {
+          label: 'Mana penalty delta',
+          value: consistencyRawDelta,
+          kind: 'delta',
+          tooltip: 'Computed from castability pressure across card requirements.',
+        },
+        {
+          label: 'Clamp delta',
+          value: consistencyClampDelta,
+          kind: 'delta',
+          tooltip: 'Clamp correction to keep axis in [0, 100].',
+        },
+        { label: 'Final axis', value: b.consistencyScore, kind: 'final' },
+      ],
+      rows: [
+        { label: 'Mana penalty', value: b.manaPenalty.toFixed(4) },
+        { label: 'Consistency axis', value: toFixed2NoRound(b.consistencyScore) },
+      ],
+    },
+    curve: {
+      title: 'Curve & Structure Axis',
+      subtitle: 'Starts at 100, then each component applies its own scaled delta.',
+      formula: 'Curve axis = 100 + sum(curve deltas) + removal delta',
+      waterfall: [
+        { label: 'Start', value: 100, kind: 'base' },
+        { label: 'Top heavy delta', value: curveTopHeavyDelta, kind: 'delta' },
+        { label: 'Skeleton delta', value: curveSkeletonDelta, kind: 'delta' },
+        { label: 'Early creature delta', value: curveEarlyCreatureDelta, kind: 'delta' },
+        { label: 'Creature corridor delta', value: curveCreatureCorridorDelta, kind: 'delta' },
+        { label: 'Removal delta', value: removalAxisDelta, kind: 'delta' },
+        { label: 'Final axis', value: b.curveScore, kind: 'final' },
+      ],
+      rows: [],
+    },
+  };
+  const selectedAxisDetail = axisDetails[selectedAxis.id];
 
   const copyDeckList = async () => {
     const lines: string[] = ['Deck'];
@@ -589,7 +902,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                       Final score used to rank builds.
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Formula: Base Axes + Structure Adjustments.
+                      Formula: weighted composite of Power, Synergy, Consistency, and Curve & Structure.
                     </p>
                   </div>
                 }
@@ -604,161 +917,264 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
             </div>
             <div className="mt-2 flex items-end gap-2">
               <span className="text-4xl md:text-5xl font-black text-white">
-                {selectedBuild.score.toFixed(2)}
+                {toFixed2NoRound(selectedBuild.score)}
               </span>
               
             </div>
             <p className="mt-2 text-[11px] text-slate-300">
-              Final = Base Axes {baseScore.toFixed(2)} + Structure{' '}
-              {structureAdjustment >= 0 ? '+' : ''}
-              {structureAdjustment.toFixed(2)}
+              Final = Weighted Axes Composite ({toFixed2NoRound(baseScore)}).
             </p>
           </div>
 
-          {/* â”€â”€ Composite Axes + Structure Adjustments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* Composite Axes */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-3">
+            <div className="self-start rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-4 relative overflow-hidden">
+              <div className="absolute -top-16 -left-12 w-40 h-40 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-20 -right-10 w-44 h-44 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
               <SectionHeader
                 icon={<Sparkles size={13} className="text-indigo-300" />}
                 title="Composite Axes"
               />
-              {axisRows.map((axis) => (
-                <div key={axis.label} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-xs text-slate-200 font-semibold">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 relative">
+                {axisRowsWithContribution.map((axis) => (
+                  <button
+                    key={axis.id}
+                    type="button"
+                    onClick={() => setActiveAxis(axis.id)}
+                    className={`rounded-2xl border p-3 text-left transition-all ${
+                      selectedAxis.id === axis.id
+                        ? axisTheme[axis.id].cardActive
+                        : axisTheme[axis.id].cardInactive
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-200">
                         {axis.label}
                       </p>
-                      <Tooltip
-                        content={
-                          <div className="max-w-[230px] space-y-1">
-                            <p className="text-[10px] text-slate-200 font-semibold">
-                              {axis.label}
-                            </p>
-                            <p className="text-[10px] text-slate-400">
-                              {axis.label === 'Power' &&
-                                `Normalized card quality from contextual WR in this build. Weight: ${axis.weight}x in final composite.`}
-                              {axis.label === 'Synergy' &&
-                                `Internal pair synergy quality of selected cards. Weight: ${axis.weight}x in final composite.`}
-                              {axis.label === 'Consistency' &&
-                                `Mana castability reliability (Karsten-style source adequacy). Weight: ${axis.weight}x in final composite.`}
-                              {axis.label === 'Curve' &&
-                                `How close the mana curve is to target shape. Weight: ${axis.weight}x in final composite.`}
-                            </p>
-                          </div>
-                        }
-                      >
-                        <button
-                          type="button"
-                          className="w-4 h-4 rounded-full border border-slate-600 text-[10px] font-bold text-slate-400 hover:text-white hover:border-slate-400 transition-colors flex items-center justify-center"
-                        >
-                          ?
-                        </button>
-                      </Tooltip>
+                      <div className="text-right">
+                        <p className="text-lg font-black text-white leading-none">
+                          {toFixed2NoRound(axis.value)}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {toFixed2NoRound(axis.contributionSharePct)}%
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-400">
-                      w{axis.weight} | {axis.value.toFixed(1)}
-                    </p>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className={`h-full bg-gradient-to-r ${axis.color}`}
-                      style={{ width: `${clamp(axis.value)}%` }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-500">{axis.raw}</p>
-                </div>
-              ))}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${axisTheme[axis.id].chip}`}>
+                        Weight {toFixed2NoRound(axis.weight)}x
+                      </span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-900/70 border border-slate-700 text-slate-200">
+                        Contrib {toFixed2NoRound(axis.contribution)} ({toFixed2NoRound(axis.contributionSharePct)}%)
+                      </span>
+                    </div>
+                    <div className="mt-2.5 h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
+                      <div
+                        className={`h-full bg-gradient-to-r ${axis.color}`}
+                        style={{ width: `${clamp(axis.value)}%` }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-3">
               <SectionHeader
-                icon={<Target size={13} className="text-cyan-300" />}
-                title="Structure Adjustments"
+                icon={<Search size={13} className="text-cyan-300" />}
+                title="Composite Axis Analysis"
               />
-              <div className="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">
-                    Total Structure
-                  </p>
-                  <Tooltip
-                    content={
-                      <div className="max-w-[230px] space-y-1">
-                        <p className="text-[10px] text-slate-200 font-semibold">
-                          Sum of structure-level adjustments.
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          Includes skeleton fit, creature profile, removal profile, and dependency safety.
-                        </p>
-                      </div>
-                    }
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {axisRowsWithContribution.map((axis) => (
+                  <button
+                    key={axis.id}
+                    type="button"
+                    onClick={() => setActiveAxis(axis.id)}
+                    className={`px-2.5 py-2 rounded-lg border text-left transition-colors ${
+                      selectedAxis.id === axis.id
+                        ? axisTheme[axis.id].tabActive
+                        : axisTheme[axis.id].tabInactive
+                    }`}
                   >
-                    <button
-                      type="button"
-                      className="w-4 h-4 rounded-full border border-slate-600 text-[10px] font-bold text-slate-400 hover:text-white hover:border-slate-400 transition-colors flex items-center justify-center"
-                    >
-                      ?
-                    </button>
-                  </Tooltip>
-                </div>
-                <p
-                  className={`text-base font-black ${
-                    structureAdjustment >= 0
-                      ? 'text-emerald-300'
-                      : 'text-rose-300'
-                  }`}
-                >
-                  {structureAdjustment >= 0 ? '+' : ''}
-                  {structureAdjustment.toFixed(2)}
-                </p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {adjustments.map((adj) => (
-                  <div
-                    key={adj.label}
-                    className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">
-                        {adj.label}
-                      </p>
-                      <Tooltip
-                        content={
-                          <div className="max-w-[220px] text-[10px] text-slate-400">
-                            {adj.label === 'Skeleton Fit' &&
-                              'Adjustment from weighted Jaccard similarity vs archetype skeleton.'}
-                            {adj.label === 'Creature Profile' &&
-                              'Adjustment from creature count corridor + archetype target + creature distribution across CMC buckets (penalizes spell-heavy early buckets, especially CMC 2/3).'}
-                            {adj.label === 'Removal Profile' &&
-                              'Adjustment from removal threshold (>=4 recommended).'}
-                            {adj.label === 'Dependency Safety' &&
-                              'Penalty when hard dependency thresholds are not fully supported.'}
-                          </div>
-                        }
-                      >
-                        <button
-                          type="button"
-                          className="w-4 h-4 rounded-full border border-slate-600 text-[10px] font-bold text-slate-400 hover:text-white hover:border-slate-400 transition-colors flex items-center justify-center"
-                        >
-                          ?
-                        </button>
-                      </Tooltip>
-                    </div>
-                    <p
-                      className={`text-sm font-black ${
-                        adj.value >= 0 ? 'text-emerald-300' : 'text-rose-300'
-                      }`}
-                    >
-                      {adj.value >= 0 ? '+' : ''}
-                      {adj.value.toFixed(2)}
+                    <p className="text-[10px] font-bold uppercase tracking-wide">{axis.label}</p>
+                    <p className={`text-[11px] mt-0.5 ${selectedAxis.id === axis.id ? 'text-slate-200' : axisTheme[axis.id].tabInactiveText}`}>
+                      {toFixed2NoRound(axis.value)}
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
+
+              <div className="rounded-2xl border border-slate-700/45 bg-slate-900/60 p-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-[0.12em] font-bold">
+                      {selectedAxisDetail.title}
+                    </p>
+                    <p className="text-[11px] text-slate-300 mt-1">
+                      {selectedAxisDetail.subtitle}
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      {selectedAxisDetail.formula}
+                    </p>
+                  </div>
+                  <p className="text-3xl font-black text-white">
+                    {toFixed2NoRound(selectedAxisMetric.value)}
+                    <span className="ml-2 text-sm font-semibold text-slate-300">
+                      ({toFixed2NoRound(selectedAxisMetric.contributionSharePct)}%)
+                    </span>
+                  </p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-slate-700/45 bg-slate-900/60 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Axis Weight</p>
+                    <p className="text-sm font-black text-slate-100">
+                      {toFixed2NoRound(selectedAxisMetric.weight)}x
+                      <span className="text-[11px] text-slate-400 ml-1">
+                        ({toFixed2NoRound(selectedAxisMetric.weightSharePct)}%)
+                      </span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-700/45 bg-slate-900/60 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Weighted Contribution</p>
+                    <p className="text-sm font-black text-slate-100">
+                      {toFixed2NoRound(selectedAxisMetric.contribution)}
+                      <span className="text-[11px] text-slate-400 ml-1">
+                        ({toFixed2NoRound(selectedAxisMetric.contributionSharePct)}%)
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800/60 bg-slate-900/55 p-3">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 font-bold">Computation Steps</p>
+                <div className="mt-2 space-y-1.5">
+                  {selectedAxisDetail.waterfall.map((step, index) => {
+                    const stepKey = step.label.toLowerCase();
+                    const curveLinkedId =
+                      selectedAxis.id === 'curve'
+                        ? curveComponentByStepLabel[stepKey]
+                        : undefined;
+                    const linkedComponent =
+                      selectedAxis.id === 'curve' && curveLinkedId != null
+                        ? curveComponents.find((component) => component.id === curveLinkedId) || null
+                        : selectedAxis.id === 'synergy' && synergyComponentByStepLabel[stepKey] != null
+                          ? synergyComponent
+                          : null;
+                    const isExpandable = linkedComponent != null;
+                    const isExpanded =
+                      linkedComponent != null && expandedCurveComponentId === linkedComponent.id;
+                    const tooltipText =
+                      step.tooltip ||
+                      linkedComponent?.tooltip ||
+                      'Computed step in this axis formula.';
+
+                    return (
+                      <div key={`${step.label}-${index}`} className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isExpandable || !linkedComponent) return;
+                            setExpandedCurveComponentId((prev) =>
+                              prev === linkedComponent.id ? null : linkedComponent.id,
+                            );
+                          }}
+                          className={`w-full grid items-center gap-2 rounded-lg border border-slate-800/55 bg-slate-950/45 px-2 py-1.5 ${
+                            isExpandable ? 'cursor-pointer hover:bg-slate-900/70 transition-colors' : 'cursor-default'
+                          }`}
+                          style={{
+                            gridTemplateColumns: isExpandable ? '18px 1fr auto 14px' : '18px 1fr auto',
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-500 font-semibold">{index + 1}</span>
+                          <div className="min-w-0 flex items-center gap-1.5">
+                            <p className="text-[11px] text-slate-200 truncate">{step.label}</p>
+                            <Tooltip
+                              content={(
+                                <div className="max-w-[220px] text-[10px] text-slate-300">
+                                  {tooltipText}
+                                </div>
+                              )}
+                            >
+                              <span className="w-4 h-4 rounded-full border border-slate-600 text-[10px] font-bold text-slate-400 hover:text-white hover:border-slate-400 transition-colors flex items-center justify-center">
+                                ?
+                              </span>
+                            </Tooltip>
+                          </div>
+                          <span
+                            className={`text-[11px] font-black ${
+                              step.kind === 'delta'
+                                ? step.value >= 0
+                                  ? 'text-emerald-300'
+                                  : 'text-rose-300'
+                                : 'text-slate-100'
+                            }`}
+                          >
+                            {step.kind === 'delta' ? signed(step.value) : toFixed2NoRound(step.value)}
+                          </span>
+                          {isExpandable && (
+                            isExpanded ? (
+                              <ChevronDown size={14} className="text-slate-400" />
+                            ) : (
+                              <ChevronRight size={14} className="text-slate-500" />
+                            )
+                          )}
+                        </button>
+                        {isExpanded && linkedComponent && (
+                          <div className="ml-6 rounded-lg border border-slate-800/60 bg-slate-900/55 px-3 py-2">
+                            <div className="grid grid-cols-3 gap-2 text-[11px]">
+                              <div>
+                                <p className="text-slate-500">Raw</p>
+                                <p className="font-semibold text-slate-100">{signed(linkedComponent.raw)}</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-500">Scale</p>
+                                <p className="font-semibold text-slate-100">x{toFixed2NoRound(linkedComponent.scale)}</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-500">Delta</p>
+                                <p className={`font-black ${linkedComponent.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                  {signed(linkedComponent.delta)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {selectedAxis.id !== 'synergy' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selectedAxisDetail.rows.map((row) => (
+                    <div
+                      key={row.label}
+                      className="rounded-xl border border-slate-800/60 bg-slate-900/60 px-3 py-2"
+                    >
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">
+                        {row.label}
+                      </p>
+                      <p
+                        className={`text-sm font-black ${
+                          row.tone === 'good'
+                            ? 'text-emerald-300'
+                            : row.tone === 'bad'
+                              ? 'text-rose-300'
+                              : 'text-slate-100'
+                        }`}
+                      >
+                        {row.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* â”€â”€ Spell Curve + Composition â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* Spell Curve + Composition */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
               <SectionHeader
@@ -876,4 +1292,5 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     </motion.div>
   );
 };
+
 

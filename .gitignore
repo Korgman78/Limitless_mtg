@@ -23,3 +23,7 @@ arena-overlay/
 
 # Supabase local CLI artifacts
 supabase/.temp/
+
+# Generated analysis / benchmark artifacts
+backend/reports/
+backend/tmp/

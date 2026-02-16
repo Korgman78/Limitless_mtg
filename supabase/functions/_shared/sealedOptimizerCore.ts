@@ -37,13 +37,31 @@ export type ScoreBreakdown = {
   wrScore: number;
   synergyScore: number;
   wrNormalized: number;
+  synergyBaseNormalized: number;
+  dependencyAxisScale: number;
+  dependencyAxisDelta: number;
   synergyNormalized: number;
   qualityScore: number;
+  powerWeightedContribution: number;
+  synergyWeightedContribution: number;
+  consistencyWeightedContribution: number;
+  curveWeightedContribution: number;
   consistencyScore: number;
+  curveBaseScore: number;
+  removalAxisScale: number;
+  removalAxisDelta: number;
   curveScore: number;
   skeletonSimilarity: number;
   creatureTarget: number;
   curvePenalty: number;
+  curveTopHeavyScale: number;
+  curveSkeletonScale: number;
+  curveEarlyCreatureScale: number;
+  curveCreatureCorridorScale: number;
+  curveTopHeavyPenalty: number;
+  curveSkeletonPenalty: number;
+  curveEarlyCreaturePenalty: number;
+  curveCreatureCorridorPenalty: number;
   manaPenalty: number;
   dependencyPenalty: number;
   consistencyAdjustment: number;
@@ -177,7 +195,7 @@ const CANDIDATES_PER_SPLASH_ARCHETYPE = 2;
 export const DEFAULT_MAX_OPTIMIZE_MS = 10_000;
 
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
-  power: 2, consistency: 1, curve: 1, synergy: 1,
+  power: 2, consistency: 1.3, curve: 1, synergy: 1,
 };
 
 const DEFAULT_OPTIMIZER_SEED = 1337;
@@ -608,15 +626,15 @@ const computeSourcesFromLands = (
     if (basicColor && allColors.includes(basicColor)) {
       sources[basicColor] += land.qty;
     } else {
-      const pc = poolMap.get(land.name);
-      if (!pc) continue;
       const isFetch = /evolving wilds|terramorphic expanse|fabled passage/i.test(land.name);
       if (isFetch) {
         for (const c of allColors) sources[c] += land.qty;
-      } else {
-        for (const c of extractColors(pc.producedColours || pc.colors || ""))
-          if (allColors.includes(c)) sources[c] += land.qty;
+        continue;
       }
+      const pc = poolMap.get(land.name);
+      if (!pc) continue;
+      for (const c of extractColors(pc.producedColours || pc.colors || ""))
+        if (allColors.includes(c)) sources[c] += land.qty;
     }
   }
 
@@ -631,59 +649,252 @@ const computeSourcesFromLands = (
   return sources;
 };
 
+const COMBINATORIC_CACHE = new Map<string, number>();
+const HYPER_TAIL_CACHE = new Map<string, number>();
+
+const nChooseK = (n: number, k: number): number => {
+  if (k < 0 || k > n) return 0;
+  if (k === 0 || k === n) return 1;
+  const kk = Math.min(k, n - k);
+  const key = `${n}|${kk}`;
+  const cached = COMBINATORIC_CACHE.get(key);
+  if (cached != null) return cached;
+  let result = 1;
+  for (let i = 1; i <= kk; i++) {
+    result = (result * (n - kk + i)) / i;
+  }
+  COMBINATORIC_CACHE.set(key, result);
+  return result;
+};
+
+const hyperGeoAtLeastInt = (
+  sourcesInDeck: number,
+  draws: number,
+  required: number,
+): number => {
+  const K = Math.max(0, Math.min(40, Math.trunc(sourcesInDeck)));
+  const n = Math.max(0, Math.min(40, Math.trunc(draws)));
+  const k = Math.max(0, Math.trunc(required));
+  if (k <= 0) return 1;
+  if (K <= 0 || n <= 0) return 0;
+  if (k > K || k > n) return 0;
+  const key = `${K}|${n}|${k}`;
+  const cached = HYPER_TAIL_CACHE.get(key);
+  if (cached != null) return cached;
+
+  const denom = nChooseK(40, n);
+  if (denom <= 0) return 0;
+  let numer = 0;
+  const upper = Math.min(K, n);
+  for (let x = k; x <= upper; x++) {
+    numer += nChooseK(K, x) * nChooseK(40 - K, n - x);
+  }
+  const prob = Math.max(0, Math.min(1, numer / denom));
+  HYPER_TAIL_CACHE.set(key, prob);
+  return prob;
+};
+
+const hyperGeoAtLeast = (
+  effectiveSources: number,
+  draws: number,
+  required: number,
+): number => {
+  const kEff = Math.max(0, Math.min(40, effectiveSources || 0));
+  const low = Math.floor(kEff);
+  const high = Math.ceil(kEff);
+  if (low === high) return hyperGeoAtLeastInt(low, draws, required);
+  const frac = kEff - low;
+  const pLow = hyperGeoAtLeastInt(low, draws, required);
+  const pHigh = hyperGeoAtLeastInt(high, draws, required);
+  return pLow * (1 - frac) + pHigh * frac;
+};
+
+const getCastabilityTarget = (
+  maxRequiredPips: number,
+  totalRequiredPips: number,
+  cmc: number,
+): number => {
+  const c = Math.max(1, Math.round(cmc || 0));
+  if (maxRequiredPips >= 3) return c <= 4 ? 0.74 : 0.70;
+  if (maxRequiredPips === 2) return c <= 3 ? 0.80 : c <= 4 ? 0.76 : 0.72;
+  if (totalRequiredPips >= 2) return c <= 3 ? 0.81 : c <= 4 ? 0.77 : 0.73;
+  return c <= 2 ? 0.86 : c <= 3 ? 0.82 : c <= 4 ? 0.78 : 0.73;
+};
+
+const getConsistencyCardWeight = (cmc: number, qty: number): number => {
+  const c = Math.max(1, Math.round(cmc || 0));
+  const q = Math.max(1, qty || 1);
+  if (c <= 2) return q * 1.25;
+  if (c === 3) return q * 1.12;
+  return q;
+};
+
+const computeConsistencyScoreFromCastability = (
+  cards: DeckCard[],
+  poolMap: Map<string, PoolCard>,
+  mainColors: string[],
+  splashColor: string | null,
+  sources: Record<string, number>,
+  totalLands: number,
+): number => {
+  const allColors = [...mainColors, ...(splashColor ? [splashColor] : [])];
+  const effectiveLandCount = Math.max(14, Math.min(19, Math.round(totalLands || 17)));
+  let weightedSum = 0;
+  let totalWeight = 0;
+  const reliabilities: number[] = [];
+  const reqAggByColor: Record<string, { weightedReq: number; weight: number }> = {};
+  const earlyDemandByColor: Record<string, number> = {};
+  const midDemandByColor: Record<string, number> = {};
+  for (const color of allColors) {
+    reqAggByColor[color] = { weightedReq: 0, weight: 0 };
+    earlyDemandByColor[color] = 0;
+    midDemandByColor[color] = 0;
+  }
+
+  for (const dc of cards) {
+    const pc = poolMap.get(dc.name);
+    if (!pc) continue;
+
+    const requiredByColor: Record<string, number> = {};
+    let totalRequired = 0;
+    let maxRequired = 0;
+    for (const color of allColors) {
+      const req = countRequiredColorPipsForDeck(pc.cost, color, allColors);
+      if (req <= 0) continue;
+      requiredByColor[color] = req;
+      totalRequired += req;
+      if (req > maxRequired) maxRequired = req;
+    }
+
+    if (totalRequired <= 0) continue;
+
+    const cmc = Math.max(1, Math.round(Number(pc.cmc || 0)));
+    const turn = Math.max(2, Math.min(7, cmc));
+    const drawsPlay = 7 + Math.max(0, turn - 1);
+    const drawsDraw = drawsPlay + 1;
+
+    let colorPlayProb = 1;
+    let colorDrawProb = 1;
+    for (const [color, req] of Object.entries(requiredByColor)) {
+      const src = Math.max(0, Number(sources[color] || 0));
+      const pPlay = hyperGeoAtLeast(src, drawsPlay, req);
+      const pDraw = hyperGeoAtLeast(src, drawsDraw, req);
+      colorPlayProb *= pPlay;
+      colorDrawProb *= pDraw;
+    }
+    const landNeed = Math.max(1, cmc);
+    const landPlayProb = hyperGeoAtLeast(effectiveLandCount, drawsPlay, landNeed);
+    const landDrawProb = hyperGeoAtLeast(effectiveLandCount, drawsDraw, landNeed);
+
+    // Blend color access with raw land-count availability so expensive spells
+    // don't look artificially free just because colored pips are easy.
+    const castPlay = colorPlayProb * (0.5 + 0.5 * landPlayProb);
+    const castDraw = colorDrawProb * (0.5 + 0.5 * landDrawProb);
+    const castProb = Math.max(0, Math.min(1, (castPlay + castDraw) * 0.5));
+
+    const target = getCastabilityTarget(maxRequired, totalRequired, cmc);
+    const reliability = Math.max(0, Math.min(1, castProb / Math.max(1e-6, target)));
+    const weight = getConsistencyCardWeight(cmc, dc.qty);
+
+    weightedSum += reliability * weight;
+    totalWeight += weight;
+    reliabilities.push(reliability);
+
+    for (const [color, req] of Object.entries(requiredByColor)) {
+      const reqTarget = karstenRequiredSources(req, cmc, splashColor === color);
+      reqAggByColor[color].weightedReq += reqTarget * weight;
+      reqAggByColor[color].weight += weight;
+      if (cmc <= 2) earlyDemandByColor[color] += dc.qty * req;
+      if (cmc <= 3) midDemandByColor[color] += dc.qty * req;
+    }
+  }
+
+  if (totalWeight <= 0) return 100;
+  let score = (weightedSum / totalWeight) * 100;
+
+  // Color-adequacy floor: compare weighted required sources per active color
+  // against available sources. This catches unstable 3c mana bases without
+  // over-penalizing a single demanding singleton card.
+  let activeColorCount = 0;
+  let deficitSum = 0;
+  let deficitMax = 0;
+  for (const color of allColors) {
+    const agg = reqAggByColor[color];
+    if (!agg || agg.weight <= 0) continue;
+    activeColorCount++;
+    const weightedTarget = agg.weightedReq / agg.weight;
+    const available = Math.max(0, Number(sources[color] || 0));
+    const deficit = Math.max(0, weightedTarget - available);
+    deficitSum += deficit;
+    if (deficit > deficitMax) deficitMax = deficit;
+  }
+  if (deficitSum > 0) {
+    const baseFactor = activeColorCount >= 3 ? 4.5 : 3.5;
+    score -= deficitSum * baseFactor;
+    if (activeColorCount >= 3) {
+      score -= deficitMax * 1.5;
+    }
+  }
+
+  // Early-color floor: if a color is demanded early, require enough sources
+  // even with fixers. This prevents shaky 3-color 5/6/6 bases from scoring as
+  // highly stable just because they include a couple of mana dorks.
+  for (const color of allColors) {
+    const src = Math.max(0, Number(sources[color] || 0));
+    const earlyDemand = earlyDemandByColor[color] || 0;
+    const midDemand = midDemandByColor[color] || 0;
+
+    if (earlyDemand >= 2) {
+      const floor = 8;
+      const deficit = Math.max(0, floor - src);
+      if (deficit > 0) {
+        score -= deficit * (activeColorCount >= 3 ? 6.0 : 4.5);
+      }
+      continue;
+    }
+
+    if (midDemand >= 4) {
+      const floor = 7;
+      const deficit = Math.max(0, floor - src);
+      if (deficit > 0) {
+        score -= deficit * (activeColorCount >= 3 ? 3.8 : 2.8);
+      }
+    }
+  }
+
+  // Mild tail sensitivity: keeps the metric robust, while avoiding a single
+  // demanding singleton collapsing the entire axis.
+  reliabilities.sort((a, b) => a - b);
+  const tailTake = Math.min(4, reliabilities.length);
+  if (tailTake > 0) {
+    const tailAvg = reliabilities.slice(0, tailTake).reduce((s, v) => s + v, 0) / tailTake;
+    score = score * 0.72 + tailAvg * 100 * 0.28;
+  }
+
+  // Slight compression at the top end to keep separation between very stable
+  // decks without over-rewarding already-perfect bases.
+  score = Math.pow(Math.max(0, Math.min(1, score / 100)), 1.32) * 100;
+  return clamp(score, 0, 100);
+};
+
 const computeManaPenalty = (
   cards: DeckCard[], poolMap: Map<string, PoolCard>,
   mainColors: string[], splashColor: string | null,
   sourcesOverride?: Record<string, number>,
+  totalLandsOverride?: number,
 ): number => {
-  const allColors = [...mainColors, ...(splashColor ? [splashColor] : [])];
-  const needed: Record<string, number> = {};
-  for (const c of allColors) needed[c] = 0;
-
-  for (const dc of cards) {
-    const pc = poolMap.get(dc.name);
-    if (!pc) continue;
-    for (const color of allColors) {
-      const pips = countRequiredColorPipsForDeck(pc.cost, color, allColors);
-      if (pips > 0)
-        needed[color] = Math.max(needed[color], karstenRequiredSources(pips, pc.cmc || 0, splashColor === color));
-    }
-  }
-
   const estimated = sourcesOverride || estimateSourcesFromDeck(cards, poolMap, mainColors, splashColor);
-  let penalty = 0;
-  for (const color of allColors) {
-    const deficit = (needed[color] || 0) - (estimated[color] || 0);
-    // Super-linear penalty: small deficits (1-3) are tolerable, but large
-    // deficits (5+) are catastrophically bad for castability.
-    // Linear 0.012 up to 3, then accelerates with a quadratic kicker.
-    if (deficit > 0) {
-      const base = deficit * 0.012;
-      const kicker = Math.max(0, deficit - 3);
-      penalty += base + kicker * kicker * 0.0025;
-    }
-  }
-
-  if (splashColor) {
-    for (const dc of cards) {
-      const pc = poolMap.get(dc.name);
-      if (!pc) continue;
-      const splashPips = countRequiredColorPipsForDeck(pc.cost, splashColor, allColors);
-      if (splashPips > 0 && pc.cmc <= 3) penalty += 0.06;
-      if (splashPips >= 2) penalty += 0.08;
-    }
-  }
-
-  // Triple pips of main color at low CMC
-  for (const dc of cards) {
-    const pc = poolMap.get(dc.name);
-    if (!pc) continue;
-    for (const color of mainColors) {
-      const pips = countRequiredColorPipsForDeck(pc.cost, color, allColors);
-      if (pips >= 3 && pc.cmc <= 4) penalty += 0.01;
-    }
-  }
-  return penalty;
+  const consistency = computeConsistencyScoreFromCastability(
+    cards,
+    poolMap,
+    mainColors,
+    splashColor,
+    estimated,
+    totalLandsOverride ?? 17,
+  );
+  // Keep API/telemetry contract unchanged: consistency is derived from
+  // manaPenalty via normalizeConsistencyScore(100 - p*450).
+  return Math.max(0, (100 - consistency) / 450);
 };
 
 // â”€â”€â”€ Dependency penalty (linear, capped, DB-tags only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1124,44 +1335,70 @@ const normalizeConsistencyScore = (manaPenalty: number): number =>
   clamp(100 - manaPenalty * 450, 0, 100);
 
 const normalizeCurveScore = (curvePenalty: number): number =>
-  clamp(100 - curvePenalty * 110, 0, 100);
+  clamp(100 - curvePenalty * 90, 0, 100);
 
-const computeStructureAdjustment = (
-  creatureCount: number,
-  removalCount: number,
-  creatureTarget: number,
-  skeletonSimilarity: number,
-  dependencyPenalty: number,
+const CURVE_COMPONENT_SCALE = 90;
+const REMOVAL_AXIS_SCALE = 4;
+
+const computeCurveAndStructurePenalty = (
+  expanded: PoolCard[],
   cards: DeckCard[],
   poolMap: Map<string, PoolCard>,
+  skeleton: Skeleton | null,
+  creatureCount: number,
 ): {
-  creatureAdjustment: number;
-  removalAdjustment: number;
-  skeletonAdjustment: number;
-  dependencyAdjustment: number;
-  totalAdjustment: number;
+  topHeavy: number;
+  skeletonShape: number;
+  earlyCreatureProfile: number;
+  creatureCorridor: number;
+  total: number;
 } => {
-  let creatureAdjustment = 0;
-  if (creatureCount < CREATURE_CORRIDOR_MIN) {
-    const missing = CREATURE_CORRIDOR_MIN - creatureCount;
-    creatureAdjustment = -Math.min(4, 1 + missing);
-  } else if (creatureCount > CREATURE_CORRIDOR_MAX) {
-    const overflow = creatureCount - CREATURE_CORRIDOR_MAX;
-    creatureAdjustment = -Math.min(3, 0.8 + overflow * 0.8);
-  } else {
-    const distance = Math.abs(creatureCount - creatureTarget);
-    creatureAdjustment = clamp(1.5 - distance * 0.4, -2, 1.5);
+  const totalSpells = expanded.length;
+  if (totalSpells <= 0) {
+    return {
+      topHeavy: 0,
+      skeletonShape: 0,
+      earlyCreatureProfile: 0,
+      creatureCorridor: 0,
+      total: 0,
+    };
   }
 
-  // Creature-profile by CMC bucket (permissive but decisive on CMC2):
-  // if a populated early bucket is too spell-heavy versus the deck's own
-  // creature ratio, apply a stronger malus.
-  // Target behavior (example for 7 cards at CMC2):
-  // - 1/7 creatures: very very strong malus
-  // - 2/7 creatures: very strong malus
-  // - 3/7 creatures: medium malus
-  // - >=4/7 creatures: acceptable (for ~60% creature decks)
-  const totalSpells = cards.reduce((sum, dc) => sum + dc.qty, 0);
+  const actualCurve: Record<number, number> = {};
+  for (const pc of expanded) {
+    const bucket = Math.min(Math.max(Math.round(pc.cmc), 1), 7);
+    actualCurve[bucket] = (actualCurve[bucket] || 0) + 1;
+  }
+
+  // 1) Main shape guardrail: penalize top-heavy distributions more than small
+  // micro-differences between CMC2/CMC3 buckets.
+  const twoThree = (actualCurve[2] || 0) + (actualCurve[3] || 0);
+  const fourFive = (actualCurve[4] || 0) + (actualCurve[5] || 0);
+  const sixPlus = (actualCurve[6] || 0) + (actualCurve[7] || 0);
+  const maxFourFive = twoThree * 0.8 + 1;
+  const excessFourFive = Math.max(0, fourFive - maxFourFive);
+  const excessSixPlus = Math.max(0, sixPlus - 1.5);
+  const topHeavyPenalty = excessFourFive * 0.07 + excessSixPlus * 0.12;
+
+  // 2) Mild skeleton-shape anchoring (for metagame realism), much softer than
+  // the previous strict absolute-delta penalty.
+  const idealCurve = getIdealCurve(skeleton);
+  const bucketWeights: Record<number, number> = {
+    1: 0.2,
+    2: 0.35,
+    3: 0.25,
+    4: 0.15,
+    5: 0.1,
+    6: 0.05,
+    7: 0.03,
+  };
+  let weightedDelta = 0;
+  for (let cmc = 1; cmc <= 7; cmc++) {
+    weightedDelta += Math.abs((actualCurve[cmc] || 0) - (idealCurve[cmc] || 0)) * (bucketWeights[cmc] || 0);
+  }
+  const skeletonPenalty = weightedDelta * CURVE_PENALTY_FACTOR * 2;
+
+  // 3) Creature profile in early buckets (CMC2/CMC3) is part of the axis.
   const deckCreatureRatioRaw = totalSpells > 0 ? creatureCount / totalSpells : 0;
   const deckCreatureRatio = clamp(deckCreatureRatioRaw, 0.42, 0.75);
   const bucketTotals: Record<number, number> = {};
@@ -1175,83 +1412,61 @@ const computeStructureAdjustment = (
       bucketCreatures[cmcBucket] = (bucketCreatures[cmcBucket] || 0) + dc.qty;
     }
   }
-  let creatureCurvePenalty = 0;
-  let evaluatedBuckets = 0;
-  for (let cmc = 1; cmc <= 5; cmc++) {
+
+  let earlyCreaturePenalty = 0;
+  for (const cmc of [2, 3]) {
     const totalInBucket = bucketTotals[cmc] || 0;
-    if (totalInBucket < 4) continue; // permissive: only enforce when bucket is populated
-    evaluatedBuckets++;
+    if (totalInBucket < 4) continue;
     const creaturesInBucket = bucketCreatures[cmc] || 0;
     const expectedCreatures = totalInBucket * deckCreatureRatio;
     const minAllowedCreatures = Math.max(1, Math.floor(expectedCreatures));
     const missing = Math.max(0, minAllowedCreatures - creaturesInBucket);
-
-    if (missing > 0) {
-      if (cmc === 2) {
-        // Strong early-board requirement.
-        if (missing >= 3) creatureCurvePenalty += 5.2;
-        else if (missing === 2) creatureCurvePenalty += 3.8;
-        else creatureCurvePenalty += 2.0;
-      } else if (cmc === 3) {
-        if (missing >= 3) creatureCurvePenalty += 3.0;
-        else if (missing === 2) creatureCurvePenalty += 2.0;
-        else creatureCurvePenalty += 1.1;
-      } else {
-        creatureCurvePenalty += missing * 0.8;
-      }
-    }
-  }
-  // Global severity bump on all CMC buckets (no special-case bucket logic).
-  creatureCurvePenalty *= 1.35;
-
-  let creatureCurveAdjustment = 0;
-  if (creatureCurvePenalty > 0) {
-    creatureCurveAdjustment = -Math.min(8, creatureCurvePenalty);
-  } else if (evaluatedBuckets > 0 && creatureCount >= creatureTarget - 1) {
-    creatureCurveAdjustment = 0.4;
+    if (missing <= 0) continue;
+    earlyCreaturePenalty += missing * (cmc === 2 ? 0.05 : 0.035);
   }
 
-  let nonCreatureDupOver = 0;
-  for (const dc of cards) {
-    const pc = poolMap.get(dc.name);
-    if (!pc || pc.isCreature) continue;
-    if (dc.qty > 2) nonCreatureDupOver += dc.qty - 2;
-  }
-  if (nonCreatureDupOver > 0) {
-    creatureAdjustment -= Math.min(2, nonCreatureDupOver * 0.6);
-  }
-  creatureAdjustment = clamp(creatureAdjustment + creatureCurveAdjustment, -8, 2.2);
-
-  // If creature count is acceptable but the deck is still far from skeleton shape,
-  // apply a light profile malus to avoid over-rewarding "on-target count only".
-  if (
-    creatureCount >= CREATURE_CORRIDOR_MIN &&
-    creatureCount <= CREATURE_CORRIDOR_MAX &&
-    skeletonSimilarity < 0.25
-  ) {
-    const offSkeleton = 0.25 - skeletonSimilarity;
-    const profileOffSkeletonPenalty = Math.min(2.0, offSkeleton * 10);
-    creatureAdjustment = clamp(
-      creatureAdjustment - profileOffSkeletonPenalty,
-      -8,
-      2.2,
-    );
+  // 4) Light global creature corridor pressure (moved from structure adjust).
+  let creatureCorridorPenalty = 0;
+  if (creatureCount < CREATURE_CORRIDOR_MIN) {
+    creatureCorridorPenalty += (CREATURE_CORRIDOR_MIN - creatureCount) * 0.07;
+  } else if (creatureCount > CREATURE_CORRIDOR_MAX) {
+    creatureCorridorPenalty += (creatureCount - CREATURE_CORRIDOR_MAX) * 0.05;
   }
 
+  const total = topHeavyPenalty + skeletonPenalty + earlyCreaturePenalty + creatureCorridorPenalty;
+  return {
+    topHeavy: topHeavyPenalty,
+    skeletonShape: skeletonPenalty,
+    earlyCreatureProfile: earlyCreaturePenalty,
+    creatureCorridor: creatureCorridorPenalty,
+    total,
+  };
+};
+
+const computeStructureAdjustment = (
+  removalCount: number,
+  dependencyPenalty: number,
+): {
+  creatureAdjustment: number;
+  removalAdjustment: number;
+  skeletonAdjustment: number;
+  dependencyAdjustment: number;
+  totalAdjustment: number;
+} => {
   let removalAdjustment = 0;
-  if (removalCount >= TARGET_REMOVAL_MIN + 1) removalAdjustment = 0.5;
-  else if (removalCount === TARGET_REMOVAL_MIN) removalAdjustment = 0;
+  if (removalCount >= TARGET_REMOVAL_MIN) removalAdjustment = 0;
   else if (removalCount === TARGET_REMOVAL_MIN - 1) removalAdjustment = -3;
   else removalAdjustment = -6;
 
-  const skeletonAdjustment = clamp((skeletonSimilarity - 0.25) * 20, -2, 2.5);
+  const skeletonAdjustment = 0;
+  const creatureAdjustment = 0;
 
   const dependencyAdjustment = dependencyPenalty > 0.5
     ? -Math.min(10, dependencyPenalty)
     : 0;
 
   const totalAdjustment =
-    creatureAdjustment + removalAdjustment + skeletonAdjustment + dependencyAdjustment;
+    removalAdjustment + dependencyAdjustment;
 
   return {
     creatureAdjustment,
@@ -1259,6 +1474,96 @@ const computeStructureAdjustment = (
     skeletonAdjustment,
     dependencyAdjustment,
     totalAdjustment,
+  };
+};
+
+const computeLegacyEquivalentAxisScales = (
+  scoreWeights: ScoreWeights,
+): { dependencyAxisScale: number; removalAxisScale: number } => {
+  const totalWeight =
+    scoreWeights.power +
+    scoreWeights.synergy +
+    scoreWeights.consistency +
+    scoreWeights.curve;
+
+  const dependencyAxisScale =
+    scoreWeights.synergy > 0 ? totalWeight / scoreWeights.synergy : 0;
+  const removalAxisScale = REMOVAL_AXIS_SCALE;
+
+  return { dependencyAxisScale, removalAxisScale };
+};
+
+const computeAdjustedAxisScores = (
+  synergyBaseNormalized: number,
+  curveBaseScore: number,
+  dependencyAdjustment: number,
+  removalAdjustment: number,
+  scoreWeights: ScoreWeights,
+): {
+  dependencyAxisScale: number;
+  dependencyAxisDelta: number;
+  removalAxisScale: number;
+  removalAxisDelta: number;
+  synergyAxisScore: number;
+  curveAxisScore: number;
+} => {
+  const scales = computeLegacyEquivalentAxisScales(scoreWeights);
+  const dependencyAxisDelta = dependencyAdjustment * scales.dependencyAxisScale;
+  const removalAxisDelta = removalAdjustment * scales.removalAxisScale;
+  return {
+    dependencyAxisScale: scales.dependencyAxisScale,
+    dependencyAxisDelta,
+    removalAxisScale: scales.removalAxisScale,
+    removalAxisDelta,
+    synergyAxisScore: synergyBaseNormalized + dependencyAxisDelta,
+    curveAxisScore: curveBaseScore + removalAxisDelta,
+  };
+};
+
+const computeCompositeScore = (
+  wrNormalized: number,
+  synergyAxisScore: number,
+  consistencyScore: number,
+  curveAxisScore: number,
+  scoreWeights: ScoreWeights,
+): number => {
+  const totalWeight =
+    scoreWeights.power +
+    scoreWeights.synergy +
+    scoreWeights.consistency +
+    scoreWeights.curve;
+
+  return (
+    scoreWeights.power * wrNormalized +
+    scoreWeights.synergy * synergyAxisScore +
+    scoreWeights.consistency * consistencyScore +
+    scoreWeights.curve * curveAxisScore
+  ) / Math.max(1e-6, totalWeight);
+};
+
+const computeAxisWeightedContributions = (
+  wrNormalized: number,
+  synergyAxisScore: number,
+  consistencyScore: number,
+  curveAxisScore: number,
+  scoreWeights: ScoreWeights,
+): {
+  powerWeightedContribution: number;
+  synergyWeightedContribution: number;
+  consistencyWeightedContribution: number;
+  curveWeightedContribution: number;
+} => {
+  const totalWeight =
+    scoreWeights.power +
+    scoreWeights.synergy +
+    scoreWeights.consistency +
+    scoreWeights.curve;
+  const denom = Math.max(1e-6, totalWeight);
+  return {
+    powerWeightedContribution: (wrNormalized * scoreWeights.power) / denom,
+    synergyWeightedContribution: (synergyAxisScore * scoreWeights.synergy) / denom,
+    consistencyWeightedContribution: (consistencyScore * scoreWeights.consistency) / denom,
+    curveWeightedContribution: (curveAxisScore * scoreWeights.curve) / denom,
   };
 };
 
@@ -1283,13 +1588,31 @@ export const calculateDeckScore = (
       wrScore: 0,
       synergyScore: 0,
       wrNormalized: 0,
+      synergyBaseNormalized: 0,
+      dependencyAxisScale: 0,
+      dependencyAxisDelta: 0,
       synergyNormalized: 0,
       qualityScore: 0,
+      powerWeightedContribution: 0,
+      synergyWeightedContribution: 0,
+      consistencyWeightedContribution: 0,
+      curveWeightedContribution: 0,
       consistencyScore: 0,
+      curveBaseScore: 0,
+      removalAxisScale: 0,
+      removalAxisDelta: 0,
       curveScore: 0,
       skeletonSimilarity: 0,
       creatureTarget: 0,
       curvePenalty: 0,
+      curveTopHeavyScale: 0,
+      curveSkeletonScale: 0,
+      curveEarlyCreatureScale: 0,
+      curveCreatureCorridorScale: 0,
+      curveTopHeavyPenalty: 0,
+      curveSkeletonPenalty: 0,
+      curveEarlyCreaturePenalty: 0,
+      curveCreatureCorridorPenalty: 0,
       manaPenalty: 0,
       dependencyPenalty: 0,
       consistencyAdjustment: 0,
@@ -1327,17 +1650,14 @@ export const calculateDeckScore = (
     skeletonSimilarity = weightedJaccard(deckQty, skelQty);
   }
 
-  const idealCurve = getIdealCurve(skeleton);
-  const actualCurve: Record<number, number> = {};
-  for (const pc of expanded) {
-    const bucket = Math.min(Math.max(Math.round(pc.cmc), 1), 7);
-    actualCurve[bucket] = (actualCurve[bucket] || 0) + 1;
-  }
-  let curveDelta = 0;
-  for (let cmc = 1; cmc <= 7; cmc++) {
-    curveDelta += Math.abs((actualCurve[cmc] || 0) - (idealCurve[cmc] || 0));
-  }
-  const curvePenalty = curveDelta * CURVE_PENALTY_FACTOR;
+  const curvePenaltyBreakdown = computeCurveAndStructurePenalty(
+    expanded,
+    cards,
+    poolMap,
+    skeleton,
+    creatureCount,
+  );
+  const curvePenalty = curvePenaltyBreakdown.total;
 
   const effectiveSplash = hasActiveSplashDemand(cards, poolMap, mainColors, splashColor) ? splashColor : null;
   const manaPenalty = computeManaPenalty(cards, poolMap, mainColors, effectiveSplash);
@@ -1346,34 +1666,42 @@ export const calculateDeckScore = (
   const dependencyAndFixerPenalty = dependencyPenalty + fixerOnlyPenalty;
 
   const wrNormalized = normalizeWrScore(wrScore, formatMean);
-  const synergyNormalized = normalizeSynergyScore(synergyScore);
+  const synergyBaseNormalized = normalizeSynergyScore(synergyScore);
   const consistencyScore = normalizeConsistencyScore(manaPenalty);
-  const curveScore = normalizeCurveScore(curvePenalty);
-
-  const totalWeight = scoreWeights.power + scoreWeights.synergy + scoreWeights.consistency + scoreWeights.curve;
-  const baseScore = (
-    scoreWeights.power * wrNormalized +
-    scoreWeights.synergy * synergyNormalized +
-    scoreWeights.consistency * consistencyScore +
-    scoreWeights.curve * curveScore
-  ) / Math.max(1e-6, totalWeight);
+  const curveBaseScore = normalizeCurveScore(curvePenalty);
 
   const creatureTarget = getCreatureTarget(skeleton, n);
   const structureAdjustment = computeStructureAdjustment(
-    creatureCount,
     removalCount,
-    creatureTarget,
-    skeletonSimilarity,
     dependencyAndFixerPenalty,
-    cards,
-    poolMap,
+  );
+  const adjustedAxes = computeAdjustedAxisScores(
+    synergyBaseNormalized,
+    curveBaseScore,
+    structureAdjustment.dependencyAdjustment,
+    structureAdjustment.removalAdjustment,
+    scoreWeights,
+  );
+  const weightedCompositeScore = computeCompositeScore(
+    wrNormalized,
+    adjustedAxes.synergyAxisScore,
+    consistencyScore,
+    adjustedAxes.curveAxisScore,
+    scoreWeights,
+  );
+  const axisContrib = computeAxisWeightedContributions(
+    wrNormalized,
+    adjustedAxes.synergyAxisScore,
+    consistencyScore,
+    adjustedAxes.curveAxisScore,
+    scoreWeights,
   );
 
-  const qualityScore = baseScore;
+  const qualityScore = weightedCompositeScore;
   const consistencyAdjustment = 0;
   const curveAdjustment = 0;
-  const totalAdjustment = structureAdjustment.totalAdjustment;
-  const score = baseScore + totalAdjustment;
+  const totalAdjustment = 0;
+  const score = weightedCompositeScore;
 
   return {
     score,
@@ -1381,13 +1709,31 @@ export const calculateDeckScore = (
       wrScore,
       synergyScore,
       wrNormalized,
-      synergyNormalized,
+      synergyBaseNormalized,
+      dependencyAxisScale: adjustedAxes.dependencyAxisScale,
+      dependencyAxisDelta: adjustedAxes.dependencyAxisDelta,
+      synergyNormalized: adjustedAxes.synergyAxisScore,
       qualityScore,
+      powerWeightedContribution: axisContrib.powerWeightedContribution,
+      synergyWeightedContribution: axisContrib.synergyWeightedContribution,
+      consistencyWeightedContribution: axisContrib.consistencyWeightedContribution,
+      curveWeightedContribution: axisContrib.curveWeightedContribution,
       consistencyScore,
-      curveScore,
+      curveBaseScore,
+      removalAxisScale: adjustedAxes.removalAxisScale,
+      removalAxisDelta: adjustedAxes.removalAxisDelta,
+      curveScore: adjustedAxes.curveAxisScore,
       skeletonSimilarity,
       creatureTarget,
       curvePenalty,
+      curveTopHeavyScale: CURVE_COMPONENT_SCALE,
+      curveSkeletonScale: CURVE_COMPONENT_SCALE,
+      curveEarlyCreatureScale: CURVE_COMPONENT_SCALE,
+      curveCreatureCorridorScale: CURVE_COMPONENT_SCALE,
+      curveTopHeavyPenalty: curvePenaltyBreakdown.topHeavy,
+      curveSkeletonPenalty: curvePenaltyBreakdown.skeletonShape,
+      curveEarlyCreaturePenalty: curvePenaltyBreakdown.earlyCreatureProfile,
+      curveCreatureCorridorPenalty: curvePenaltyBreakdown.creatureCorridor,
       manaPenalty,
       dependencyPenalty: dependencyAndFixerPenalty,
       consistencyAdjustment,
@@ -1445,23 +1791,17 @@ export const scoreDeckWithResolvedLands = (
     mainColors,
     splashColor,
     actualSources,
+    lands.reduce((sum, l) => sum + l.qty, 0),
   );
   const actualConsistency = normalizeConsistencyScore(actualManaPenalty);
-
-  const totalWeight =
-    scoreWeights.power +
-    scoreWeights.synergy +
-    scoreWeights.consistency +
-    scoreWeights.curve;
-
-  const baseScore = (
-    scoreWeights.power * initial.breakdown.wrNormalized +
-    scoreWeights.synergy * initial.breakdown.synergyNormalized +
-    scoreWeights.consistency * actualConsistency +
-    scoreWeights.curve * initial.breakdown.curveScore
-  ) / Math.max(1e-6, totalWeight);
-
-  const score = baseScore + initial.breakdown.totalAdjustment;
+  const baseScore = computeCompositeScore(
+    initial.breakdown.wrNormalized,
+    initial.breakdown.synergyNormalized,
+    actualConsistency,
+    initial.breakdown.curveScore,
+    scoreWeights,
+  );
+  const score = baseScore;
 
   return {
     score,
@@ -1472,6 +1812,80 @@ export const scoreDeckWithResolvedLands = (
       manaPenalty: actualManaPenalty,
       consistencyScore: actualConsistency,
       qualityScore: baseScore,
+      totalAdjustment: 0,
+    },
+  };
+};
+
+export const scoreDeckWithProvidedLands = (
+  cards: DeckCard[],
+  pool: PoolCard[],
+  pairMap: Record<string, Record<string, number>>,
+  mainColors: string[],
+  splashColor: string | null,
+  skeleton: Skeleton | null,
+  providedLands: DeckCard[],
+  scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
+  formatMean = 55,
+): {
+  score: number;
+  breakdown: ScoreBreakdown;
+  stats: DeckStats;
+  lands: DeckCard[];
+} => {
+  const initial = calculateDeckScore(
+    cards,
+    pool,
+    pairMap,
+    mainColors,
+    splashColor,
+    skeleton,
+    scoreWeights,
+    formatMean,
+  );
+
+  const lands = providedLands
+    .filter((l) => Number(l.qty || 0) > 0)
+    .map((l) => ({ name: l.name, qty: Number(l.qty) }));
+
+  const poolMap = new Map<string, PoolCard>();
+  for (const pc of pool) poolMap.set(pc.name, pc);
+
+  const actualSources = computeSourcesFromLands(
+    lands,
+    cards,
+    poolMap,
+    mainColors,
+    splashColor,
+  );
+  const actualManaPenalty = computeManaPenalty(
+    cards,
+    poolMap,
+    mainColors,
+    splashColor,
+    actualSources,
+    lands.reduce((sum, l) => sum + l.qty, 0),
+  );
+  const actualConsistency = normalizeConsistencyScore(actualManaPenalty);
+  const baseScore = computeCompositeScore(
+    initial.breakdown.wrNormalized,
+    initial.breakdown.synergyNormalized,
+    actualConsistency,
+    initial.breakdown.curveScore,
+    scoreWeights,
+  );
+  const score = baseScore;
+
+  return {
+    score,
+    lands,
+    stats: initial.stats,
+    breakdown: {
+      ...initial.breakdown,
+      manaPenalty: actualManaPenalty,
+      consistencyScore: actualConsistency,
+      qualityScore: baseScore,
+      totalAdjustment: 0,
     },
   };
 };
@@ -1668,13 +2082,31 @@ export const hillClimbOptimize = (
     wrScore: 0,
     synergyScore: 0,
     wrNormalized: 0,
+    synergyBaseNormalized: 0,
+    dependencyAxisScale: 0,
+    dependencyAxisDelta: 0,
     synergyNormalized: 0,
     qualityScore: 0,
+    powerWeightedContribution: 0,
+    synergyWeightedContribution: 0,
+    consistencyWeightedContribution: 0,
+    curveWeightedContribution: 0,
     consistencyScore: 0,
+    curveBaseScore: 0,
+    removalAxisScale: 0,
+    removalAxisDelta: 0,
     curveScore: 0,
     skeletonSimilarity: 0,
     creatureTarget: 0,
     curvePenalty: 0,
+    curveTopHeavyScale: 0,
+    curveSkeletonScale: 0,
+    curveEarlyCreatureScale: 0,
+    curveCreatureCorridorScale: 0,
+    curveTopHeavyPenalty: 0,
+    curveSkeletonPenalty: 0,
+    curveEarlyCreaturePenalty: 0,
+    curveCreatureCorridorPenalty: 0,
     manaPenalty: 0,
     dependencyPenalty: 0,
     consistencyAdjustment: 0,
@@ -2536,11 +2968,17 @@ export const optimizePool = (
   // During hill-climbing, computeManaPenalty used estimateSourcesFromDeck (proportional
   // heuristic over 17 generic lands). Now we run determineLands for each candidate and
   // recompute manaPenalty / consistencyScore / baseScore / score with real sources.
-  const totalWeight = scoreWeights.power + scoreWeights.synergy + scoreWeights.consistency + scoreWeights.curve;
   const rescored = candidatesForRescore.map((r) => {
     const lands = determineLands(r.deck, poolCards, r.mainColors, r.activeSplash);
     const actualSources = computeSourcesFromLands(lands, r.deck, poolMap, r.mainColors, r.activeSplash);
-    const manaPenalty = computeManaPenalty(r.deck, poolMap, r.mainColors, r.activeSplash, actualSources);
+    const manaPenalty = computeManaPenalty(
+      r.deck,
+      poolMap,
+      r.mainColors,
+      r.activeSplash,
+      actualSources,
+      lands.reduce((sum, l) => sum + l.qty, 0),
+    );
     const consistencyScore = normalizeConsistencyScore(manaPenalty);
 
     // Collect mana debug info (stored on candidate, included in debugCandidates)
@@ -2569,18 +3007,19 @@ export const optimizePool = (
         return `${c}:need${n.needed}(${n.card} ${n.pips}p@${n.cmc})have${src.toFixed(1)} def${def.toFixed(1)}`;
       }).join(" | ");
     }
-    const baseScore = (
-      scoreWeights.power * r.breakdown.wrNormalized +
-      scoreWeights.synergy * r.breakdown.synergyNormalized +
-      scoreWeights.consistency * consistencyScore +
-      scoreWeights.curve * r.breakdown.curveScore
-    ) / Math.max(1e-6, totalWeight);
-    const score = baseScore + r.breakdown.totalAdjustment;
+    const baseScore = computeCompositeScore(
+      r.breakdown.wrNormalized,
+      r.breakdown.synergyNormalized,
+      consistencyScore,
+      r.breakdown.curveScore,
+      scoreWeights,
+    );
+    const score = baseScore;
     return {
       ...r,
       lands,
       score,
-      breakdown: { ...r.breakdown, manaPenalty, consistencyScore, qualityScore: baseScore },
+      breakdown: { ...r.breakdown, manaPenalty, consistencyScore, qualityScore: baseScore, totalAdjustment: 0 },
       manaDebug,
     };
   });
@@ -2672,13 +3111,31 @@ export const optimizePool = (
       wrScore: Number(r.breakdown.wrScore.toFixed(2)),
       synergyScore: Number(r.breakdown.synergyScore.toFixed(4)),
       wrNormalized: Number(r.breakdown.wrNormalized.toFixed(2)),
+      synergyBaseNormalized: Number(r.breakdown.synergyBaseNormalized.toFixed(2)),
+      dependencyAxisScale: Number(r.breakdown.dependencyAxisScale.toFixed(4)),
+      dependencyAxisDelta: Number(r.breakdown.dependencyAxisDelta.toFixed(2)),
       synergyNormalized: Number(r.breakdown.synergyNormalized.toFixed(2)),
       qualityScore: Number(r.breakdown.qualityScore.toFixed(2)),
+      powerWeightedContribution: Number(r.breakdown.powerWeightedContribution.toFixed(2)),
+      synergyWeightedContribution: Number(r.breakdown.synergyWeightedContribution.toFixed(2)),
+      consistencyWeightedContribution: Number(r.breakdown.consistencyWeightedContribution.toFixed(2)),
+      curveWeightedContribution: Number(r.breakdown.curveWeightedContribution.toFixed(2)),
       consistencyScore: Number(r.breakdown.consistencyScore.toFixed(2)),
+      curveBaseScore: Number(r.breakdown.curveBaseScore.toFixed(2)),
+      removalAxisScale: Number(r.breakdown.removalAxisScale.toFixed(4)),
+      removalAxisDelta: Number(r.breakdown.removalAxisDelta.toFixed(2)),
       curveScore: Number(r.breakdown.curveScore.toFixed(2)),
       skeletonSimilarity: Number(r.breakdown.skeletonSimilarity.toFixed(3)),
       creatureTarget: Number(r.breakdown.creatureTarget.toFixed(2)),
       curvePenalty: Number(r.breakdown.curvePenalty.toFixed(4)),
+      curveTopHeavyScale: Number(r.breakdown.curveTopHeavyScale.toFixed(4)),
+      curveSkeletonScale: Number(r.breakdown.curveSkeletonScale.toFixed(4)),
+      curveEarlyCreatureScale: Number(r.breakdown.curveEarlyCreatureScale.toFixed(4)),
+      curveCreatureCorridorScale: Number(r.breakdown.curveCreatureCorridorScale.toFixed(4)),
+      curveTopHeavyPenalty: Number(r.breakdown.curveTopHeavyPenalty.toFixed(4)),
+      curveSkeletonPenalty: Number(r.breakdown.curveSkeletonPenalty.toFixed(4)),
+      curveEarlyCreaturePenalty: Number(r.breakdown.curveEarlyCreaturePenalty.toFixed(4)),
+      curveCreatureCorridorPenalty: Number(r.breakdown.curveCreatureCorridorPenalty.toFixed(4)),
       manaPenalty: Number(r.breakdown.manaPenalty.toFixed(4)),
       dependencyPenalty: Number(r.breakdown.dependencyPenalty.toFixed(4)),
       consistencyAdjustment: Number(r.breakdown.consistencyAdjustment.toFixed(2)),

@@ -22,7 +22,7 @@ import {
   parsePoolText,
   buildPoolCards,
   buildPairMap,
-  scoreDeckWithResolvedLands,
+  scoreDeckWithProvidedLands,
   optimizePool,
   COLOR_ORDER,
 } from "../_shared/sealedOptimizerCore.ts";
@@ -63,8 +63,9 @@ const STALE_RUNNING_TIMEOUT_MS = 35_000;
 const FINAL_MMR_LAMBDA = 1.8;
 const FINAL_BUILD_COUNT = 3;
 const DEEP_SHARD_RESTARTS = 2;
-const DEEP_SHARD_ITERATIONS = 35;
-const DEEP_SHARD_MAX_MS = 1_500;
+// Canary bump (+~10-15%) to improve search depth while staying worker-safe.
+const DEEP_SHARD_ITERATIONS = 40;
+const DEEP_SHARD_MAX_MS = 1_650;
 const SHARD_PROFILES: SearchProfile[] = [
   "skeleton",
   "power_mana_safe",
@@ -454,6 +455,13 @@ const normalizeFormat = (raw: string): string => {
 const BASIC_LANDS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest"]);
 const MANA_COLORS = [...COLOR_ORDER];
 const MANA_COLOR_SET = new Set<string>(MANA_COLORS);
+const BASIC_TO_COLOR: Record<string, string> = {
+  Plains: "W",
+  Island: "U",
+  Swamp: "B",
+  Mountain: "R",
+  Forest: "G",
+};
 
 type LoadedOptimizationContext = {
   normalizedFormat: string;
@@ -574,6 +582,35 @@ const deriveDeckColorPlan = (
     : (ordered[2]?.c || null);
 
   return { mainColors, splashColor };
+};
+
+const buildProvidedLandPoolCard = (
+  name: string,
+  qty: number,
+  meta: CardMeta | undefined,
+): PoolCard => {
+  const basicColor = BASIC_TO_COLOR[name];
+  const produced = meta?.produced_colours || (basicColor || "");
+  return {
+    name,
+    qty,
+    wr: 0,
+    colors: meta?.colors || (basicColor || ""),
+    cmc: Number(meta?.card_cmc ?? 0),
+    cost: meta?.card_cost || null,
+    type: meta?.card_type || "Land",
+    rarity: meta?.rarity || "common",
+    isCreature: false,
+    isRemoval: false,
+    isManaProducer: meta?.is_mana_producer ?? true,
+    producedColours: produced || null,
+    oracleText: meta?.oracle_text || null,
+    dependencyTags: [],
+    dependencyMinSupport: null,
+    dependencyScope: null,
+    tokenSupportTags: [],
+    tokenSupportCount: 0,
+  };
 };
 
 const parseSkeletonColors = (archetypeName: string): string[] => {
@@ -1143,16 +1180,27 @@ const scoreCustomDeck = async (
   }
 
   const cards: DeckCard[] = poolCards.map((pc) => ({ name: pc.name, qty: pc.qty }));
+  const scoringPoolMap = new Map<string, PoolCard>();
+  for (const pc of poolCards) scoringPoolMap.set(pc.name, pc);
+  for (const land of providedLands) {
+    if (scoringPoolMap.has(land.name)) continue;
+    const landMeta = context.metaMap.get(land.name);
+    const poolCard = buildProvidedLandPoolCard(land.name, land.qty, landMeta);
+    scoringPoolMap.set(land.name, poolCard);
+  }
+  const scoringPool = [...scoringPoolMap.values()];
+
   const weights = sanitizeScoreWeights(scoreWeights);
   const plan = deriveDeckColorPlan(cards, poolCards, providedLands);
   const skeleton = findBestSkeletonForPlan(context.skeletons, plan.mainColors);
-  const scored = scoreDeckWithResolvedLands(
+  const scored = scoreDeckWithProvidedLands(
     cards,
-    poolCards,
+    scoringPool,
     context.pairMap,
     plan.mainColors,
     plan.splashColor,
     skeleton,
+    providedLands,
     weights,
     context.primaryFormatMean,
   );
@@ -1185,13 +1233,31 @@ const scoreCustomDeck = async (
         wrScore: Number(scored.breakdown.wrScore.toFixed(2)),
         synergyScore: Number(scored.breakdown.synergyScore.toFixed(4)),
         wrNormalized: Number(scored.breakdown.wrNormalized.toFixed(2)),
+        synergyBaseNormalized: Number(scored.breakdown.synergyBaseNormalized.toFixed(2)),
+        dependencyAxisScale: Number(scored.breakdown.dependencyAxisScale.toFixed(4)),
+        dependencyAxisDelta: Number(scored.breakdown.dependencyAxisDelta.toFixed(2)),
         synergyNormalized: Number(scored.breakdown.synergyNormalized.toFixed(2)),
         qualityScore: Number(scored.breakdown.qualityScore.toFixed(2)),
+        powerWeightedContribution: Number(scored.breakdown.powerWeightedContribution.toFixed(2)),
+        synergyWeightedContribution: Number(scored.breakdown.synergyWeightedContribution.toFixed(2)),
+        consistencyWeightedContribution: Number(scored.breakdown.consistencyWeightedContribution.toFixed(2)),
+        curveWeightedContribution: Number(scored.breakdown.curveWeightedContribution.toFixed(2)),
         consistencyScore: Number(scored.breakdown.consistencyScore.toFixed(2)),
+        curveBaseScore: Number(scored.breakdown.curveBaseScore.toFixed(2)),
+        removalAxisScale: Number(scored.breakdown.removalAxisScale.toFixed(4)),
+        removalAxisDelta: Number(scored.breakdown.removalAxisDelta.toFixed(2)),
         curveScore: Number(scored.breakdown.curveScore.toFixed(2)),
         skeletonSimilarity: Number(scored.breakdown.skeletonSimilarity.toFixed(3)),
         creatureTarget: Number(scored.breakdown.creatureTarget.toFixed(2)),
         curvePenalty: Number(scored.breakdown.curvePenalty.toFixed(4)),
+        curveTopHeavyScale: Number(scored.breakdown.curveTopHeavyScale.toFixed(4)),
+        curveSkeletonScale: Number(scored.breakdown.curveSkeletonScale.toFixed(4)),
+        curveEarlyCreatureScale: Number(scored.breakdown.curveEarlyCreatureScale.toFixed(4)),
+        curveCreatureCorridorScale: Number(scored.breakdown.curveCreatureCorridorScale.toFixed(4)),
+        curveTopHeavyPenalty: Number(scored.breakdown.curveTopHeavyPenalty.toFixed(4)),
+        curveSkeletonPenalty: Number(scored.breakdown.curveSkeletonPenalty.toFixed(4)),
+        curveEarlyCreaturePenalty: Number(scored.breakdown.curveEarlyCreaturePenalty.toFixed(4)),
+        curveCreatureCorridorPenalty: Number(scored.breakdown.curveCreatureCorridorPenalty.toFixed(4)),
         manaPenalty: Number(scored.breakdown.manaPenalty.toFixed(4)),
         dependencyPenalty: Number(scored.breakdown.dependencyPenalty.toFixed(4)),
         consistencyAdjustment: Number(scored.breakdown.consistencyAdjustment.toFixed(2)),

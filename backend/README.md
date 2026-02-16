@@ -28,6 +28,9 @@ Tous lisent `.env` a la racine du projet (`SUPABASE_URL` / `SUPABASE_KEY` ou var
 | `calibrate_dependency_thresholds.py` | Calibre `dependency_min_support` depuis les trophy decks sealed | Voir exemples ci-dessous |
 | `test_sealed_optimizer.py` | Test de l'optimizer sur un pool (`test_sealed_pool.txt`) | Voir exemples ci-dessous |
 | `benchmark_sealed_optimizer.py` | Benchmark latence/perf de l'optimizer | `python benchmark_sealed_optimizer.py --set ECL` |
+| `etl_arena_direct_sealed_replay.py` | Extrait les derniers trophy decks ArenaDirect_Sealed avec pool complet (maindeck+sideboard) | `python backend/etl_arena_direct_sealed_replay.py --set ECL --limit 50` |
+| `benchmark_trophy_pool_replay.py` | Rejoue l'optimizer sur ces pools, score le deck joueur, calcule Jaccard vs top 3 | `python backend/benchmark_trophy_pool_replay.py --limit 50` |
+| `calibration_runner.py` | Lance plusieurs scenarios (weights/params) sur les pools trophy, puis compare les KPI vs baseline | `python backend/calibration_runner.py --limit 50` |
 
 ## Debug
 
@@ -71,4 +74,27 @@ python backend/test_sealed_optimizer.py
 
 ```bash
 python backend/benchmark_sealed_optimizer.py --set ECL --restarts 2 --iterations 35
+```
+
+### Replay trophies ArenaDirect Sealed
+
+```bash
+# 1) Extraire les derniers trophies + pool complet
+python backend/etl_arena_direct_sealed_replay.py --set ECL --format ArenaDirect_Sealed --limit 50
+
+# 2) Rejouer l'algo sur ces pools et comparer au deck joueur
+python backend/benchmark_trophy_pool_replay.py \
+  --input backend/tmp/_tmp_arena_direct_sealed_trophy_with_pools.json \
+  --output backend/tmp/_tmp_trophy_pool_replay_report.json \
+  --set ECL --format ArenaDirect_Sealed --limit 50
+
+# 3) Calibration multi-scenarios sur les 50 pools
+python backend/calibration_runner.py \
+  --input backend/tmp/_tmp_arena_direct_sealed_trophy_with_pools_cleaned.json \
+  --output-json backend/reports/benchmarks/calibration_runner_report.json \
+  --output-md backend/reports/benchmarks/calibration_runner_report.md \
+  --limit 50
+
+# Smoke test rapide (2 scenarios)
+python backend/calibration_runner.py --scenario-set smoke --limit 10
 ```
