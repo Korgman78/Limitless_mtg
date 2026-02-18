@@ -410,7 +410,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
             })}
             {visibleCount < processedData.length && (
               <div ref={observerTarget} className="h-10 w-full flex items-center justify-center opacity-50">
-                <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
+                <span className="text-[10px] animate-pulse">Loading more cards...</span>
               </div>
             )}
           </>

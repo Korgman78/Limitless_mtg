@@ -203,6 +203,7 @@ const TOPK_PER_ARCHETYPE_PRE_RESCORE = 3;
 const TOPK_PER_ARCHETYPE_FINAL = 3;
 const FINAL_DIVERSITY_LAMBDA = 2.2;
 const FINAL_BUILD_COUNT = 3;
+const HC_BEST_OF_K = 2;
 const DEFAULT_SEARCH_PROFILE: SearchProfile = "skeleton";
 
 const VALID_SEARCH_PROFILES = new Set<SearchProfile>([
@@ -2206,8 +2207,13 @@ export const hillClimbOptimize = (
         return { newDeck, newResult };
       };
 
+      let bestSwap: { deck: DeckCard[]; result: ReturnType<typeof calculateDeckScore> } | null = null;
+      let bestDelta = 0.001;
+      let positiveCount = 0;
+
       for (const addCard of sideboard) {
         if (isTimeUp()) break;
+        if (positiveCount >= HC_BEST_OF_K) break;
         // CMC-aware neighborhood:
         // favor "replace role with role" swaps first (same/near CMC),
         // then fall back to global cut candidates.
@@ -2233,14 +2239,21 @@ export const hillClimbOptimize = (
           const swap = buildSwap(addCard, cutCandidate);
           if (!swap) continue;
           const { newDeck, newResult } = swap;
-          if (newResult.score > current.score + 0.001) {
-            currentDeck = newDeck;
-            current = newResult;
-            improved = true;
+          const delta = newResult.score - current.score;
+          if (delta > 0.001) {
+            if (delta > bestDelta) {
+              bestDelta = delta;
+              bestSwap = { deck: newDeck, result: newResult };
+            }
+            positiveCount++;
             break;
           }
         }
-        if (improved) break;
+      }
+      if (bestSwap) {
+        currentDeck = bestSwap.deck;
+        current = bestSwap.result;
+        improved = true;
       }
       if (!improved) {
         // Small simulated-annealing window to escape local minima:

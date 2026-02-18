@@ -31,7 +31,7 @@ import { haptics } from './utils/haptics';
 import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName } from './utils/helpers';
 
 // Components
-import { ManaIcons, ErrorBanner, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
+import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
@@ -86,6 +86,77 @@ const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }
 ));
 Sidebar.displayName = 'Sidebar';
 
+const DecksTabSkeleton: React.FC = () => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ duration: 0.22 }}
+    className="relative space-y-4 md:space-y-6"
+  >
+    <div className="pointer-events-none absolute inset-0 opacity-40">
+      <div className="h-full w-full bg-[radial-gradient(circle_at_10%_20%,rgba(99,102,241,0.14),transparent_45%),radial-gradient(circle_at_90%_10%,rgba(34,211,238,0.1),transparent_40%)]" />
+    </div>
+
+    <motion.div
+      initial={{ y: 6, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.25, delay: 0.02 }}
+      className="relative flex justify-end"
+    >
+      <Skeleton className="h-10 w-full md:w-64 rounded-xl" />
+    </motion.div>
+
+    <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {[0, 1].map((i) => (
+        <motion.div
+          key={i}
+          initial={{ y: 8, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.26, delay: 0.05 + i * 0.04 }}
+        >
+          <Skeleton className="h-64 rounded-2xl" />
+        </motion.div>
+      ))}
+    </div>
+
+    <motion.div
+      initial={{ y: 6, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.22, delay: 0.1 }}
+      className="relative pt-2"
+    >
+      <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+      <div className="flex items-center gap-3 mb-4">
+        <Skeleton className="w-1 h-6 rounded-full" />
+        <Skeleton className="h-7 w-56 rounded-lg" />
+        <div className="flex-1 h-px bg-gradient-to-r from-slate-700/50 to-transparent" />
+      </div>
+    </motion.div>
+
+    <div className="relative space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {[...Array(10)].map((_, idx) => (
+        <motion.div
+          key={idx}
+          initial={{ y: 8, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.25, delay: 0.12 + idx * 0.025 }}
+        >
+          <DeckSkeleton />
+        </motion.div>
+      ))}
+    </div>
+
+    <motion.div
+      initial={{ y: 8, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.28, delay: 0.28 }}
+      className="relative"
+    >
+      <Skeleton className="h-72 rounded-3xl" />
+    </motion.div>
+  </motion.div>
+);
+
 export default function MTGLimitedApp(): React.ReactElement {
   // --- Coach Marks for Onboarding ---
   const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
@@ -103,7 +174,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const { data: decksData, isLoading: decksLoading, error: decksError, refetch: refetchDecks } = useDecks(activeSet, activeFormat);
   const { data: cardsData, isLoading: cardsLoading, error: cardsError, refetch: refetchCards } = useCards(activeSet, activeFormat, archetypeFilter);
   // Données globales pour FormatBlueprint (indépendantes du filtre d'archétype sélectionné dans l'onglet Cards)
-  const { data: globalCardsData } = useCards(activeSet, activeFormat, 'Global');
+  const { data: globalCardsData, isLoading: globalCardsLoading } = useCards(activeSet, activeFormat, 'Global');
 
   const decks = decksData?.decks || [];
   const totalGames = decksData?.totalGames || 1;
@@ -288,20 +359,41 @@ export default function MTGLimitedApp(): React.ReactElement {
 
   // Infinite scroll observer
   useEffect(() => {
-    if (activeTab !== 'cards') return;
+    if (activeTab !== 'cards' || loading) return;
+    const sentinel = cardsObserverTarget.current;
+    if (!sentinel) return;
+
+    const rootEl = mainRef.current;
+    const loadMore = () => {
+      setVisibleCardsCount(prev => Math.min(prev + 40, filteredCards.length));
+    };
 
     const observer = new IntersectionObserver(
       entries => {
-        if (entries[0].isIntersecting) {
-          setVisibleCardsCount(prev => prev + 40);
-        }
+        if (entries.some(entry => entry.isIntersecting)) loadMore();
       },
-      { threshold: 0.1, rootMargin: '600px' }
+      {
+        root: rootEl || null,
+        threshold: 0.01,
+        rootMargin: '600px 0px',
+      }
     );
 
-    if (cardsObserverTarget.current) observer.observe(cardsObserverTarget.current);
-    return () => { if (cardsObserverTarget.current) observer.unobserve(cardsObserverTarget.current); };
-  }, [filteredCards, activeTab]);
+    observer.observe(sentinel);
+
+    // Fallback for first mount when IntersectionObserver misses initial intersection.
+    const rafId = requestAnimationFrame(() => {
+      const rect = sentinel.getBoundingClientRect();
+      const rootRect = rootEl?.getBoundingClientRect();
+      const rootBottom = rootRect?.bottom ?? window.innerHeight;
+      if (rect.top <= rootBottom + 600) loadMore();
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [activeTab, loading, filteredCards.length]);
 
   // Scroll to top FAB visibility
   useEffect(() => {
@@ -546,6 +638,10 @@ export default function MTGLimitedApp(): React.ReactElement {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
                 className="p-4 md:p-0 space-y-4 md:space-y-6">
+                {(decksLoading || globalCardsLoading) ? (
+                  <DecksTabSkeleton />
+                ) : (
+                  <>
                 <div className="flex justify-end">
                   <div className="relative w-full md:w-64">
                     <select value={deckTypeFilter} onChange={(e) => setDeckTypeFilter(e.target.value)}
@@ -587,14 +683,13 @@ export default function MTGLimitedApp(): React.ReactElement {
                   </div>
                 </div>
 
-                <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {filteredDecks.map((deck, idx) => (
-                    <motion.button
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
-                      whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-                      key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
-                      className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
-                    >
+                    <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredDecks.map((deck, idx) => (
+                        <motion.button
+                          whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+                          key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
+                          className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
+                        >
                       <div className="flex items-center gap-3">
                         <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
                         <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{normalizeArchetypeName(deck.name)}</h3></div>
@@ -629,6 +724,8 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                 {/* Format Blueprint - utilise les données globales, pas le filtre d'archétype de l'onglet Cards */}
                 <FormatBlueprint cards={globalCards} decks={decks} globalMeanWR={globalMeanWRForBlueprint} activeSet={activeSet} activeFormat={activeFormat} onCardSelect={(card) => setSelectedCard(card)} />
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -796,7 +893,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   {/* Scroll sentinel */}
                   {!loading && visibleCardsCount < filteredCards.length && (
                     <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
-                      <span className="text-[10px] animate-pulse">Chargement de la suite...</span>
+                      <span className="text-[10px] animate-pulse">Loading more cards...</span>
                     </div>
                   )}
                 </div>

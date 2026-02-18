@@ -24,6 +24,8 @@ arena-overlay/
 # Supabase local CLI artifacts
 supabase/.temp/
 
-# Generated analysis / benchmark artifacts
-backend/reports/
+# Generated analysis / benchmark artifacts — keep benchmarks versioned
+backend/reports/*
+!backend/reports/benchmarks/
+backend/reports/benchmarks/**/data/
 backend/tmp/
