@@ -204,6 +204,7 @@ const TOPK_PER_ARCHETYPE_FINAL = 3;
 const FINAL_DIVERSITY_LAMBDA = 2.2;
 const FINAL_BUILD_COUNT = 3;
 const HC_BEST_OF_K = 2;
+const HC_BEST_OF_K_STRONG_DELTA = 0.20;
 const DEFAULT_SEARCH_PROFILE: SearchProfile = "skeleton";
 
 const VALID_SEARCH_PROFILES = new Set<SearchProfile>([
@@ -2210,10 +2211,11 @@ export const hillClimbOptimize = (
       let bestSwap: { deck: DeckCard[]; result: ReturnType<typeof calculateDeckScore> } | null = null;
       let bestDelta = 0.001;
       let positiveCount = 0;
+      let stopSearch = false;
 
       for (const addCard of sideboard) {
         if (isTimeUp()) break;
-        if (positiveCount >= HC_BEST_OF_K) break;
+        if (stopSearch || positiveCount >= HC_BEST_OF_K) break;
         // CMC-aware neighborhood:
         // favor "replace role with role" swaps first (same/near CMC),
         // then fall back to global cut candidates.
@@ -2246,6 +2248,7 @@ export const hillClimbOptimize = (
               bestSwap = { deck: newDeck, result: newResult };
             }
             positiveCount++;
+            if (bestDelta >= HC_BEST_OF_K_STRONG_DELTA) stopSearch = true;
             break;
           }
         }
