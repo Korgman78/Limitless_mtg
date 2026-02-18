@@ -205,7 +205,25 @@ export default function MTGLimitedApp(): React.ReactElement {
 
   // --- Lazy Loading States ---
   const [visibleCardsCount, setVisibleCardsCount] = useState<number>(40);
-  const cardsObserverTarget = React.useRef<HTMLDivElement | null>(null);
+  const cardsObserverRef = React.useRef<IntersectionObserver | null>(null);
+  const cardsSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    if (cardsObserverRef.current) {
+      cardsObserverRef.current.disconnect();
+      cardsObserverRef.current = null;
+    }
+    if (!node) return;
+    const rootEl = mainRef.current;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisibleCardsCount(prev => prev + 40);
+        }
+      },
+      { root: rootEl || null, threshold: 0.01, rootMargin: '600px 0px' }
+    );
+    observer.observe(node);
+    cardsObserverRef.current = observer;
+  }, []);
 
   // --- Scroll to Top FAB ---
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
@@ -357,43 +375,6 @@ export default function MTGLimitedApp(): React.ReactElement {
     setVisibleCardsCount(40);
   }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat]);
 
-  // Infinite scroll observer
-  useEffect(() => {
-    if (activeTab !== 'cards' || loading) return;
-    const sentinel = cardsObserverTarget.current;
-    if (!sentinel) return;
-
-    const rootEl = mainRef.current;
-    const loadMore = () => {
-      setVisibleCardsCount(prev => Math.min(prev + 40, filteredCards.length));
-    };
-
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries.some(entry => entry.isIntersecting)) loadMore();
-      },
-      {
-        root: rootEl || null,
-        threshold: 0.01,
-        rootMargin: '600px 0px',
-      }
-    );
-
-    observer.observe(sentinel);
-
-    // Fallback for first mount when IntersectionObserver misses initial intersection.
-    const rafId = requestAnimationFrame(() => {
-      const rect = sentinel.getBoundingClientRect();
-      const rootRect = rootEl?.getBoundingClientRect();
-      const rootBottom = rootRect?.bottom ?? window.innerHeight;
-      if (rect.top <= rootBottom + 600) loadMore();
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      observer.disconnect();
-    };
-  }, [activeTab, loading, filteredCards.length]);
 
   // Scroll to top FAB visibility
   useEffect(() => {
@@ -892,7 +873,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                   ))}
                   {/* Scroll sentinel */}
                   {!loading && visibleCardsCount < filteredCards.length && (
-                    <div ref={cardsObserverTarget} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
+                    <div key={visibleCardsCount} ref={cardsSentinelRef} className="col-span-full h-10 w-full flex items-center justify-center opacity-50">
                       <span className="text-[10px] animate-pulse">Loading more cards...</span>
                     </div>
                   )}
