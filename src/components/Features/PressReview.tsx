@@ -466,7 +466,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                       <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
                         <img src={getYouTubeThumbnail(article)} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" alt="thumb" />
                         
-                        {article.strategic_score && (
+                        {typeof article.strategic_score === 'number' && article.strategic_score >= 5 && (
                           <div className="absolute top-2 left-2 group/score">
                             <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg cursor-help">
                               <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
@@ -590,7 +590,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                         <h3 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 tracking-widest">
                           <Zap size={14} className="text-indigo-500" /> Key Takeaways
                         </h3>
-                        {selectedArticle.strategic_score && (
+                        {typeof selectedArticle.strategic_score === 'number' && selectedArticle.strategic_score >= 5 && (
                           <div className="relative group/score-detail">
                             <span className="text-indigo-400 font-black text-xs cursor-help bg-indigo-500/10 px-2 py-1 rounded">Score: {selectedArticle.strategic_score}/10</span>
                           </div>
