@@ -1,0 +1,29 @@
+name: Meta Pulse Generator
+
+on:
+  schedule:
+    # Mercredi + Samedi a 10:00 UTC
+    - cron: '0 10 * * 3,6'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Generate Meta Pulse
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python backend/generate_meta_pulse.py --sets ECL --min-games 500

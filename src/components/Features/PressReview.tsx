@@ -7,6 +7,9 @@ import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
 import { useActiveSets, useArticles, useArticle, useScryfallCardNames } from '../../queries/useArticles';
+import { MetaPulseArticle } from './MetaPulse';
+import { BarChart3 } from 'lucide-react';
+import type { MetaPulseData } from './MetaPulse/types';
 
 // --- COMPOSANT TOOLTIP (Version Portal Robuste) ---
 const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
@@ -458,6 +461,74 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
           <div className="grid grid-cols-1 gap-4">
             {filteredArticles.map((article: Article) => {
                 const sentiment = getSentimentData(article);
+                const isMetaPulse = article.channel_name === 'Meta Pulse';
+
+                // --- Meta Pulse card ---
+                if (isMetaPulse) {
+                  let pulsePreview: MetaPulseData | null = null;
+                  try { pulsePreview = JSON.parse(article.summary); } catch { /* ignore */ }
+
+                  return (
+                    <button key={article.id} onClick={() => setSelectedArticle(article)}
+                      className="w-full text-left bg-slate-900 border-l-4 border-l-indigo-500 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99] relative"
+                    >
+                      <div className="md:flex">
+                        <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 h-40 md:h-auto flex items-center justify-center">
+                          <BarChart3 className="w-12 h-12 text-indigo-400/40" />
+                          <div className="absolute top-2 left-2">
+                            <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg">
+                              <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
+                            </div>
+                          </div>
+                          {pulsePreview?.format_health && (
+                            <div className="absolute bottom-2 left-2 right-2">
+                              <div className="h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${pulsePreview.format_health.archetype_score >= 7 ? 'bg-emerald-500' : pulsePreview.format_health.archetype_score >= 5 ? 'bg-lime-500' : 'bg-amber-500'}`}
+                                  style={{ width: `${pulsePreview.format_health.archetype_score * 10}%` }} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-4 flex-1">
+                          <div className="flex flex-wrap gap-2 items-center mb-2">
+                            <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
+                            <span className="text-[9px] font-black uppercase text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">Meta Pulse</span>
+                            {pulsePreview?.format_label && (
+                              <span className="text-[9px] font-bold text-slate-500">{pulsePreview.format_label}</span>
+                            )}
+                            {sentiment && (
+                              <div className={`ml-auto flex-shrink-0 px-2 py-1 rounded-lg border flex items-center gap-1.5 ${sentiment.bg} ${sentiment.border} ${sentiment.color}`}>
+                                <sentiment.icon size={12} strokeWidth={3} />
+                                <span className="text-[9px] font-black">{sentiment.percent}%</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1 group-hover:text-indigo-300 transition-colors line-clamp-1">{article.title}</h3>
+
+                          <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-400">
+                            {pulsePreview?.card_of_the_week && (
+                              <span className="flex items-center gap-1">
+                                Card of the Week: <span className="text-indigo-300 font-semibold">{pulsePreview.card_of_the_week.name}</span>
+                              </span>
+                            )}
+                            {pulsePreview?.archetypes?.rising?.[0] && (
+                              <span className="text-emerald-400">▲ {pulsePreview.archetypes.rising[0].name}</span>
+                            )}
+                            {pulsePreview?.archetypes?.falling?.[0] && (
+                              <span className="text-red-400">▼ {pulsePreview.archetypes.falling[0].name}</span>
+                            )}
+                          </div>
+
+                          <div className="mt-2 text-[10px] text-slate-600 font-medium">{formatDate(article.published_at)}</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                }
+
+                // --- Standard article card ---
                 return (
                   <button key={article.id} onClick={() => setSelectedArticle(article)}
                     className="w-full text-left bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-indigo-500/50 hover:bg-slate-800 transition-all group active:scale-[0.99] relative"
@@ -465,7 +536,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                     <div className="md:flex">
                       <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-black h-40 md:h-auto">
                         <img src={getYouTubeThumbnail(article)} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" alt="thumb" />
-                        
+
                         {typeof article.strategic_score === 'number' && article.strategic_score >= 5 && (
                           <div className="absolute top-2 left-2 group/score">
                             <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg cursor-help">
@@ -474,12 +545,12 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="p-4 flex-1">
                         <div className="flex justify-between items-start mb-2 gap-2">
                             <div className="flex flex-wrap gap-2 items-center">
                                 <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">{article.set_tag || 'MTG'}</span>
-                                <span className="text-[9px] font-bold uppercase text-slate-500">{(article as any).channel_name}</span>
+                                <span className="text-[9px] font-bold uppercase text-slate-500">{article.channel_name}</span>
                                 {article.tags
                                     ?.sort((a, b) => {
                                         const aSelected = selectedTags.includes(a);
@@ -500,7 +571,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                                 <div className={`relative group/badge flex-shrink-0 px-2 py-1 rounded-lg border flex items-center gap-1.5 shadow-sm cursor-help ${sentiment.bg} ${sentiment.border} ${sentiment.color}`}>
                                     <sentiment.icon size={12} strokeWidth={3} />
                                     <span className="text-[9px] font-black">{sentiment.percent}%</span>
-                                    
+
                                     {/* TOOLTIP: Texte écrit en vert émeraude */}
                                     <div className="absolute right-0 top-full mt-1.5 w-max max-w-[120px] bg-slate-900/95 border border-slate-600 text-emerald-400 text-[9px] font-black px-2 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-20 text-center backdrop-blur-sm border-emerald-500/20">
                                         {sentiment.percent}% good reviews
@@ -546,7 +617,83 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
       </div>
 
       <AnimatePresence>
-        {selectedArticle && (
+        {selectedArticle && selectedArticle.channel_name === 'Meta Pulse' && (() => {
+          let pulseData: MetaPulseData | null = null;
+          try { pulseData = JSON.parse(selectedArticle.summary); } catch { /* ignore */ }
+          if (!pulseData) return null;
+          return (
+            <SwipeableOverlay onClose={() => setSelectedArticle(null)} zIndex={900}>
+              <div className="flex flex-col h-full bg-slate-950">
+                <MetaPulseArticle data={pulseData} article={selectedArticle} />
+
+                {/* Voting section at bottom */}
+                <div className="px-6 pb-8">
+                  <div className="max-w-2xl mx-auto p-6 bg-slate-900/40 rounded-3xl border border-slate-800/50 text-center backdrop-blur-sm">
+                    <h4 className="text-xs font-black text-slate-300 mb-6 uppercase tracking-[0.2em]">
+                      Was this Meta Pulse helpful?
+                    </h4>
+
+                    {!hasVoted ? (
+                      <div className="flex flex-wrap justify-center gap-3">
+                        <button onClick={() => handleVote('yes')} className="flex-1 min-w-[100px] py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
+                          <Check size={14} strokeWidth={3} /> YES!
+                        </button>
+                        <button onClick={() => handleVote('meh')} className="flex-1 min-w-[100px] py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
+                          <Minus size={14} strokeWidth={3} /> SOMEWHAT
+                        </button>
+                        <button onClick={() => handleVote('no')} className="flex-1 min-w-[100px] py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
+                          <X size={14} strokeWidth={3} /> NOT REALLY
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3 max-w-sm mx-auto">
+                        {(() => {
+                          const yes = (selectedArticle as any).votes_yes || 0;
+                          const meh = (selectedArticle as any).votes_meh || 0;
+                          const no = (selectedArticle as any).votes_no || 0;
+                          const total = yes + meh + no;
+                          const getPercent = (val: number) => total === 0 ? 0 : Math.round((val / total) * 100);
+                          return (
+                            <>
+                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(yes), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-emerald-500/40 border-r border-emerald-500/50" />
+                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                  <span className="text-emerald-400 flex items-center gap-1.5"><Check size={12} strokeWidth={3} /> Yes</span>
+                                  <span className="text-white">{yes} <span className="text-slate-500 ml-1">({getPercent(yes)}%)</span></span>
+                                </div>
+                              </div>
+                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(meh), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-amber-500/40 border-r border-amber-500/50" />
+                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                  <span className="text-amber-400 flex items-center gap-1.5"><Minus size={12} strokeWidth={3} /> Somewhat</span>
+                                  <span className="text-white">{meh} <span className="text-slate-500 ml-1">({getPercent(meh)}%)</span></span>
+                                </div>
+                              </div>
+                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(no), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-rose-500/40 border-r border-rose-500/50" />
+                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
+                                  <span className="text-rose-400 flex items-center gap-1.5"><X size={12} strokeWidth={3} /> Not Really</span>
+                                  <span className="text-white">{no} <span className="text-slate-500 ml-1">({getPercent(no)}%)</span></span>
+                                </div>
+                              </div>
+                              <div className="text-center mt-2">
+                                <span className="text-[9px] text-slate-500 italic">Thank you for voting!</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </SwipeableOverlay>
+          );
+        })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedArticle && selectedArticle.channel_name !== 'Meta Pulse' && (
           <SwipeableOverlay onClose={() => setSelectedArticle(null)} zIndex={900}>
              <div className="flex flex-col h-full md:flex-row bg-slate-950">
               {/* Left Column (Video/Image) */}
@@ -622,22 +769,22 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                         <h4 className="text-xs font-black text-slate-300 mb-6 uppercase tracking-[0.2em]">
                           Was this strategic insight helpful?
                         </h4>
-                        
+
                         {!hasVoted ? (
                           <div className="flex flex-wrap justify-center gap-3">
-                            <button 
+                            <button
                               onClick={() => handleVote('yes')}
                               className="flex-1 min-w-[100px] py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                             >
                               <Check size={14} strokeWidth={3} /> YES!
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleVote('meh')}
                               className="flex-1 min-w-[100px] py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                             >
                               <Minus size={14} strokeWidth={3} /> SOMEWHAT
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleVote('no')}
                               className="flex-1 min-w-[100px] py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                             >
@@ -651,14 +798,14 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                                   const meh = (selectedArticle as any).votes_meh || 0;
                                   const no = (selectedArticle as any).votes_no || 0;
                                   const total = yes + meh + no;
-                                  
+
                                   const getPercent = (val: number) => total === 0 ? 0 : Math.round((val / total) * 100);
-                                  
+
                                   return (
                                     <>
                                         {/* YES BAR */}
                                         <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                            <motion.div 
+                                            <motion.div
                                                 initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(yes), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
                                                 className="absolute left-0 top-0 bottom-0 bg-emerald-500/40 border-r border-emerald-500/50"
                                             />
@@ -670,7 +817,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
 
                                         {/* MEH BAR */}
                                         <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                            <motion.div 
+                                            <motion.div
                                                 initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(meh), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
                                                 className="absolute left-0 top-0 bottom-0 bg-amber-500/40 border-r border-amber-500/50"
                                             />
@@ -682,7 +829,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
 
                                         {/* NO BAR */}
                                         <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                            <motion.div 
+                                            <motion.div
                                                 initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(no), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }}
                                                 className="absolute left-0 top-0 bottom-0 bg-rose-500/40 border-r border-rose-500/50"
                                             />
@@ -691,7 +838,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                                                 <span className="text-white">{no} <span className="text-slate-500 ml-1">({getPercent(no)}%)</span></span>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="text-center mt-2">
                                             <span className="text-[9px] text-slate-500 italic">Thank you for voting! It will help us to curate better content.</span>
                                         </div>

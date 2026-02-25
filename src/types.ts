@@ -44,8 +44,9 @@ export interface Article {
   summary: string;
   thumbnail_url?: string;
   video_url?: string;
-  source_url: string;
-  source_name: string;
+  source_url?: string;
+  source_name?: string;
+  channel_name?: string;
   published_at: string;
   tags?: string[];
   set_tag?: string;
