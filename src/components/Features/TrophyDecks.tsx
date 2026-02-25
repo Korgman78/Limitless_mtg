@@ -626,7 +626,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                     {(() => {
                                                         const sorted = [...skeleton.importance_cards].sort((a, b) => {
                                                             switch (importanceSort) {
-                                                                case 'freq': return (b.freq_score ?? 0) - (a.freq_score ?? 0);
+                                                                case 'freq': return (b.frequency ?? 0) - (a.frequency ?? 0);
                                                                 case 'synergy': return (b.synergy_score ?? 0) - (a.synergy_score ?? 0);
                                                                 case 'wr': return (b.wr_score ?? 0) - (a.wr_score ?? 0);
                                                                 default: return b.importance - a.importance;

@@ -157,9 +157,10 @@ def get_trophy_weight(trophy_time):
         now = datetime.now(timezone.utc)
         age_days = (now - dt).days
         
-        if age_days <= 7: return 1.0    # Semaine en cours
-        if age_days <= 14: return 0.75 # J-7 à J-14
-        return 0.5                     # Plus de 14 jours
+        if age_days <= 7: return 1.0     # Semaine en cours
+        if age_days <= 14: return 0.75   # J-7 à J-14
+        if age_days <= 28: return 0.5    # J-15 à J-28
+        return 0.25                      # Plus de 28 jours
     except:
         return 0.5
 
