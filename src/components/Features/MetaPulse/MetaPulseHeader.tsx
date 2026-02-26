@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Activity, Calendar, Gamepad2 } from 'lucide-react';
 import type { MetaPulseData } from './types';
 
@@ -9,10 +10,18 @@ const scoreColor = (score: number): string => {
   return 'bg-red-500';
 };
 
-const classificationStyle: Record<string, string> = {
-  PRINCE: 'text-amber-400 bg-amber-500/15 border-amber-500/30',
-  BALANCED: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
-  PAUPER: 'text-blue-400 bg-blue-500/15 border-blue-500/30',
+const DeltaSpan: React.FC<{ delta: number }> = ({ delta }) => {
+  if (delta === 0) return null;
+  const positive = delta > 0;
+  return (
+    <motion.span
+      initial={{ opacity: 0, x: -4 }}
+      animate={{ opacity: 1, x: 0 }}
+      className={`ml-1.5 text-xs font-bold ${positive ? 'text-emerald-400' : 'text-red-400'}`}
+    >
+      {positive ? '+' : ''}{delta.toFixed(1)}
+    </motion.span>
+  );
 };
 
 interface Props {
@@ -43,18 +52,16 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
       {/* Format Health */}
       {format_health && (
         <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-300">Format Health</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${classificationStyle[format_health.classification] || classificationStyle.BALANCED}`}>
-              {format_health.classification}
-            </span>
-          </div>
+          <span className="text-sm font-medium text-slate-300">Format Health</span>
 
           {/* Archetype score bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Archetype Balance</span>
-              <span>{format_health.archetype_score}/10</span>
+              <span className="flex items-center">
+                {format_health.archetype_score}/10
+                <DeltaSpan delta={format_health.archetype_delta} />
+              </span>
             </div>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
               <div
@@ -68,7 +75,10 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Color Balance</span>
-              <span>{format_health.color_score}/10</span>
+              <span className="flex items-center">
+                {format_health.color_score}/10
+                <DeltaSpan delta={format_health.color_delta} />
+              </span>
             </div>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
               <div

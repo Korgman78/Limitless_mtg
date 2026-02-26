@@ -4,12 +4,10 @@ import { BarChart3 } from 'lucide-react';
 import type { Article } from '../../../types';
 import type { MetaPulseData } from './types';
 import { MetaPulseHeader } from './MetaPulseHeader';
-import { CardOfTheWeek } from './CardOfTheWeek';
-import { ArchetypeRanking } from './ArchetypeRanking';
-import { CardHighlights } from './CardHighlights';
-import { TrophyTrends } from './TrophyTrends';
+import { CardsSpotlight } from './CardsSpotlight';
+import { MovingArchetypes } from './MovingArchetypes';
+import { TrophyMovers } from './TrophyMovers';
 import { SynergySpotlight } from './SynergySpotlight';
-import { CommunityBuzz } from './CommunityBuzz';
 
 interface Props {
   data: MetaPulseData;
@@ -32,48 +30,42 @@ export const MetaPulseArticle: React.FC<Props> = ({ data, article }) => {
     // Header always present
     s.push(<MetaPulseHeader key="header" data={data} />);
 
-    // Card of the Week
-    if (data.card_of_the_week) {
-      s.push(<CardOfTheWeek key="cotw" card={data.card_of_the_week} />);
+    // Cards Spotlight
+    if (data.cards_spotlight) {
+      s.push(
+        <CardsSpotlight
+          key="spotlight"
+          rising={data.cards_spotlight.rising || []}
+          falling={data.cards_spotlight.falling || []}
+        />
+      );
     }
 
-    // Archetype Ranking
-    if (data.archetypes?.top?.length > 0) {
+    // Moving Archetypes
+    if (data.moving_archetypes) {
       s.push(
-        <ArchetypeRanking
+        <MovingArchetypes
           key="archetypes"
-          top={data.archetypes.top}
-          rising={data.archetypes.rising || []}
-          falling={data.archetypes.falling || []}
+          rising={data.moving_archetypes.rising || []}
+          falling={data.moving_archetypes.falling || []}
         />
       );
     }
 
-    // Card Highlights
-    if (data.cards && (data.cards.stars?.length > 0 || data.cards.falling?.length > 0 || data.cards.sleepers?.length > 0)) {
+    // Trophy Movers
+    if (data.trophy_movers) {
       s.push(
-        <CardHighlights
-          key="cards"
-          stars={data.cards.stars || []}
-          falling={data.cards.falling || []}
-          sleepers={data.cards.sleepers || []}
+        <TrophyMovers
+          key="trophies"
+          gaining={data.trophy_movers.gaining || []}
+          losing={data.trophy_movers.losing || []}
         />
       );
-    }
-
-    // Trophy Trends
-    if (data.trophy_trends) {
-      s.push(<TrophyTrends key="trophies" data={data.trophy_trends} />);
     }
 
     // Synergies
     if (data.synergies && data.synergies.length > 0) {
       s.push(<SynergySpotlight key="synergies" synergies={data.synergies} />);
-    }
-
-    // Community Buzz
-    if (data.community_buzz && data.community_buzz.length > 0) {
-      s.push(<CommunityBuzz key="buzz" items={data.community_buzz} />);
     }
 
     return s;

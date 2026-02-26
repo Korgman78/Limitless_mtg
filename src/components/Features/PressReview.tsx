@@ -508,16 +508,14 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                           <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1 group-hover:text-indigo-300 transition-colors line-clamp-1">{article.title}</h3>
 
                           <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-400">
-                            {pulsePreview?.card_of_the_week && (
-                              <span className="flex items-center gap-1">
-                                Card of the Week: <span className="text-indigo-300 font-semibold">{pulsePreview.card_of_the_week.name}</span>
-                              </span>
+                            {pulsePreview?.cards_spotlight?.rising?.[0] && (
+                              <span className="text-emerald-400">▲ {pulsePreview.cards_spotlight.rising[0].name}</span>
                             )}
-                            {pulsePreview?.archetypes?.rising?.[0] && (
-                              <span className="text-emerald-400">▲ {pulsePreview.archetypes.rising[0].name}</span>
+                            {pulsePreview?.cards_spotlight?.falling?.[0] && (
+                              <span className="text-red-400">▼ {pulsePreview.cards_spotlight.falling[0].name}</span>
                             )}
-                            {pulsePreview?.archetypes?.falling?.[0] && (
-                              <span className="text-red-400">▼ {pulsePreview.archetypes.falling[0].name}</span>
+                            {pulsePreview?.moving_archetypes?.rising?.[0] && (
+                              <span className="text-emerald-400/70">▲ {pulsePreview.moving_archetypes.rising[0].name}</span>
                             )}
                           </div>
 
@@ -620,7 +618,7 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
         {selectedArticle && selectedArticle.channel_name === 'Meta Pulse' && (() => {
           let pulseData: MetaPulseData | null = null;
           try { pulseData = JSON.parse(selectedArticle.summary); } catch { /* ignore */ }
-          if (!pulseData) return null;
+          if (!pulseData || (pulseData.version || 1) < 2) return null;
           return (
             <SwipeableOverlay onClose={() => setSelectedArticle(null)} zIndex={900}>
               <div className="flex flex-col h-full bg-slate-950">

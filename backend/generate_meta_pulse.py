@@ -1,13 +1,15 @@
 """
-generate_meta_pulse.py — Generateur bi-hebdomadaire Meta Pulse
+generate_meta_pulse.py — Generateur hebdomadaire Meta Pulse v2
 Genere un article structure par (set_code, format) a partir des donnees Supabase.
-Schedule: mercredi + samedi via GitHub Actions.
+Compare les donnees actuelles vs le rapport precedent (fallback 7 jours).
+Schedule: samedi via GitHub Actions.
 """
 
 import argparse
 import json
 import os
 import requests
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,6 +33,8 @@ PAIRS = {
     "UR": "Izzet (UR)", "BG": "Golgari (BG)", "WR": "Boros (WR)",
     "UG": "Simic (UG)",
 }
+
+BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
 
 current_dir = Path(__file__).parent
 root_dir = current_dir.parent
@@ -96,25 +100,9 @@ def delta_from_history(history, lookback=4):
     return round(current - previous, 2)
 
 
-def compute_grade(delta: float) -> str:
-    """Grade S-F base sur le delta vs moyenne (meme seuils que le frontend)."""
-    if delta >= 5.5:
-        return "S"
-    if delta >= 3.0:
-        return "A"
-    if delta >= 0.5:
-        return "B"
-    if delta >= -1.5:
-        return "C"
-    if delta >= -3.5:
-        return "D"
-    return "F"
-
-
 def archetype_name(colors: str) -> str:
     if colors in PAIRS:
         return PAIRS[colors]
-    # Try sorted WUBRG order
     order = "WUBRG"
     sorted_colors = "".join(sorted(colors, key=lambda c: order.index(c) if c in order else 99))
     return PAIRS.get(sorted_colors, colors)
@@ -176,40 +164,65 @@ def fetch_trophy_decks(set_code: str, fmt: str) -> list[dict]:
     return fetch_json("trophy_decks", params)
 
 
-def fetch_skeletons(set_code: str, fmt: str) -> list[dict]:
-    params = (
-        f"set_code=eq.{set_code}&format=eq.{fmt}"
-        f"&select=colors,trending_cards,declining_cards,sleeper_cards"
-    )
-    url = f"{SUPABASE_URL}/rest/v1/archetypal_skeletons?{params}"
-    resp = requests.get(url, headers=HEADERS_SUPABASE)
-    if resp.status_code == 200:
-        return resp.json()
-    return []
+def fetch_previous_pulse(set_code: str, fmt: str) -> tuple[dict | None, str]:
+    """Recupere le dernier Meta Pulse pour ce set/format.
+    Retourne (prev_data_dict, prev_date_str) ou (None, date_7j_ago) en fallback."""
+    fallback_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
 
-
-def fetch_recent_articles(set_code: str, days: int = 7) -> list[dict]:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    params = (
-        f"set_tag=eq.{set_code}&published_at=gte.{cutoff}"
-        f"&channel_name=neq.Meta Pulse"
-        f"&select=title,channel_name,votes_yes,votes_meh,votes_no"
-        f"&order=votes_yes.desc&limit=3"
+    url = (
+        f"{SUPABASE_URL}/rest/v1/press_articles"
+        f"?channel_name=eq.Meta Pulse&set_tag=eq.{set_code}"
+        f"&tags=cs.{{{fmt}}}"
+        f"&select=summary,published_at"
+        f"&order=published_at.desc&limit=1"
     )
-    url = f"{SUPABASE_URL}/rest/v1/press_articles?{params}"
     resp = requests.get(url, headers=HEADERS_SUPABASE)
-    if resp.status_code == 200:
-        return resp.json()
-    return []
+    if resp.status_code == 200 and resp.json():
+        row = resp.json()[0]
+        try:
+            prev_data = json.loads(row["summary"])
+            prev_date = row.get("published_at", fallback_date)[:10]
+            print(f"  📎 Found previous pulse from {prev_date}")
+            return prev_data, prev_date
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    print(f"  📎 No previous pulse found, using 7-day fallback")
+    return None, fallback_date
 
 
 # ==============================================================================
-# 4. PULSE BUILDER
+# 4. SCORING
+# ==============================================================================
+
+def compute_spotlight_score(wr_delta: float, alsa_delta: float,
+                            trophy_freq_delta: float,
+                            is_draft: bool, has_trophy_data: bool) -> float:
+    """Score composite pour trier les cartes spotlight.
+    ALSA inverse : une baisse d'ALSA = signal positif (la carte est pickee plus tot)."""
+    alsa_signal = -alsa_delta  # baisse = positif
+
+    if is_draft and has_trophy_data:
+        score = wr_delta * 0.50 + (trophy_freq_delta * 100) * 0.30 + alsa_signal * 0.20
+    elif is_draft:
+        score = wr_delta * 0.70 + alsa_signal * 0.30
+    elif has_trophy_data:
+        score = wr_delta * 0.65 + (trophy_freq_delta * 100) * 0.35
+    else:
+        score = wr_delta * 1.0
+
+    return round(score, 2)
+
+
+# ==============================================================================
+# 5. PULSE BUILDER (v2)
 # ==============================================================================
 
 def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict | None:
-    """Construit le JSON Meta Pulse pour un (set_code, format)."""
-    print(f"\n📊 Building pulse for {set_code} / {fmt}...")
+    """Construit le JSON Meta Pulse v2 pour un (set_code, format)."""
+    print(f"\n📊 Building pulse v2 for {set_code} / {fmt}...")
+
+    is_draft = fmt in ("PremierDraft", "TradDraft")
 
     # --- Archetypes ---
     archetypes_raw = fetch_archetype_stats(set_code, fmt)
@@ -219,29 +232,69 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         print(f"  ⏭ Skipped: {int(total_games)} games < {min_games} threshold")
         return None
 
-    BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
+    # --- Previous pulse ---
+    prev_data, prev_date = fetch_previous_pulse(set_code, fmt)
 
-    # Enrich archetypes with deltas
+    # Build lookup maps from previous pulse
+    prev_cards_map = {}
+    prev_archetypes_map = {}
+    prev_trophy_freq_map = {}
+    prev_format_health = None
+
+    if prev_data:
+        prev_format_health = prev_data.get("format_health")
+
+        # v2 previous data
+        if prev_data.get("version", 1) >= 2:
+            for section in ("rising", "falling"):
+                for c in (prev_data.get("cards_spotlight") or {}).get(section, []):
+                    prev_cards_map[c["name"]] = c
+                for a in (prev_data.get("moving_archetypes") or {}).get(section, []):
+                    prev_archetypes_map[a.get("colors") or a.get("name", "")] = a
+                for t in (prev_data.get("trophy_movers") or {}).get("gaining" if section == "rising" else "losing", []):
+                    prev_trophy_freq_map[t["name"]] = t.get("freq", 0)
+        # v1 previous data
+        else:
+            for section in ("stars", "falling", "sleepers"):
+                for c in (prev_data.get("cards") or {}).get(section, []):
+                    prev_cards_map[c["name"]] = c
+            for section in ("top", "rising", "falling"):
+                for a in (prev_data.get("archetypes") or {}).get(section, []):
+                    prev_archetypes_map[a.get("colors", "")] = a
+            for c in (prev_data.get("trophy_trends") or {}).get("gaining_cards", []):
+                prev_trophy_freq_map[c["name"]] = c.get("freq", 0)
+
+    # --- Enrich archetypes ---
     archetypes = []
     for a in archetypes_raw:
         colors = a.get("colors", "")
-        if not colors or len(colors) < 2 or len(colors) > 3:  # Only pairs/trios
+        if not colors or len(colors) < 2 or len(colors) > 3:
             continue
         wr = safe_float(a.get("win_rate"))
-        delta = delta_from_history(a.get("win_rate_history"))
         games = int(safe_float(a.get("games_count")))
+        meta_share = round(games / total_games, 4) if total_games > 0 else 0
+
+        # WR delta: vs previous pulse if available, else from history
+        prev_arch = prev_archetypes_map.get(colors)
+        if prev_arch and "wr" in prev_arch:
+            wr_delta = round(wr - safe_float(prev_arch["wr"]), 2)
+        else:
+            wr_delta = delta_from_history(a.get("win_rate_history"))
+
+        # Games delta vs previous pulse
+        games_delta = 0
+        if prev_arch and "games" in prev_arch:
+            games_delta = games - int(safe_float(prev_arch["games"]))
+
         archetypes.append({
             "name": archetype_name(colors),
             "colors": colors,
             "wr": round(wr, 2),
-            "delta": delta,
+            "wr_delta": wr_delta,
             "games": games,
+            "games_delta": games_delta,
+            "meta_share": round(meta_share, 4),
         })
-
-    archetypes.sort(key=lambda x: x["wr"], reverse=True)
-    top_archetypes = archetypes[:5]
-    rising = sorted([a for a in archetypes if a["delta"] > 0.3], key=lambda x: x["delta"], reverse=True)[:3]
-    falling = sorted([a for a in archetypes if a["delta"] < -0.3], key=lambda x: x["delta"])[:3]
 
     # --- Cards ---
     cards_raw = fetch_card_stats(set_code, fmt)
@@ -250,71 +303,85 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
     if valid_wrs:
         mean_wr = sum(valid_wrs) / len(valid_wrs)
 
+    # --- Trophy data ---
+    trophies_raw = fetch_trophy_decks(set_code, fmt)
+    has_trophy_data = len(trophies_raw) > 0
+
+    # Compute current trophy frequencies
+    trophy_card_freq = Counter()
+    trophy_arch_counter = Counter()
+    trophy_card_archetypes = {}  # card_name -> Counter of archetypes
+
+    for t in trophies_raw:
+        arch_colors = t.get("archetype", "")
+        trophy_arch_counter[arch_colors] += 1
+        cardlist = t.get("cardlist") or {}
+        if isinstance(cardlist, str):
+            try:
+                cardlist = json.loads(cardlist)
+            except Exception:
+                cardlist = {}
+        for card_name in cardlist:
+            if card_name in BASIC_LANDS:
+                continue
+            trophy_card_freq[card_name] += 1
+            if card_name not in trophy_card_archetypes:
+                trophy_card_archetypes[card_name] = Counter()
+            trophy_card_archetypes[card_name][arch_colors] += 1
+
+    total_trophies = len(trophies_raw)
+
+    # --- Cards Spotlight ---
     cards_enriched = []
     for c in cards_raw:
         wr = safe_float(c.get("gih_wr"))
         if wr <= 0:
             continue
-        delta = delta_from_history(c.get("win_rate_history"))
-        grade = compute_grade(wr - mean_wr)
+        card_name = c.get("card_name", "")
+        rarity = (c.get("rarity") or "C")[0].upper()
+        alsa = round(safe_float(c.get("alsa")), 1)
+
+        # WR delta: vs prev pulse or history
+        prev_card = prev_cards_map.get(card_name)
+        if prev_card and "gih_wr" in prev_card:
+            wr_delta = round(wr - safe_float(prev_card["gih_wr"]), 2)
+        else:
+            wr_delta = delta_from_history(c.get("win_rate_history"))
+
+        # ALSA delta: from history (no prev pulse ALSA stored reliably)
+        alsa_delta = None
+        if is_draft and alsa > 0:
+            if prev_card and "alsa" in prev_card and safe_float(prev_card["alsa"]) > 0:
+                alsa_delta = round(alsa - safe_float(prev_card["alsa"]), 2)
+
+        # Trophy freq + delta
+        trophy_freq = 0.0
+        trophy_freq_delta = 0.0
+        if total_trophies > 0:
+            trophy_freq = round(trophy_card_freq.get(card_name, 0) / total_trophies, 4)
+            prev_freq = prev_trophy_freq_map.get(card_name, 0)
+            trophy_freq_delta = round(trophy_freq - safe_float(prev_freq), 4)
+
+        # Spotlight score
+        score = compute_spotlight_score(
+            wr_delta, alsa_delta or 0.0, trophy_freq_delta, is_draft, has_trophy_data
+        )
+
         cards_enriched.append({
-            "name": c.get("card_name", ""),
-            "rarity": (c.get("rarity") or "C")[0].upper(),
+            "name": card_name,
+            "rarity": rarity,
             "gih_wr": round(wr, 2),
-            "delta": delta,
-            "grade": grade,
-            "alsa": round(safe_float(c.get("alsa")), 1),
+            "wr_delta": wr_delta,
+            "alsa": alsa if is_draft else None,
+            "alsa_delta": alsa_delta,
+            "trophy_freq": round(trophy_freq, 4) if has_trophy_data else None,
+            "trophy_freq_delta": round(trophy_freq_delta, 4) if has_trophy_data else None,
+            "score": score,
         })
 
-    # Stars (biggest positive delta), Falling (biggest negative delta)
-    stars = sorted([c for c in cards_enriched if c["delta"] > 0.5], key=lambda x: x["delta"], reverse=True)[:5]
-    falling_cards = sorted([c for c in cards_enriched if c["delta"] < -0.5], key=lambda x: x["delta"])[:5]
-
-    # Sleepers from skeletons
-    skeletons = fetch_skeletons(set_code, fmt)
-    sleepers = []
-    seen_sleepers = set()
-    for sk in skeletons:
-        sk_sleepers = sk.get("sleeper_cards") or []
-        colors = sk.get("colors", "")
-        for s in sk_sleepers[:3]:
-            card_name = s if isinstance(s, str) else (s.get("name", "") if isinstance(s, dict) else "")
-            if card_name and card_name not in seen_sleepers:
-                seen_sleepers.add(card_name)
-                # Find card data
-                card_data = next((c for c in cards_enriched if c["name"] == card_name), None)
-                sleepers.append({
-                    "name": card_name,
-                    "rarity": card_data["rarity"] if card_data else "C",
-                    "gih_wr": card_data["gih_wr"] if card_data else 0,
-                    "alsa": card_data["alsa"] if card_data else 0,
-                    "best_in": archetype_name(colors),
-                })
-    sleepers = sleepers[:5]
-
-    # Card of the week: highest positive delta among good cards (WR > mean)
-    cotw_candidates = [c for c in cards_enriched if c["gih_wr"] > mean_wr and c["delta"] > 0]
-    cotw_candidates.sort(key=lambda x: x["delta"], reverse=True)
-    card_of_week = None
-    if cotw_candidates:
-        c = cotw_candidates[0]
-        # Find best archetype for this card from skeletons
-        best_arch = ""
-        for sk in skeletons:
-            trending = sk.get("trending_cards") or []
-            for t in trending:
-                t_name = t if isinstance(t, str) else (t.get("name", "") if isinstance(t, dict) else "")
-                if t_name == c["name"]:
-                    best_arch = archetype_name(sk.get("colors", ""))
-                    break
-        card_of_week = {
-            "name": c["name"],
-            "rarity": c["rarity"],
-            "gih_wr": c["gih_wr"],
-            "delta": c["delta"],
-            "grade": c["grade"],
-            "best_archetype": best_arch or (top_archetypes[0]["name"] if top_archetypes else ""),
-        }
+    # Sort by score for spotlight
+    rising_cards = sorted([c for c in cards_enriched if c["score"] > 0], key=lambda x: x["score"], reverse=True)[:3]
+    falling_cards = sorted([c for c in cards_enriched if c["score"] < 0], key=lambda x: x["score"])[:3]
 
     # --- Format Health ---
     balance = fetch_format_balance(set_code, fmt)
@@ -322,61 +389,61 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
     if balance:
         arch_score = safe_float(balance.get("archetype_score"))
         color_score = safe_float(balance.get("color_score"))
-        classification = "BALANCED"
-        avg_score = (arch_score + color_score) / 2
-        if avg_score >= 7.5:
-            classification = "PRINCE"
-        elif avg_score < 5:
-            classification = "PAUPER"
+
+        arch_delta = 0.0
+        color_delta = 0.0
+        if prev_format_health:
+            arch_delta = round(arch_score - safe_float(prev_format_health.get("archetype_score")), 1)
+            color_delta = round(color_score - safe_float(prev_format_health.get("color_score")), 1)
+
         format_health = {
             "archetype_score": round(arch_score, 1),
             "color_score": round(color_score, 1),
-            "classification": classification,
+            "archetype_delta": arch_delta,
+            "color_delta": color_delta,
         }
 
-    # --- Trophy Trends ---
-    trophies_raw = fetch_trophy_decks(set_code, fmt)
-    trophy_trends = None
-    if trophies_raw:
-        from collections import Counter
-        arch_counts = Counter()
-        card_freq = Counter()
-        for t in trophies_raw:
-            colors = t.get("archetype", "")
-            arch_counts[colors] += 1
-            cardlist = t.get("cardlist") or {}
-            if isinstance(cardlist, str):
-                import json as _json
-                try:
-                    cardlist = _json.loads(cardlist)
-                except Exception:
-                    cardlist = {}
-            for name in cardlist:
-                card_freq[name] += 1
+    # --- Moving Archetypes ---
+    # Filter out archetypes with < 1% meta share
+    significant_archetypes = [a for a in archetypes if a["meta_share"] >= 0.01]
+    rising_archs = sorted(
+        [a for a in significant_archetypes if a["wr_delta"] > 0.2],
+        key=lambda x: abs(x["wr_delta"]), reverse=True
+    )
+    falling_archs = sorted(
+        [a for a in significant_archetypes if a["wr_delta"] < -0.2],
+        key=lambda x: abs(x["wr_delta"]), reverse=True
+    )
 
-        total_trophies = len(trophies_raw)
-        top_trophy_archs = [
-            {"name": archetype_name(c), "count": cnt, "delta": 0}
-            for c, cnt in arch_counts.most_common(5)
-        ]
+    # --- Trophy Movers ---
+    trophy_movers = None
+    if has_trophy_data and total_trophies > 0:
+        # Build list of cards with their freq and delta
+        trophy_cards_list = []
+        for card_name, count in trophy_card_freq.items():
+            freq = round(count / total_trophies, 4)
+            prev_freq = safe_float(prev_trophy_freq_map.get(card_name, 0))
+            delta = round(freq - prev_freq, 4)
 
-        # Top gaining cards by frequency (exclude basic lands)
-        gaining = []
-        if total_trophies > 0:
-            for card_name, count in card_freq.most_common(30):
-                if card_name in BASIC_LANDS:
-                    continue
-                freq = round(count / total_trophies, 2)
-                if freq > 0.2:
-                    gaining.append({"name": card_name, "freq": freq})
-                if len(gaining) >= 5:
-                    break
+            # Find primary archetype
+            primary_arch = ""
+            if card_name in trophy_card_archetypes:
+                top_arch_colors = trophy_card_archetypes[card_name].most_common(1)[0][0]
+                primary_arch = archetype_name(top_arch_colors) if top_arch_colors else ""
 
-        trophy_trends = {
-            "total_trophies": total_trophies,
-            "top_archetypes": top_trophy_archs,
-            "gaining_cards": gaining,
-            "losing_cards": [],
+            trophy_cards_list.append({
+                "name": card_name,
+                "freq": freq,
+                "delta": delta,
+                "archetype": primary_arch,
+            })
+
+        gaining = sorted([c for c in trophy_cards_list if c["delta"] > 0], key=lambda x: x["delta"], reverse=True)[:5]
+        losing = sorted([c for c in trophy_cards_list if c["delta"] < 0], key=lambda x: x["delta"])[:5]
+
+        trophy_movers = {
+            "gaining": gaining,
+            "losing": losing,
         }
 
     # --- Synergies ---
@@ -390,29 +457,14 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
             "archetype": s.get("archetype", ""),
         })
 
-    # --- Community Buzz ---
-    recent = fetch_recent_articles(set_code)
-    community_buzz = []
-    for a in recent:
-        yes = int(safe_float(a.get("votes_yes", 0)))
-        meh = int(safe_float(a.get("votes_meh", 0)))
-        no = int(safe_float(a.get("votes_no", 0)))
-        total_votes = yes + meh + no
-        sentiment_pct = round((yes / total_votes) * 100) if total_votes > 0 else 0
-        community_buzz.append({
-            "title": a.get("title", ""),
-            "source": a.get("channel_name", ""),
-            "sentiment_pct": sentiment_pct,
-        })
-
     # --- Period ---
     now = datetime.now(timezone.utc)
-    period_from = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+    period_from = prev_date
     period_to = now.strftime("%Y-%m-%d")
 
-    # --- Assemble ---
+    # --- Assemble v2 ---
     pulse = {
-        "version": 1,
+        "version": 2,
         "type": "meta_pulse",
         "generated_at": now.isoformat(),
         "set_code": set_code,
@@ -425,34 +477,30 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
     if format_health:
         pulse["format_health"] = format_health
-    if card_of_week:
-        pulse["card_of_the_week"] = card_of_week
 
-    pulse["archetypes"] = {
-        "top": top_archetypes,
-        "rising": rising,
-        "falling": falling,
-    }
-
-    pulse["cards"] = {
-        "stars": stars,
+    pulse["cards_spotlight"] = {
+        "rising": rising_cards,
         "falling": falling_cards,
-        "sleepers": sleepers,
     }
 
-    if trophy_trends:
-        pulse["trophy_trends"] = trophy_trends
+    pulse["moving_archetypes"] = {
+        "rising": rising_archs,
+        "falling": falling_archs,
+    }
+
+    if trophy_movers:
+        pulse["trophy_movers"] = trophy_movers
+
     if synergies:
         pulse["synergies"] = synergies
-    if community_buzz:
-        pulse["community_buzz"] = community_buzz
 
-    # Collect mentioned card names for the article record
+    # --- Mentioned cards (max 15) ---
     mentioned = set()
-    if card_of_week:
-        mentioned.add(card_of_week["name"])
-    for c in stars + falling_cards + sleepers:
+    for c in rising_cards + falling_cards:
         mentioned.add(c["name"])
+    if trophy_movers:
+        for c in trophy_movers.get("gaining", []) + trophy_movers.get("losing", []):
+            mentioned.add(c["name"])
     for s in synergies:
         mentioned.add(s["card_a"])
         mentioned.add(s["card_b"])
@@ -463,7 +511,7 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
 
 # ==============================================================================
-# 5. INSERT INTO press_articles
+# 6. INSERT INTO press_articles
 # ==============================================================================
 
 def insert_article(pulse: dict):
@@ -500,11 +548,11 @@ def insert_article(pulse: dict):
 
 
 # ==============================================================================
-# 6. MAIN
+# 7. MAIN
 # ==============================================================================
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate Meta Pulse articles")
+    parser = argparse.ArgumentParser(description="Generate Meta Pulse v2 articles")
     parser.add_argument("--sets", nargs="*", default=[], help="Set codes to process (default: all active)")
     parser.add_argument("--formats", nargs="*", default=ALL_FORMATS, help="Formats to process")
     parser.add_argument("--min-games", type=int, default=500, help="Minimum games threshold")
@@ -514,7 +562,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    print("🚀 Meta Pulse Generator")
+    print("🚀 Meta Pulse Generator v2")
     print(f"   Formats: {args.formats}")
     print(f"   Min games: {args.min_games}")
 

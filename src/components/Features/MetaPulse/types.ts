@@ -1,19 +1,30 @@
-export interface PulseArchetype {
-  name: string;
-  colors: string;
-  wr: number;
-  delta: number;
-  games?: number;
-}
-
-export interface PulseCard {
+export interface SpotlightCard {
   name: string;
   rarity: string;
   gih_wr: number;
+  wr_delta: number;
+  alsa: number | null;
+  alsa_delta: number | null;
+  trophy_freq: number | null;
+  trophy_freq_delta: number | null;
+  score: number;
+}
+
+export interface MovingArchetype {
+  name: string;
+  colors: string;
+  wr: number;
+  wr_delta: number;
+  games: number;
+  games_delta: number;
+  meta_share: number;
+}
+
+export interface TrophyMover {
+  name: string;
+  freq: number;
   delta: number;
-  grade: string;
-  alsa?: number;
-  best_in?: string;
+  archetype: string;
 }
 
 export interface PulseSynergy {
@@ -21,19 +32,6 @@ export interface PulseSynergy {
   card_b: string;
   lift: number;
   archetype: string;
-}
-
-export interface PulseTrophyTrends {
-  total_trophies: number;
-  top_archetypes: { name: string; count: number; delta: number }[];
-  gaining_cards: { name: string; freq: number }[];
-  losing_cards: { name: string; freq: number }[];
-}
-
-export interface PulseCommunityBuzz {
-  title: string;
-  source: string;
-  sentiment_pct: number;
 }
 
 export interface MetaPulseData {
@@ -49,20 +47,20 @@ export interface MetaPulseData {
   format_health?: {
     archetype_score: number;
     color_score: number;
-    classification: 'PRINCE' | 'BALANCED' | 'PAUPER';
+    archetype_delta: number;
+    color_delta: number;
   };
-  card_of_the_week?: PulseCard & { best_archetype: string };
-  archetypes: {
-    top: PulseArchetype[];
-    rising: PulseArchetype[];
-    falling: PulseArchetype[];
+  cards_spotlight: {
+    rising: SpotlightCard[];
+    falling: SpotlightCard[];
   };
-  cards: {
-    stars: PulseCard[];
-    falling: PulseCard[];
-    sleepers: (PulseCard & { best_in?: string })[];
+  moving_archetypes: {
+    rising: MovingArchetype[];
+    falling: MovingArchetype[];
   };
-  trophy_trends?: PulseTrophyTrends;
+  trophy_movers?: {
+    gaining: TrophyMover[];
+    losing: TrophyMover[];
+  };
   synergies?: PulseSynergy[];
-  community_buzz?: PulseCommunityBuzz[];
 }

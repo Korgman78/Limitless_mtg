@@ -2,8 +2,8 @@ name: Meta Pulse Generator
 
 on:
   schedule:
-    # Mercredi + Samedi a 10:00 UTC
-    - cron: '0 10 * * 3,6'
+    # Samedi a 10:00 UTC (hebdomadaire)
+    - cron: '0 10 * * 6'
   workflow_dispatch:
 
 jobs:
