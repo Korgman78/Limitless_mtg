@@ -11,30 +11,43 @@ interface Props {
 
 const MoverRow: React.FC<{ card: TrophyMover; isGaining: boolean; index: number }> = ({ card, isGaining, index }) => {
   const deltaColor = isGaining ? 'text-emerald-400' : 'text-red-400';
+  const absDelta = Math.abs(card.delta * 100);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05, duration: 0.25 }}
-      className="flex items-center gap-3 p-2 bg-slate-800/30 rounded-lg"
+      className="flex items-center gap-3 p-2 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors"
     >
       <img
         src={getCardImage(card.name)}
         alt={card.name}
-        className="w-12 h-auto rounded flex-shrink-0"
+        className="w-16 h-auto rounded flex-shrink-0"
         loading="lazy"
       />
 
       <div className="flex-1 min-w-0">
         <div className="text-sm text-slate-200 truncate">{card.name}</div>
-        {card.archetype && (
-          <div className="text-[10px] text-slate-500 truncate">{card.archetype}</div>
-        )}
+        <div className="flex items-center gap-2 mt-0.5">
+          {card.archetype && (
+            <span className="text-[10px] text-slate-500 truncate">{card.archetype}</span>
+          )}
+          <span className="text-[10px] text-slate-500">
+            {(card.freq * 100).toFixed(0)}% of trophies
+          </span>
+        </div>
       </div>
 
-      <div className={`text-base font-bold flex-shrink-0 ${deltaColor}`}>
-        {card.delta > 0 ? '+' : ''}{(card.delta * 100).toFixed(0)}%
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {absDelta >= 10 && (
+          <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">
+            HOT
+          </span>
+        )}
+        <span className={`text-sm font-bold ${deltaColor}`}>
+          {card.delta > 0 ? '+' : ''}{(card.delta * 100).toFixed(0)}%
+        </span>
       </div>
     </motion.div>
   );

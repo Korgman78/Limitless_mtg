@@ -379,9 +379,13 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
             "score": score,
         })
 
-    # Sort by score for spotlight
-    rising_cards = sorted([c for c in cards_enriched if c["score"] > 0], key=lambda x: x["score"], reverse=True)[:3]
-    falling_cards = sorted([c for c in cards_enriched if c["score"] < 0], key=lambda x: x["score"])[:3]
+    # Sort by score for spotlight — always pick top 3 and bottom 3
+    sorted_by_score = sorted(cards_enriched, key=lambda x: x["score"], reverse=True)
+    rising_cards = sorted_by_score[:3]
+    falling_cards = sorted_by_score[-3:]
+    # Avoid overlap if fewer than 6 cards
+    rising_names = {c["name"] for c in rising_cards}
+    falling_cards = [c for c in falling_cards if c["name"] not in rising_names]
 
     # --- Format Health ---
     balance = fetch_format_balance(set_code, fmt)
@@ -407,13 +411,13 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
     # Filter out archetypes with < 1% meta share
     significant_archetypes = [a for a in archetypes if a["meta_share"] >= 0.01]
     rising_archs = sorted(
-        [a for a in significant_archetypes if a["wr_delta"] > 0.2],
+        [a for a in significant_archetypes if a["wr_delta"] > 0],
         key=lambda x: abs(x["wr_delta"]), reverse=True
-    )
+    )[:5]
     falling_archs = sorted(
-        [a for a in significant_archetypes if a["wr_delta"] < -0.2],
+        [a for a in significant_archetypes if a["wr_delta"] < 0],
         key=lambda x: abs(x["wr_delta"]), reverse=True
-    )
+    )[:5]
 
     # --- Trophy Movers ---
     trophy_movers = None
@@ -457,9 +461,10 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
             "archetype": s.get("archetype", ""),
         })
 
-    # --- Period ---
+    # --- Period (cap a 7 jours max) ---
     now = datetime.now(timezone.utc)
-    period_from = prev_date
+    max_lookback = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    period_from = max(prev_date, max_lookback)
     period_to = now.strftime("%Y-%m-%d")
 
     # --- Assemble v2 ---

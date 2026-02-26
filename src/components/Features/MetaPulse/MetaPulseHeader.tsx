@@ -10,6 +10,13 @@ const scoreColor = (score: number): string => {
   return 'bg-red-500';
 };
 
+const scoreLabel = (score: number): string => {
+  if (score >= 8) return 'Excellent';
+  if (score >= 6) return 'Healthy';
+  if (score >= 4) return 'Mixed';
+  return 'Warped';
+};
+
 const DeltaSpan: React.FC<{ delta: number }> = ({ delta }) => {
   if (delta === 0) return null;
   const positive = delta > 0;
@@ -33,40 +40,54 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
 
   return (
     <div className="space-y-4">
-      {/* Format + Period */}
-      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <Activity className="w-4 h-4 text-indigo-400" />
-          {format_label}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Calendar className="w-4 h-4 text-slate-500" />
-          {period.from} → {period.to}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Gamepad2 className="w-4 h-4 text-slate-500" />
-          {total_games.toLocaleString()} games
-        </span>
+      {/* KPI row */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+          <Activity className="w-4 h-4 text-indigo-400 mx-auto mb-1" />
+          <div className="text-[10px] text-slate-500">Format</div>
+          <div className="text-sm font-medium text-slate-200">{format_label}</div>
+        </div>
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+          <Calendar className="w-4 h-4 text-slate-500 mx-auto mb-1" />
+          <div className="text-[10px] text-slate-500">Period</div>
+          <div className="text-sm font-medium text-slate-200">
+            {period.from} <span className="text-slate-600">&rarr;</span> {period.to}
+          </div>
+        </div>
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+          <Gamepad2 className="w-4 h-4 text-slate-500 mx-auto mb-1" />
+          <div className="text-[10px] text-slate-500">Sample</div>
+          <div className="text-sm font-medium text-slate-200">{total_games.toLocaleString()}</div>
+        </div>
       </div>
 
       {/* Format Health */}
       {format_health && (
         <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
-          <span className="text-sm font-medium text-slate-300">Format Health</span>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-300">Format Health</span>
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full text-white ${
+              scoreColor((format_health.archetype_score + format_health.color_score) / 2)
+            }`}>
+              {scoreLabel((format_health.archetype_score + format_health.color_score) / 2)}
+            </span>
+          </div>
 
           {/* Archetype score bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Archetype Balance</span>
-              <span className="flex items-center">
+              <span className="flex items-center font-medium text-slate-300">
                 {format_health.archetype_score}/10
                 <DeltaSpan delta={format_health.archetype_delta} />
               </span>
             </div>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${scoreColor(format_health.archetype_score)}`}
-                style={{ width: `${format_health.archetype_score * 10}%` }}
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${format_health.archetype_score * 10}%` }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+                className={`h-full rounded-full ${scoreColor(format_health.archetype_score)}`}
               />
             </div>
           </div>
@@ -75,15 +96,17 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Color Balance</span>
-              <span className="flex items-center">
+              <span className="flex items-center font-medium text-slate-300">
                 {format_health.color_score}/10
                 <DeltaSpan delta={format_health.color_delta} />
               </span>
             </div>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${scoreColor(format_health.color_score)}`}
-                style={{ width: `${format_health.color_score * 10}%` }}
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${format_health.color_score * 10}%` }}
+                transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
+                className={`h-full rounded-full ${scoreColor(format_health.color_score)}`}
               />
             </div>
           </div>
