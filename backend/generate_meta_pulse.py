@@ -234,6 +234,14 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
     # --- Previous pulse ---
     prev_data, prev_date = fetch_previous_pulse(set_code, fmt)
+
+    # Ignorer le prev pulse s'il date de plus de 10 jours (trop vieux pour des deltas fiables)
+    max_age = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")
+    if prev_data and prev_date < max_age:
+        print(f"  ⚠ Previous pulse too old ({prev_date}), ignoring for deltas")
+        prev_data = None
+        prev_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+
     # lookback=1 si pas de prev pulse (delta ~1 jour), sinon 4 (~semaine)
     history_lookback = 4 if prev_data else 1
 
