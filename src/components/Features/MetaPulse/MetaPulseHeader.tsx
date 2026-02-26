@@ -10,13 +10,6 @@ const scoreColor = (score: number): string => {
   return 'bg-red-500';
 };
 
-const scoreLabel = (score: number): string => {
-  if (score >= 8) return 'Excellent';
-  if (score >= 6) return 'Healthy';
-  if (score >= 4) return 'Mixed';
-  return 'Warped';
-};
-
 const DeltaSpan: React.FC<{ delta: number }> = ({ delta }) => {
   if (delta === 0) return null;
   const positive = delta > 0;
@@ -64,14 +57,7 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
       {/* Format Health */}
       {format_health && (
         <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-300">Format Health</span>
-            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full text-white ${
-              scoreColor((format_health.archetype_score + format_health.color_score) / 2)
-            }`}>
-              {scoreLabel((format_health.archetype_score + format_health.color_score) / 2)}
-            </span>
-          </div>
+          <span className="text-sm font-medium text-slate-300">Format Health</span>
 
           {/* Archetype score bar */}
           <div className="space-y-1">

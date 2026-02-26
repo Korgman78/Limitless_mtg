@@ -234,6 +234,8 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
     # --- Previous pulse ---
     prev_data, prev_date = fetch_previous_pulse(set_code, fmt)
+    # lookback=1 si pas de prev pulse (delta ~1 jour), sinon 4 (~semaine)
+    history_lookback = 4 if prev_data else 1
 
     # Build lookup maps from previous pulse
     prev_cards_map = {}
@@ -279,7 +281,7 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         if prev_arch and "wr" in prev_arch:
             wr_delta = round(wr - safe_float(prev_arch["wr"]), 2)
         else:
-            wr_delta = delta_from_history(a.get("win_rate_history"))
+            wr_delta = delta_from_history(a.get("win_rate_history"), history_lookback)
 
         # Games delta vs previous pulse
         games_delta = 0
@@ -346,7 +348,7 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         if prev_card and "gih_wr" in prev_card:
             wr_delta = round(wr - safe_float(prev_card["gih_wr"]), 2)
         else:
-            wr_delta = delta_from_history(c.get("win_rate_history"))
+            wr_delta = delta_from_history(c.get("win_rate_history"), history_lookback)
 
         # ALSA delta: from history (no prev pulse ALSA stored reliably)
         alsa_delta = None
