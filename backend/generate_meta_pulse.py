@@ -12,6 +12,7 @@ import requests
 from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import quote
 from dotenv import load_dotenv
 
 # ==============================================================================
@@ -100,6 +101,20 @@ def delta_from_history(history, lookback=4):
     return round(current - previous, 2)
 
 
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
 def archetype_name(colors: str) -> str:
     if colors in PAIRS:
         return PAIRS[colors]
@@ -129,7 +144,7 @@ def fetch_archetype_stats(set_code: str, fmt: str) -> list[dict]:
 def fetch_card_stats(set_code: str, fmt: str) -> list[dict]:
     params = (
         f"set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.Global"
-        f"&select=card_name,gih_wr,win_rate_history,alsa,rarity"
+        f"&select=card_name,gih_wr,win_rate_history,alsa,alsa_history,rarity"
     )
     return fetch_json("card_stats", params)
 
@@ -159,15 +174,26 @@ def fetch_synergies(set_code: str, fmt: str, limit: int = 5) -> list[dict]:
     return []
 
 
-def fetch_trophy_decks(set_code: str, fmt: str) -> list[dict]:
-    params = f"set_code=eq.{set_code}&format=eq.{fmt}&select=aggregate_id,archetype,cardlist"
+def fetch_trophy_decks(
+    set_code: str,
+    fmt: str,
+    period_from: datetime | None = None,
+    period_to: datetime | None = None,
+) -> list[dict]:
+    params = (
+        f"set_code=eq.{set_code}&format=eq.{fmt}"
+        f"&select=aggregate_id,archetype,cardlist,trophy_time"
+    )
+    if period_from:
+        params += f"&trophy_time=gte.{quote(period_from.isoformat())}"
+    if period_to:
+        params += f"&trophy_time=lt.{quote(period_to.isoformat())}"
     return fetch_json("trophy_decks", params)
 
 
-def fetch_previous_pulse(set_code: str, fmt: str) -> tuple[dict | None, str]:
+def fetch_previous_pulse(set_code: str, fmt: str) -> tuple[dict | None, datetime | None]:
     """Recupere le dernier Meta Pulse pour ce set/format.
-    Retourne (prev_data_dict, prev_date_str) ou (None, date_7j_ago) en fallback."""
-    fallback_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    Retourne (prev_data_dict, prev_published_at_dt) ou (None, None)."""
 
     url = (
         f"{SUPABASE_URL}/rest/v1/press_articles"
@@ -181,14 +207,15 @@ def fetch_previous_pulse(set_code: str, fmt: str) -> tuple[dict | None, str]:
         row = resp.json()[0]
         try:
             prev_data = json.loads(row["summary"])
-            prev_date = row.get("published_at", fallback_date)[:10]
-            print(f"  📎 Found previous pulse from {prev_date}")
-            return prev_data, prev_date
+            prev_dt = parse_iso_datetime(row.get("published_at"))
+            prev_label = prev_dt.strftime("%Y-%m-%d") if prev_dt else "unknown date"
+            print(f"  📎 Found previous pulse from {prev_label}")
+            return prev_data, prev_dt
         except (json.JSONDecodeError, KeyError):
             pass
 
     print(f"  📎 No previous pulse found, using 7-day fallback")
-    return None, fallback_date
+    return None, None
 
 
 # ==============================================================================
@@ -233,17 +260,28 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         return None
 
     # --- Previous pulse ---
-    prev_data, prev_date = fetch_previous_pulse(set_code, fmt)
+    prev_data, prev_published_at = fetch_previous_pulse(set_code, fmt)
+    now = datetime.now(timezone.utc)
+    seven_day_floor = now - timedelta(days=7)
+    period_start = prev_published_at or seven_day_floor
 
-    # Ignorer le prev pulse s'il date de plus de 10 jours (trop vieux pour des deltas fiables)
-    max_age = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")
-    if prev_data and prev_date < max_age:
-        print(f"  ⚠ Previous pulse too old ({prev_date}), ignoring for deltas")
+    # Ignorer le prev pulse s'il date de plus de 14 jours (hors cadence hebdo)
+    if prev_data and prev_published_at and (now - prev_published_at) > timedelta(days=14):
+        prev_label = prev_published_at.strftime("%Y-%m-%d")
+        print(f"  ⚠ Previous pulse too old ({prev_label}), ignoring for deltas")
         prev_data = None
-        prev_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        period_start = seven_day_floor
 
-    # lookback=1 si pas de prev pulse (delta ~1 jour), sinon 4 (~semaine)
-    history_lookback = 4 if prev_data else 1
+    # Guardrail: même si un pulse existe très récemment (ex: rerun le même jour),
+    # on garde au moins 7 jours de données pour éviter une fenêtre vide.
+    if period_start > seven_day_floor:
+        period_start = seven_day_floor
+
+    # Lookback aligné sur la fenêtre réelle depuis le dernier pulse
+    history_lookback = max(1, min(13, int((now - period_start).total_seconds() // 86_400)))
+    period_label_from = period_start.strftime("%Y-%m-%d")
+    period_label_to = now.strftime("%Y-%m-%d")
+    print(f"  📆 Window: {period_label_from} -> {period_label_to} | history lookback={history_lookback}d")
 
     # Build lookup maps from previous pulse
     prev_cards_map = {}
@@ -253,6 +291,10 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
     if prev_data:
         prev_format_health = prev_data.get("format_health")
+        snapshot = prev_data.get("trophy_freq_snapshot")
+        if isinstance(snapshot, dict):
+            for name, freq in snapshot.items():
+                prev_trophy_freq_map[name] = safe_float(freq)
 
         # v2 previous data
         if prev_data.get("version", 1) >= 2:
@@ -261,8 +303,9 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
                     prev_cards_map[c["name"]] = c
                 for a in (prev_data.get("moving_archetypes") or {}).get(section, []):
                     prev_archetypes_map[a.get("colors") or a.get("name", "")] = a
-                for t in (prev_data.get("trophy_movers") or {}).get("gaining" if section == "rising" else "losing", []):
-                    prev_trophy_freq_map[t["name"]] = t.get("freq", 0)
+                if not prev_trophy_freq_map:
+                    for t in (prev_data.get("trophy_movers") or {}).get("gaining" if section == "rising" else "losing", []):
+                        prev_trophy_freq_map[t["name"]] = t.get("freq", 0)
         # v1 previous data
         else:
             for section in ("stars", "falling", "sleepers"):
@@ -314,7 +357,7 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         mean_wr = sum(valid_wrs) / len(valid_wrs)
 
     # --- Trophy data ---
-    trophies_raw = fetch_trophy_decks(set_code, fmt)
+    trophies_raw = fetch_trophy_decks(set_code, fmt, period_from=period_start, period_to=now)
     has_trophy_data = len(trophies_raw) > 0
 
     # Compute current trophy frequencies
@@ -351,18 +394,14 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         rarity = (c.get("rarity") or "C")[0].upper()
         alsa = round(safe_float(c.get("alsa")), 1)
 
-        # WR delta: vs prev pulse or history
-        prev_card = prev_cards_map.get(card_name)
-        if prev_card and "gih_wr" in prev_card:
-            wr_delta = round(wr - safe_float(prev_card["gih_wr"]), 2)
-        else:
-            wr_delta = delta_from_history(c.get("win_rate_history"), history_lookback)
+        # WR delta: toujours depuis l'historique sur la fenêtre courante
+        wr_delta = delta_from_history(c.get("win_rate_history"), history_lookback)
 
-        # ALSA delta: from history (no prev pulse ALSA stored reliably)
+        # ALSA delta: depuis l'historique sur la même fenêtre
         alsa_delta = None
         if is_draft and alsa > 0:
-            if prev_card and "alsa" in prev_card and safe_float(prev_card["alsa"]) > 0:
-                alsa_delta = round(alsa - safe_float(prev_card["alsa"]), 2)
+            hist_delta = delta_from_history(c.get("alsa_history"), history_lookback)
+            alsa_delta = hist_delta if hist_delta != 0 else None
 
         # Trophy freq + delta
         trophy_freq = 0.0
@@ -471,10 +510,8 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
             "archetype": s.get("archetype", ""),
         })
 
-    # --- Period (cap a 7 jours max) ---
-    now = datetime.now(timezone.utc)
-    max_lookback = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    period_from = max(prev_date, max_lookback)
+    # --- Period ---
+    period_from = period_start.strftime("%Y-%m-%d")
     period_to = now.strftime("%Y-%m-%d")
 
     # --- Assemble v2 ---
@@ -505,6 +542,10 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
 
     if trophy_movers:
         pulse["trophy_movers"] = trophy_movers
+    pulse["trophy_freq_snapshot"] = {
+        name: round(count / total_trophies, 4)
+        for name, count in trophy_card_freq.items()
+    } if total_trophies > 0 else {}
 
     if synergies:
         pulse["synergies"] = synergies
