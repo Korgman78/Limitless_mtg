@@ -283,39 +283,90 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
     period_label_to = now.strftime("%Y-%m-%d")
     print(f"  📆 Window: {period_label_from} -> {period_label_to} | history lookback={history_lookback}d")
 
-    # Build lookup maps from previous pulse
-    prev_cards_map = {}
-    prev_archetypes_map = {}
+    # Build lookup maps from previous pulse / fallback previous window
     prev_trophy_freq_map = {}
+    prev_arch_share_map = {}
+    prev_arch_count_map = {}
     prev_format_health = None
 
     if prev_data:
         prev_format_health = prev_data.get("format_health")
-        snapshot = prev_data.get("trophy_freq_snapshot")
-        if isinstance(snapshot, dict):
-            for name, freq in snapshot.items():
+        trophy_snapshot = prev_data.get("trophy_freq_snapshot")
+        if isinstance(trophy_snapshot, dict):
+            for name, freq in trophy_snapshot.items():
                 prev_trophy_freq_map[name] = safe_float(freq)
 
-        # v2 previous data
-        if prev_data.get("version", 1) >= 2:
-            for section in ("rising", "falling"):
-                for c in (prev_data.get("cards_spotlight") or {}).get(section, []):
-                    prev_cards_map[c["name"]] = c
-                for a in (prev_data.get("moving_archetypes") or {}).get(section, []):
-                    prev_archetypes_map[a.get("colors") or a.get("name", "")] = a
-                if not prev_trophy_freq_map:
-                    for t in (prev_data.get("trophy_movers") or {}).get("gaining" if section == "rising" else "losing", []):
-                        prev_trophy_freq_map[t["name"]] = t.get("freq", 0)
-        # v1 previous data
-        else:
-            for section in ("stars", "falling", "sleepers"):
-                for c in (prev_data.get("cards") or {}).get(section, []):
-                    prev_cards_map[c["name"]] = c
-            for section in ("top", "rising", "falling"):
-                for a in (prev_data.get("archetypes") or {}).get(section, []):
-                    prev_archetypes_map[a.get("colors", "")] = a
-            for c in (prev_data.get("trophy_trends") or {}).get("gaining_cards", []):
-                prev_trophy_freq_map[c["name"]] = c.get("freq", 0)
+        arch_share_snapshot = prev_data.get("archetype_share_snapshot")
+        if isinstance(arch_share_snapshot, dict):
+            for colors, share in arch_share_snapshot.items():
+                prev_arch_share_map[colors] = safe_float(share)
+
+        arch_count_snapshot = prev_data.get("archetype_count_snapshot")
+        if isinstance(arch_count_snapshot, dict):
+            for colors, count in arch_count_snapshot.items():
+                prev_arch_count_map[colors] = int(safe_float(count))
+
+    # --- Cards ---
+    cards_raw = fetch_card_stats(set_code, fmt)
+    mean_wr = 0.0
+    valid_wrs = [safe_float(c.get("gih_wr")) for c in cards_raw if safe_float(c.get("gih_wr")) > 0]
+    if valid_wrs:
+        mean_wr = sum(valid_wrs) / len(valid_wrs)
+
+    # --- Trophy data (current + previous period fallback) ---
+    def build_trophy_counters(trophies: list[dict]):
+        card_freq = Counter()
+        arch_counter = Counter()
+        card_archetypes: dict[str, Counter] = {}
+        for t in trophies:
+            arch_colors = t.get("archetype", "")
+            valid_arch = bool(arch_colors) and 2 <= len(arch_colors) <= 3
+            if valid_arch:
+                arch_counter[arch_colors] += 1
+
+            cardlist = t.get("cardlist") or {}
+            if isinstance(cardlist, str):
+                try:
+                    cardlist = json.loads(cardlist)
+                except Exception:
+                    cardlist = {}
+            for card_name in cardlist:
+                if card_name in BASIC_LANDS:
+                    continue
+                card_freq[card_name] += 1
+                if valid_arch:
+                    if card_name not in card_archetypes:
+                        card_archetypes[card_name] = Counter()
+                    card_archetypes[card_name][arch_colors] += 1
+        return len(trophies), card_freq, arch_counter, card_archetypes
+
+    trophies_raw = fetch_trophy_decks(set_code, fmt, period_from=period_start, period_to=now)
+    total_trophies, trophy_card_freq, trophy_arch_counter, trophy_card_archetypes = build_trophy_counters(trophies_raw)
+    has_trophy_data = total_trophies > 0
+
+    # If we don't have previous snapshots, fallback to the previous 7-day period.
+    if not prev_trophy_freq_map or not prev_arch_share_map:
+        prev_period_duration = now - period_start
+        prev_period_end = period_start
+        prev_period_start = period_start - prev_period_duration
+        prev_trophies_raw = fetch_trophy_decks(set_code, fmt, period_from=prev_period_start, period_to=prev_period_end)
+        prev_total_trophies, prev_trophy_card_freq, prev_trophy_arch_counter, _ = build_trophy_counters(prev_trophies_raw)
+        if prev_total_trophies > 0:
+            if not prev_trophy_freq_map:
+                prev_trophy_freq_map = {
+                    name: round(count / prev_total_trophies, 4)
+                    for name, count in prev_trophy_card_freq.items()
+                }
+            if not prev_arch_share_map:
+                prev_arch_share_map = {
+                    colors: round(count / prev_total_trophies, 4)
+                    for colors, count in prev_trophy_arch_counter.items()
+                }
+            if not prev_arch_count_map:
+                prev_arch_count_map = {
+                    colors: int(count)
+                    for colors, count in prev_trophy_arch_counter.items()
+                }
 
     # --- Enrich archetypes ---
     archetypes = []
@@ -324,20 +375,26 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         if not colors or len(colors) < 2 or len(colors) > 3:
             continue
         wr = safe_float(a.get("win_rate"))
-        games = int(safe_float(a.get("games_count")))
-        meta_share = round(games / total_games, 4) if total_games > 0 else 0
+        lifetime_games = int(safe_float(a.get("games_count")))
 
-        # WR delta: vs previous pulse if available, else from history
-        prev_arch = prev_archetypes_map.get(colors)
-        if prev_arch and "wr" in prev_arch:
-            wr_delta = round(wr - safe_float(prev_arch["wr"]), 2)
+        # Period counts from trophy window when available; fallback to lifetime.
+        if total_trophies > 0:
+            games = int(trophy_arch_counter.get(colors, 0))
+            meta_share = round(games / total_trophies, 4)
         else:
-            wr_delta = delta_from_history(a.get("win_rate_history"), history_lookback)
+            games = lifetime_games
+            meta_share = round(games / total_games, 4) if total_games > 0 else 0
 
-        # Games delta vs previous pulse
-        games_delta = 0
-        if prev_arch and "games" in prev_arch:
-            games_delta = games - int(safe_float(prev_arch["games"]))
+        # WR delta computed on rolling history over the active period window.
+        wr_delta = delta_from_history(a.get("win_rate_history"), history_lookback)
+
+        prev_games = prev_arch_count_map.get(colors)
+        if prev_games is None:
+            prev_games = 0
+        games_delta = games - int(prev_games)
+
+        prev_meta_share = safe_float(prev_arch_share_map.get(colors), 0.0)
+        meta_share_delta = round(meta_share - prev_meta_share, 4)
 
         archetypes.append({
             "name": archetype_name(colors),
@@ -347,42 +404,8 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
             "games": games,
             "games_delta": games_delta,
             "meta_share": round(meta_share, 4),
+            "meta_share_delta": meta_share_delta,
         })
-
-    # --- Cards ---
-    cards_raw = fetch_card_stats(set_code, fmt)
-    mean_wr = 0.0
-    valid_wrs = [safe_float(c.get("gih_wr")) for c in cards_raw if safe_float(c.get("gih_wr")) > 0]
-    if valid_wrs:
-        mean_wr = sum(valid_wrs) / len(valid_wrs)
-
-    # --- Trophy data ---
-    trophies_raw = fetch_trophy_decks(set_code, fmt, period_from=period_start, period_to=now)
-    has_trophy_data = len(trophies_raw) > 0
-
-    # Compute current trophy frequencies
-    trophy_card_freq = Counter()
-    trophy_arch_counter = Counter()
-    trophy_card_archetypes = {}  # card_name -> Counter of archetypes
-
-    for t in trophies_raw:
-        arch_colors = t.get("archetype", "")
-        trophy_arch_counter[arch_colors] += 1
-        cardlist = t.get("cardlist") or {}
-        if isinstance(cardlist, str):
-            try:
-                cardlist = json.loads(cardlist)
-            except Exception:
-                cardlist = {}
-        for card_name in cardlist:
-            if card_name in BASIC_LANDS:
-                continue
-            trophy_card_freq[card_name] += 1
-            if card_name not in trophy_card_archetypes:
-                trophy_card_archetypes[card_name] = Counter()
-            trophy_card_archetypes[card_name][arch_colors] += 1
-
-    total_trophies = len(trophies_raw)
 
     # --- Cards Spotlight ---
     cards_enriched = []
@@ -457,15 +480,18 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         }
 
     # --- Moving Archetypes ---
-    # Filter out archetypes with < 1% meta share
-    significant_archetypes = [a for a in archetypes if a["meta_share"] >= 0.01]
+    # Rank by period-over-period share delta (meta evolution), keeping significant archetypes.
+    significant_archetypes = [
+        a for a in archetypes
+        if max(a.get("meta_share", 0), safe_float(prev_arch_share_map.get(a.get("colors", "")), 0.0)) >= 0.01
+    ]
     rising_archs = sorted(
-        [a for a in significant_archetypes if a["wr_delta"] > 0],
-        key=lambda x: abs(x["wr_delta"]), reverse=True
+        [a for a in significant_archetypes if a.get("meta_share_delta", 0) > 0],
+        key=lambda x: abs(x.get("meta_share_delta", 0)), reverse=True
     )[:5]
     falling_archs = sorted(
-        [a for a in significant_archetypes if a["wr_delta"] < 0],
-        key=lambda x: abs(x["wr_delta"]), reverse=True
+        [a for a in significant_archetypes if a.get("meta_share_delta", 0) < 0],
+        key=lambda x: abs(x.get("meta_share_delta", 0)), reverse=True
     )[:5]
 
     # --- Trophy Movers ---
@@ -524,7 +550,12 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         "format": fmt,
         "format_label": FORMAT_LABELS.get(fmt, fmt),
         "period": {"from": period_from, "to": period_to},
+        # Legacy field kept for compatibility with existing frontend consumers.
         "total_games": int(total_games),
+        # Explicit scopes to avoid confusion: period sample vs lifetime sample.
+        "period_sample": int(total_trophies),
+        "period_sample_source": "trophy_decks",
+        "lifetime_games": int(total_games),
     }
 
     if format_health:
@@ -545,6 +576,14 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
     pulse["trophy_freq_snapshot"] = {
         name: round(count / total_trophies, 4)
         for name, count in trophy_card_freq.items()
+    } if total_trophies > 0 else {}
+    pulse["archetype_share_snapshot"] = {
+        colors: round(count / total_trophies, 4)
+        for colors, count in trophy_arch_counter.items()
+    } if total_trophies > 0 else {}
+    pulse["archetype_count_snapshot"] = {
+        colors: int(count)
+        for colors, count in trophy_arch_counter.items()
     } if total_trophies > 0 else {}
 
     if synergies:

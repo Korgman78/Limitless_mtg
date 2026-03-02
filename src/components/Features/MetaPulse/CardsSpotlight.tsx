@@ -32,7 +32,7 @@ const SpotlightRow: React.FC<{
         {isRising ? 'Rising' : 'Falling'}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {cards.map((card, i) => (
           <motion.div
             key={card.name}
@@ -41,7 +41,6 @@ const SpotlightRow: React.FC<{
             transition={{ delay: i * 0.08, duration: 0.35 }}
             className={`rounded-xl overflow-hidden border shadow-lg ${glowColor} bg-slate-800/60`}
           >
-            {/* Card image with WR badge */}
             <div className="relative">
               <img
                 src={getCardImage(card.name)}
@@ -58,9 +57,7 @@ const SpotlightRow: React.FC<{
               </div>
             </div>
 
-            {/* Stats below image */}
             <div className="px-2.5 py-2 space-y-1.5">
-              {/* WR Delta — hero metric */}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">WR Delta</span>
                 <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold ${deltaBg}`}>
@@ -68,25 +65,25 @@ const SpotlightRow: React.FC<{
                 </span>
               </div>
 
-              {/* ALSA */}
-              {card.alsa != null && card.alsa_delta != null && (
+              {card.alsa != null && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Pick</span>
+                  <span className="text-xs text-slate-400">Pick (ALSA)</span>
                   <span className="text-xs text-slate-300">
                     P{card.alsa.toFixed(1)}{' '}
-                    <span className={`font-medium ${card.alsa_delta <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      ({card.alsa_delta <= 0 ? '' : '+'}{card.alsa_delta.toFixed(1)})
-                    </span>
+                    {card.alsa_delta != null && (
+                      <span className={`font-medium ${card.alsa_delta <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        ({card.alsa_delta <= 0 ? '' : '+'}{card.alsa_delta.toFixed(1)})
+                      </span>
+                    )}
                   </span>
                 </div>
               )}
 
-              {/* Trophy freq */}
-              {card.trophy_freq_delta != null && card.trophy_freq_delta !== 0 && (
+              {card.trophy_freq_delta != null && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Trophy</span>
-                  <span className={`text-xs font-medium ${card.trophy_freq_delta > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
-                    {card.trophy_freq_delta > 0 ? '+' : ''}{(card.trophy_freq_delta * 100).toFixed(0)}%
+                  <span className="text-xs text-slate-400">Trophy Delta</span>
+                  <span className={`text-xs font-medium ${card.trophy_freq_delta > 0 ? 'text-amber-400' : card.trophy_freq_delta < 0 ? 'text-slate-300' : 'text-slate-500'}`}>
+                    {card.trophy_freq_delta > 0 ? '+' : ''}{(card.trophy_freq_delta * 100).toFixed(1)}pp
                   </span>
                 </div>
               )}
@@ -102,10 +99,13 @@ export const CardsSpotlight: React.FC<Props> = ({ rising, falling }) => {
   if (rising.length === 0 && falling.length === 0) return null;
 
   return (
-    <div className="space-y-5">
-      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">
-        Cards Spotlight
-      </h3>
+    <div className="space-y-5 p-4 bg-slate-900/45 border border-slate-800 rounded-xl">
+      <div>
+        <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">
+          Cards Spotlight
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">Top movers by WR delta, trophy share shift and pick trend.</p>
+      </div>
       <SpotlightRow cards={rising} direction="rising" />
       <SpotlightRow cards={falling} direction="falling" />
     </div>

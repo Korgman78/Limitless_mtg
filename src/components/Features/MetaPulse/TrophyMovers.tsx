@@ -11,7 +11,7 @@ interface Props {
 
 const MoverRow: React.FC<{ card: TrophyMover; isGaining: boolean; index: number }> = ({ card, isGaining, index }) => {
   const deltaColor = isGaining ? 'text-emerald-400' : 'text-red-400';
-  const absDelta = Math.abs(card.delta * 100);
+  const absDeltaPp = Math.abs(card.delta * 100);
 
   return (
     <motion.div
@@ -34,19 +34,19 @@ const MoverRow: React.FC<{ card: TrophyMover; isGaining: boolean; index: number 
             <span className="text-[10px] text-slate-500 truncate">{card.archetype}</span>
           )}
           <span className="text-[10px] text-slate-500">
-            {(card.freq * 100).toFixed(0)}% of trophies
+            {(card.freq * 100).toFixed(1)}% trophy share
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {absDelta >= 10 && (
+        {absDeltaPp >= 5 && (
           <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">
             HOT
           </span>
         )}
         <span className={`text-sm font-bold ${deltaColor}`}>
-          {card.delta > 0 ? '+' : ''}{(card.delta * 100).toFixed(0)}%
+          {card.delta > 0 ? '+' : ''}{(card.delta * 100).toFixed(1)}pp
         </span>
       </div>
     </motion.div>
@@ -57,33 +57,34 @@ export const TrophyMovers: React.FC<Props> = ({ gaining, losing }) => {
   if (gaining.length === 0 && losing.length === 0) return null;
 
   return (
-    <div className="space-y-3">
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider">
-        <Trophy className="w-4 h-4" />
-        Trophy Movers
-      </h3>
+    <div className="space-y-3 p-4 bg-slate-900/45 border border-slate-800 rounded-xl">
+      <div>
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider">
+          <Trophy className="w-4 h-4" />
+          Trophy Movers
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">Cards with the largest trophy share changes vs previous period.</p>
+      </div>
 
-      {gaining.length > 0 && (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
             <TrendingUp className="w-3.5 h-3.5" /> Gaining
           </div>
-          {gaining.map((card, i) => (
+          {gaining.length > 0 ? gaining.map((card, i) => (
             <MoverRow key={card.name} card={card} isGaining index={i} />
-          ))}
+          )) : <div className="text-xs text-slate-500 p-2">No significant gaining card this period.</div>}
         </div>
-      )}
 
-      {losing.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
             <TrendingDown className="w-3.5 h-3.5" /> Losing
           </div>
-          {losing.map((card, i) => (
+          {losing.length > 0 ? losing.map((card, i) => (
             <MoverRow key={card.name} card={card} isGaining={false} index={i} />
-          ))}
+          )) : <div className="text-xs text-slate-500 p-2">No significant losing card this period.</div>}
         </div>
-      )}
+      </div>
     </div>
   );
 };

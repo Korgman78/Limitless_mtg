@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { ManaIcons } from '../../Common/ManaIcons';
@@ -9,10 +9,16 @@ interface Props {
   falling: MovingArchetype[];
 }
 
-const ArchetypeRow: React.FC<{ arch: MovingArchetype; isRising: boolean; index: number }> = ({ arch, isRising, index }) => {
-  const deltaColor = isRising ? 'text-emerald-400' : 'text-red-400';
-  // Normalize bar: 10% meta share = full width
-  const barWidth = Math.min(arch.meta_share * 100 / 10 * 100, 100);
+const ArchetypeRow: React.FC<{
+  arch: MovingArchetype;
+  isRising: boolean;
+  index: number;
+  maxShare: number;
+}> = ({ arch, isRising, index, maxShare }) => {
+  const shareDelta = typeof arch.meta_share_delta === 'number' ? arch.meta_share_delta : null;
+  const shareDeltaPositive = (shareDelta ?? 0) >= 0;
+  const shareDeltaColor = shareDeltaPositive ? 'text-emerald-400' : 'text-red-400';
+  const normalizedWidth = maxShare > 0 ? Math.max(8, (arch.meta_share / maxShare) * 100) : 8;
 
   return (
     <motion.div
@@ -29,29 +35,26 @@ const ArchetypeRow: React.FC<{ arch: MovingArchetype; isRising: boolean; index: 
           <span className="text-xs font-medium text-slate-300">{arch.wr.toFixed(1)}%</span>
         </div>
 
-        {/* Meta share bar with label */}
         <div className="mt-1 flex items-center gap-2">
           <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${isRising ? 'bg-emerald-500/60' : 'bg-red-500/60'}`}
-              style={{ width: `${barWidth}%` }}
+              style={{ width: `${normalizedWidth}%` }}
             />
           </div>
-          <span className="text-[10px] text-slate-500 w-8 text-right flex-shrink-0">
+          <span className="text-[10px] text-slate-500 w-9 text-right flex-shrink-0">
             {(arch.meta_share * 100).toFixed(1)}%
           </span>
         </div>
       </div>
 
       <div className="text-right flex-shrink-0">
-        <div className={`text-sm font-bold ${deltaColor}`}>
-          {arch.wr_delta >= 0 ? '+' : ''}{arch.wr_delta.toFixed(1)}pp
+        <div className={`text-sm font-bold ${shareDeltaColor}`}>
+          {shareDelta != null ? `${shareDelta >= 0 ? '+' : ''}${(shareDelta * 100).toFixed(1)}pp` : 'n/a'}
         </div>
-        {arch.games_delta !== 0 && (
-          <div className="text-[10px] text-slate-500">
-            {arch.games_delta > 0 ? '+' : ''}{arch.games_delta.toLocaleString()} games
-          </div>
-        )}
+        <div className="text-[10px] text-slate-500">
+          WR {arch.wr_delta >= 0 ? '+' : ''}{arch.wr_delta.toFixed(1)}pp
+        </div>
       </div>
     </motion.div>
   );
@@ -60,34 +63,39 @@ const ArchetypeRow: React.FC<{ arch: MovingArchetype; isRising: boolean; index: 
 export const MovingArchetypes: React.FC<Props> = ({ rising, falling }) => {
   if (rising.length === 0 && falling.length === 0) return null;
 
+  const maxShare = useMemo(() => {
+    const all = [...rising, ...falling];
+    if (all.length === 0) return 0;
+    return all.reduce((acc, cur) => Math.max(acc, cur.meta_share || 0), 0);
+  }, [rising, falling]);
+
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">
-        Moving Archetypes
-      </h3>
+    <div className="space-y-3 p-4 bg-slate-900/45 border border-slate-800 rounded-xl">
+      <div>
+        <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">
+          Moving Archetypes
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">Meta share shifts between this period and the previous one.</p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {rising.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-              <TrendingUp className="w-3.5 h-3.5" /> Rising
-            </div>
-            {rising.map((arch, i) => (
-              <ArchetypeRow key={arch.colors} arch={arch} isRising index={i} />
-            ))}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+            <TrendingUp className="w-3.5 h-3.5" /> Rising
           </div>
-        )}
+          {rising.length > 0 ? rising.map((arch, i) => (
+            <ArchetypeRow key={arch.colors} arch={arch} isRising index={i} maxShare={maxShare} />
+          )) : <div className="text-xs text-slate-500 p-2">No rising archetype this period.</div>}
+        </div>
 
-        {falling.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
-              <TrendingDown className="w-3.5 h-3.5" /> Falling
-            </div>
-            {falling.map((arch, i) => (
-              <ArchetypeRow key={arch.colors} arch={arch} isRising={false} index={i} />
-            ))}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
+            <TrendingDown className="w-3.5 h-3.5" /> Falling
           </div>
-        )}
+          {falling.length > 0 ? falling.map((arch, i) => (
+            <ArchetypeRow key={arch.colors} arch={arch} isRising={false} index={i} maxShare={maxShare} />
+          )) : <div className="text-xs text-slate-500 p-2">No falling archetype this period.</div>}
+        </div>
       </div>
     </div>
   );

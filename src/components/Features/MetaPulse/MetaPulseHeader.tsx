@@ -24,42 +24,69 @@ const DeltaSpan: React.FC<{ delta: number }> = ({ delta }) => {
   );
 };
 
+const formatDateLabel = (isoDate: string): string => {
+  const d = new Date(isoDate);
+  if (!Number.isFinite(d.getTime())) return isoDate;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
 interface Props {
   data: MetaPulseData;
 }
 
 export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
-  const { format_label, period, total_games, format_health } = data;
+  const { format_label, period, total_games, format_health, period_sample, lifetime_games } = data;
+  const periodSample = typeof period_sample === 'number' ? period_sample : null;
+  const lifetimeSample = typeof lifetime_games === 'number' ? lifetime_games : total_games;
 
   return (
     <div className="space-y-4">
-      {/* KPI row */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center border border-slate-700/40">
           <Activity className="w-4 h-4 text-indigo-400 mx-auto mb-1" />
-          <div className="text-[10px] text-slate-500">Format</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Format</div>
           <div className="text-sm font-medium text-slate-200">{format_label}</div>
         </div>
-        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center border border-slate-700/40">
           <Calendar className="w-4 h-4 text-slate-500 mx-auto mb-1" />
-          <div className="text-[10px] text-slate-500">Period</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Period</div>
           <div className="text-sm font-medium text-slate-200">
-            {period.from} <span className="text-slate-600">&rarr;</span> {period.to}
+            {formatDateLabel(period.from)} <span className="text-slate-600">to</span> {formatDateLabel(period.to)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            {period.from} to {period.to}
           </div>
         </div>
-        <div className="bg-slate-800/40 rounded-lg p-3 text-center">
+
+        <div className="bg-slate-800/40 rounded-lg p-3 text-center border border-slate-700/40">
           <Gamepad2 className="w-4 h-4 text-slate-500 mx-auto mb-1" />
-          <div className="text-[10px] text-slate-500">Sample</div>
-          <div className="text-sm font-medium text-slate-200">{total_games.toLocaleString()}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Period Sample</div>
+          <div className="text-sm font-medium text-slate-200">
+            {periodSample !== null ? periodSample.toLocaleString() : '-'}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            Lifetime: {lifetimeSample.toLocaleString()}
+          </div>
         </div>
       </div>
 
-      {/* Format Health */}
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 uppercase tracking-wide">
+          All deltas compare to previous period
+        </span>
+        <span className="px-2 py-1 rounded-full border border-slate-700 bg-slate-800/60 text-slate-300 uppercase tracking-wide">
+          WR metrics use rolling history
+        </span>
+      </div>
+
       {format_health && (
         <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
-          <span className="text-sm font-medium text-slate-300">Format Health</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-slate-300">Format Health (lifetime snapshot)</span>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Not period-scoped</span>
+          </div>
 
-          {/* Archetype score bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Archetype Balance</span>
@@ -78,7 +105,6 @@ export const MetaPulseHeader: React.FC<Props> = ({ data }) => {
             </div>
           </div>
 
-          {/* Color score bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Color Balance</span>

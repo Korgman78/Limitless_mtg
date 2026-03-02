@@ -24,6 +24,13 @@ const sectionVariants = {
 };
 
 export const MetaPulseArticle: React.FC<Props> = ({ data, article }) => {
+  const periodDays = useMemo(() => {
+    const from = new Date(data.period.from);
+    const to = new Date(data.period.to);
+    const diff = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+    return Number.isFinite(diff) && diff > 0 ? diff : null;
+  }, [data.period.from, data.period.to]);
+
   const sections = useMemo(() => {
     const s: { key: string; node: React.ReactNode }[] = [];
 
@@ -74,20 +81,29 @@ export const MetaPulseArticle: React.FC<Props> = ({ data, article }) => {
 
   return (
     <div className="flex flex-col h-full bg-slate-950 overflow-y-auto">
-      {/* Title bar with backdrop blur */}
       <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-950/90 via-slate-900/90 to-purple-950/90 backdrop-blur-md px-6 py-5 border-b border-indigo-500/20">
         <div className="flex items-center gap-3 max-w-3xl mx-auto">
           <BarChart3 className="w-6 h-6 text-indigo-400 flex-shrink-0" />
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-white">{article.title}</h2>
             <div className="text-xs text-slate-400 mt-0.5">
-              {data.set_name} — {data.format_label}
+              {data.set_name} - {data.format_label}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-[10px] px-2 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 uppercase tracking-wide">
+                Meta evolution
+              </span>
+              <span className="text-[10px] px-2 py-1 rounded-full border border-slate-700 bg-slate-800/60 text-slate-300 uppercase tracking-wide">
+                {periodDays ? `${periodDays}d window` : 'Rolling window'}
+              </span>
+              <span className="text-[10px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 uppercase tracking-wide">
+                Delta vs previous period
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Sections */}
       <div className="px-4 sm:px-6 py-6 space-y-8 max-w-3xl mx-auto w-full">
         {sections.map((section, i) => (
           <motion.div

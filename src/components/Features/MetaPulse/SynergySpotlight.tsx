@@ -11,16 +11,24 @@ export const SynergySpotlight: React.FC<Props> = ({ synergies }) => {
   if (synergies.length === 0) return null;
 
   return (
-    <div className="space-y-3">
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider">
-        <Zap className="w-4 h-4" />
-        Synergy Spotlight
-      </h3>
+    <div className="space-y-3 p-4 bg-slate-900/45 border border-slate-800 rounded-xl">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider">
+            <Zap className="w-4 h-4" />
+            Synergy Spotlight
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">Top synergy pairs for this format snapshot.</p>
+        </div>
+        <span className="text-[10px] px-2 py-1 rounded-full border border-slate-700 bg-slate-800/60 text-slate-400 uppercase tracking-wide">
+          Global snapshot
+        </span>
+      </div>
 
       <div className="space-y-3">
         {synergies.slice(0, 5).map((syn, i) => (
           <div
-            key={i}
+            key={`${syn.card_a}-${syn.card_b}-${i}`}
             className="flex items-center gap-3 p-2.5 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors"
           >
             <img

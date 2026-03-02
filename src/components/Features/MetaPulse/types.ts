@@ -18,6 +18,7 @@ export interface MovingArchetype {
   games: number;
   games_delta: number;
   meta_share: number;
+  meta_share_delta?: number;
 }
 
 export interface TrophyMover {
@@ -44,6 +45,9 @@ export interface MetaPulseData {
   format_label: string;
   period: { from: string; to: string };
   total_games: number;
+  period_sample?: number;
+  period_sample_source?: string;
+  lifetime_games?: number;
   format_health?: {
     archetype_score: number;
     color_score: number;
