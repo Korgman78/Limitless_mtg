@@ -1,0 +1,260 @@
+{
+  "metadata": {
+    "generated_at": "2026-02-19T19:29:12.801175+00:00",
+    "input_file": "backend\\reports\\benchmarks\\set_02_latest50\\data\\arena_direct_trophy_with_pools.json",
+    "set_code": "ECL",
+    "format": "ArenaDirect_Sealed",
+    "requested_records": 50,
+    "scenario_count": 1,
+    "jaccard_include_lands": false,
+    "scenario_set": "default"
+  },
+  "baseline_scenario_id": "prod_current",
+  "scenarios": [
+    {
+      "scenario": {
+        "id": "prod_current",
+        "description": "Current prod weights",
+        "weights": {
+          "power": 2.0,
+          "consistency": 1.3,
+          "curve": 1.0,
+          "synergy": 1.0
+        },
+        "hc_restarts": 3,
+        "hc_iterations": 55,
+        "seed": 1337,
+        "max_optimize_ms": 10000,
+        "curve_component_scales": null
+      },
+      "summary": {
+        "processed": 0.0,
+        "avg_player_score": 0.0,
+        "median_player_score": 0.0,
+        "avg_top1_score": 0.0,
+        "median_top1_score": 0.0,
+        "avg_best3_score": 0.0,
+        "median_best3_score": 0.0,
+        "avg_delta_best3_minus_player": 0.0,
+        "optimizer_beats_player_rate": 0.0,
+        "avg_jaccard_top1": 0.0,
+        "median_jaccard_top1": 0.0,
+        "avg_jaccard_best3": 0.0,
+        "median_jaccard_best3": 0.0,
+        "strict_match_top1_rate": 0.0,
+        "strict_match_top3_rate": 0.0,
+        "color_match_top1_rate": 0.0,
+        "color_match_top3_rate": 0.0,
+        "avg_distinct_archetypes_top3": 0.0,
+        "p90_top1_score": 0.0,
+        "p10_top1_score": 0.0
+      },
+      "elapsed_seconds": 369.68,
+      "successful_records": 0,
+      "failed_records": 50,
+      "results": [],
+      "failures": [
+        {
+          "aggregate_id": "8d3eecb2b9394be59eaee37787074eb6",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "789937bdbdb94016848dcf13af938a09",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "a99f28cd51bd4ddbb86a81e475ce9d38",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "4f0ae083d58947b88217bf0be707a573",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "47a18132064548ffaac0e286e4ba0da5",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "7bda68e3c36a4779a8188ee50c3cfb81",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "4dbb3417d8234acd87ae27f29a74396a",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "272cceebe1bf47778f2e4c52cbd9c0b6",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "109214817ebf4ca68060b85788a225c3",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "9b5bbef54f104904b5209f15a77d4566",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "cdccbb5c2d52476bb5436562a5939d88",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "6ccea25599b54a4a98f48808a397bfca",
+          "error": "job failed: {\"message\": \"One or more deep-search shards failed.\", \"failedShards\": [{\"id\": \"c399b673-2b0b-40e1-9be0-5974b0ea5167\", \"error\": {\"details\": {\"code\": \"STALE_RUNNING_SHARD\", \"shardId\": \"c399b673-2b0b-40e1-9be0-5974b0ea5167\"}, \"message\": \"Shard timed out while running.\"}, \"shardIndex\": 1}]}"
+        },
+        {
+          "aggregate_id": "f9c0de638bf5445b8617f3c875d7eca1",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "9d3e463138c34eb7bc76966ceddf31f9",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "0af6ba7bcdea4d6890bcb12f14ee92fc",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "eb1d7be2c90e423dbf190482cc19f0f4",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "58a92f0b0e24472998f107cd9eeecc21",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "4292694cfc044d959a64fc9d2285147c",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "7d3a8baca1c44337954484ef1c6c6327",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "64a09c60d24c487c9d439ed9d4613817",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "157863f97e654e9abcf3f0a62cc811f1",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "57b990c118ef4a7cbfbfeaff65928ff6",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "4f6fc14593574b68b7216cdad5238a28",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "0f0fb954ea3746f8a31e3c1acaa084a2",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "c2bf7d707de24d7bb8ce6622e758a36a",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "3e33a4c274654793b0e13a9e7aaed43f",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "12e86ad187d94728a7d8799af46b8f10",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "e0c417409a7a415080e8d226d71b8bcb",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "b5ff25e10fb84902a6b0cde755042aad",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "e779c6a72c6f4dbc87d9de4a196ff193",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "505e7cce660e480ea0b62a74b7cd64e5",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "c33da3416c2844e5aabd10a3688cd247",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "1d0e7e3c39644e3eb1cf37f2c129e490",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "10a6a9973fc846f18e70bb335c33489d",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "ab30bc9a7dce43ff99c5591ed0755f30",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "1b8833e93cf642c8b7285e44f90015e5",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "d2df4a2d012c430286a35b48fa4d632e",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "23bc377a15e3436aa78d1c75d0af5d5a",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "5f5755b6fe914b529307a1bc5e07c886",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "ea6d8359166b4201b52aa6702dce2960",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "1b4da0773fa3435e84aed1573efd8704",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "9dbb934995b54c6e83c5989ccc03abbe",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "914a1488d9374295ad7ac5738cffa00b",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "ba659564aa054d419f22f178a8df727b",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "6520c56ca96b42f99ef8ab002314a739",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "fb9b5295c4784f41bc206b9780a9684c",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "f1c3c40eb24740f7b9b0727b033fa086",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "0fe18892a1554e838efa5af689097887",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "d8572475708f41b4a68413dc09741a01",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "0a363ab62cc441ddab4fc2cd6225739b",
+          "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        }
+      ]
+    }
+  ]
+}

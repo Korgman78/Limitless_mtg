@@ -10,7 +10,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "ECL"
+TARGET_SET = "TMT"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent

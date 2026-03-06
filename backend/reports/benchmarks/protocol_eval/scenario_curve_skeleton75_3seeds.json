@@ -1,0 +1,59 @@
+[
+  {
+    "w_power": 2.0,
+    "w_consistency": 1.3,
+    "w_curve": 1.0,
+    "w_synergy": 1.0,
+    "hc_restarts": 3,
+    "hc_iterations": 55,
+    "max_optimize_ms": 10000,
+    "curve_component_scales": {
+      "topHeavy": 90,
+      "skeletonShape": 75,
+      "earlyCreature": 90,
+      "creatureCorridor": 90,
+      "removalAxis": 4
+    },
+    "id": "curve_skeleton_75_s1337",
+    "description": "Skeleton-shape softened, seed 1337",
+    "seed": 1337
+  },
+  {
+    "w_power": 2.0,
+    "w_consistency": 1.3,
+    "w_curve": 1.0,
+    "w_synergy": 1.0,
+    "hc_restarts": 3,
+    "hc_iterations": 55,
+    "max_optimize_ms": 10000,
+    "curve_component_scales": {
+      "topHeavy": 90,
+      "skeletonShape": 75,
+      "earlyCreature": 90,
+      "creatureCorridor": 90,
+      "removalAxis": 4
+    },
+    "id": "curve_skeleton_75_s2027",
+    "description": "Skeleton-shape softened, seed 2027",
+    "seed": 2027
+  },
+  {
+    "w_power": 2.0,
+    "w_consistency": 1.3,
+    "w_curve": 1.0,
+    "w_synergy": 1.0,
+    "hc_restarts": 3,
+    "hc_iterations": 55,
+    "max_optimize_ms": 10000,
+    "curve_component_scales": {
+      "topHeavy": 90,
+      "skeletonShape": 75,
+      "earlyCreature": 90,
+      "creatureCorridor": 90,
+      "removalAxis": 4
+    },
+    "id": "curve_skeleton_75_s31415",
+    "description": "Skeleton-shape softened, seed 31415",
+    "seed": 31415
+  }
+]

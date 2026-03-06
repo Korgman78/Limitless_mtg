@@ -1,0 +1,451 @@
+{
+  "method": {
+    "badness_score": "(1-best3_jaccard)*0.6 + no_color_top3*0.25 + no_strict_top3*0.15",
+    "datasets": [
+      "set_02_latest50",
+      "set_03_latest50"
+    ],
+    "source_reports": [
+      "backend\\reports\\benchmarks\\set_02_latest50\\reports\\calibration_runner_report_prod_current_postpass_full50_v2.json",
+      "backend\\reports\\benchmarks\\set_03_latest50\\reports\\calibration_runner_report_prod_current_postpass_full50_v2.json"
+    ]
+  },
+  "set_summaries": [
+    {
+      "set": "set_02_latest50",
+      "processed": 50,
+      "color_miss_rate": 38.0,
+      "strict_miss_rate": 70.0,
+      "low_overlap_rate_best3_jaccard_lt_0_45": 20.0
+    },
+    {
+      "set": "set_03_latest50",
+      "processed": 49,
+      "color_miss_rate": 42.86,
+      "strict_miss_rate": 69.39,
+      "low_overlap_rate_best3_jaccard_lt_0_45": 32.65
+    }
+  ],
+  "top20_problematic_pools": [
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "1b4da0773fa3435e84aed1573efd8704",
+      "player_archetype": "GW",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "UBR",
+        "UB"
+      ],
+      "player_score": 68.33,
+      "optimizer_top1_score": 80.29,
+      "top1_minus_player": 11.96,
+      "top1_jaccard": 0.0698,
+      "best3_jaccard": 0.0698,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.9581,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "4064bab699774574aa4ec244c7cb15f7",
+      "player_archetype": "WU",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "URG",
+        "UG"
+      ],
+      "player_score": 66.44,
+      "optimizer_top1_score": 87.78,
+      "top1_minus_player": 21.34,
+      "top1_jaccard": 0.1795,
+      "best3_jaccard": 0.2105,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.8737,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "10a6a9973fc846f18e70bb335c33489d",
+      "player_archetype": "GWb",
+      "optimizer_top1_archetype": "WUR",
+      "optimizer_top3_archetypes": [
+        "WUR",
+        "WU",
+        "UR"
+      ],
+      "player_score": 75.66,
+      "optimizer_top1_score": 86.29,
+      "top1_minus_player": 10.63,
+      "top1_jaccard": 0.2368,
+      "best3_jaccard": 0.2368,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8579,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "4651471b15a94ff48a7a3f1c760a6e8f",
+      "player_archetype": "GB",
+      "optimizer_top1_archetype": "WU",
+      "optimizer_top3_archetypes": [
+        "WU",
+        "UB",
+        "UR"
+      ],
+      "player_score": 78.74,
+      "optimizer_top1_score": 83.79,
+      "top1_minus_player": 5.05,
+      "top1_jaccard": 0.0222,
+      "best3_jaccard": 0.2432,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.8541,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "42ca8812330342b2a0bfdd4c7f0a3bc0",
+      "player_archetype": "UW",
+      "optimizer_top1_archetype": "BG",
+      "optimizer_top3_archetypes": [
+        "BG",
+        "WG",
+        "RG"
+      ],
+      "player_score": 73.64,
+      "optimizer_top1_score": 79.99,
+      "top1_minus_player": 6.35,
+      "top1_jaccard": 0.0222,
+      "best3_jaccard": 0.2432,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.8541,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "9d3e463138c34eb7bc76966ceddf31f9",
+      "player_archetype": "BRG",
+      "optimizer_top1_archetype": "WU",
+      "optimizer_top3_archetypes": [
+        "WU",
+        "BG",
+        "UBR"
+      ],
+      "player_score": 61.19,
+      "optimizer_top1_score": 74.73,
+      "top1_minus_player": 13.54,
+      "top1_jaccard": 0.0444,
+      "best3_jaccard": 0.2703,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8378,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "b3ff042b4e804339ba405c809cdd670e",
+      "player_archetype": "GB",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "URG",
+        "RG"
+      ],
+      "player_score": 69.9,
+      "optimizer_top1_score": 80.17,
+      "top1_minus_player": 10.27,
+      "top1_jaccard": 0.0222,
+      "best3_jaccard": 0.2778,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.8333,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "e0c417409a7a415080e8d226d71b8bcb",
+      "player_archetype": "RWb",
+      "optimizer_top1_archetype": "BR",
+      "optimizer_top3_archetypes": [
+        "BR",
+        "UBR",
+        "UR"
+      ],
+      "player_score": 64.07,
+      "optimizer_top1_score": 78.87,
+      "top1_minus_player": 14.8,
+      "top1_jaccard": 0.2821,
+      "best3_jaccard": 0.2821,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 91,
+      "badness": 0.8307,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "272cceebe1bf47778f2e4c52cbd9c0b6",
+      "player_archetype": "BGw",
+      "optimizer_top1_archetype": "UG",
+      "optimizer_top3_archetypes": [
+        "UG",
+        "UBG",
+        "UB"
+      ],
+      "player_score": 75.41,
+      "optimizer_top1_score": 85.86,
+      "top1_minus_player": 10.45,
+      "top1_jaccard": 0.1707,
+      "best3_jaccard": 0.2973,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8216,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "44d05c30d5e84e60b2e40ea72b6f1596",
+      "player_archetype": "BGu",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "BR",
+        "WR"
+      ],
+      "player_score": 73.92,
+      "optimizer_top1_score": 83.07,
+      "top1_minus_player": 9.15,
+      "top1_jaccard": 0.0667,
+      "best3_jaccard": 0.2973,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 93,
+      "badness": 0.8216,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "a57248d9c36f436aa1d9370d8baa79c2",
+      "player_archetype": "BGw",
+      "optimizer_top1_archetype": "WU",
+      "optimizer_top3_archetypes": [
+        "WU",
+        "UB",
+        "UBG"
+      ],
+      "player_score": 65.45,
+      "optimizer_top1_score": 83.03,
+      "top1_minus_player": 17.58,
+      "top1_jaccard": 0.175,
+      "best3_jaccard": 0.3056,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8166,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "e955ae41c5c7484a8387e4a092140489",
+      "player_archetype": "GBW",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "URG",
+        "RG"
+      ],
+      "player_score": 75.65,
+      "optimizer_top1_score": 91.94,
+      "top1_minus_player": 16.29,
+      "top1_jaccard": 0.0217,
+      "best3_jaccard": 0.3056,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8166,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "dc21270ba51f4219b59fd7c002efbad9",
+      "player_archetype": "BR",
+      "optimizer_top1_archetype": "WG",
+      "optimizer_top3_archetypes": [
+        "WG",
+        "WU",
+        "BG"
+      ],
+      "player_score": 79.17,
+      "optimizer_top1_score": 84.66,
+      "top1_minus_player": 5.49,
+      "top1_jaccard": 0.119,
+      "best3_jaccard": 0.3056,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.8166,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "26c7929cc10f4f939592910ef51087aa",
+      "player_archetype": "GB",
+      "optimizer_top1_archetype": "WUR",
+      "optimizer_top3_archetypes": [
+        "WUR",
+        "WU",
+        "WG"
+      ],
+      "player_score": 78.06,
+      "optimizer_top1_score": 84.0,
+      "top1_minus_player": 5.94,
+      "top1_jaccard": 0.0435,
+      "best3_jaccard": 0.3333,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 93,
+      "badness": 0.8,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "b37fd3bdee964b89be027db61cddb793",
+      "player_archetype": "GB",
+      "optimizer_top1_archetype": "WU",
+      "optimizer_top3_archetypes": [
+        "WU",
+        "WG",
+        "WUG"
+      ],
+      "player_score": 79.67,
+      "optimizer_top1_score": 82.83,
+      "top1_minus_player": 3.16,
+      "top1_jaccard": 0.0667,
+      "best3_jaccard": 0.3333,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 93,
+      "badness": 0.8,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "4dbb3417d8234acd87ae27f29a74396a",
+      "player_archetype": "WUg",
+      "optimizer_top1_archetype": "WG",
+      "optimizer_top3_archetypes": [
+        "WG",
+        "URG",
+        "UR"
+      ],
+      "player_score": 67.34,
+      "optimizer_top1_score": 84.61,
+      "top1_minus_player": 17.27,
+      "top1_jaccard": 0.3429,
+      "best3_jaccard": 0.3429,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.7943,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "7a20d9c6a6584b409112f6253d87bf55",
+      "player_archetype": "WG",
+      "optimizer_top1_archetype": "UR",
+      "optimizer_top3_archetypes": [
+        "UR",
+        "WU",
+        "BG"
+      ],
+      "player_score": 74.53,
+      "optimizer_top1_score": 80.78,
+      "top1_minus_player": 6.25,
+      "top1_jaccard": 0.122,
+      "best3_jaccard": 0.3529,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.7883,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_02_latest50",
+      "aggregate_id": "0af6ba7bcdea4d6890bcb12f14ee92fc",
+      "player_archetype": "WG",
+      "optimizer_top1_archetype": "WBG",
+      "optimizer_top3_archetypes": [
+        "WBG",
+        "WUB",
+        "WU"
+      ],
+      "player_score": 78.41,
+      "optimizer_top1_score": 81.24,
+      "top1_minus_player": 2.83,
+      "top1_jaccard": 0.3824,
+      "best3_jaccard": 0.3824,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.7706,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "ccba74d3d98c4d009322c94d27d13c97",
+      "player_archetype": "WGb",
+      "optimizer_top1_archetype": "UBG",
+      "optimizer_top3_archetypes": [
+        "UBG",
+        "BG",
+        "WRG"
+      ],
+      "player_score": 74.76,
+      "optimizer_top1_score": 79.75,
+      "top1_minus_player": 4.99,
+      "top1_jaccard": 0.2368,
+      "best3_jaccard": 0.3824,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 95,
+      "badness": 0.7706,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    },
+    {
+      "set": "set_03_latest50",
+      "aggregate_id": "4211c737608942f8bb4f2d26728e48ae",
+      "player_archetype": "RG",
+      "optimizer_top1_archetype": "UBG",
+      "optimizer_top3_archetypes": [
+        "UBG",
+        "WR",
+        "BG"
+      ],
+      "player_score": 73.15,
+      "optimizer_top1_score": 79.71,
+      "top1_minus_player": 6.56,
+      "top1_jaccard": 0.2368,
+      "best3_jaccard": 0.3824,
+      "strict_match_top3": false,
+      "color_match_top3": false,
+      "pool_size": 94,
+      "badness": 0.7706,
+      "probable_cause": "Color-family miss (optimizer never reaches player color pair in Top3)."
+    }
+  ]
+}

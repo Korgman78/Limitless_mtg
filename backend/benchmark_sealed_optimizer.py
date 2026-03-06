@@ -55,7 +55,7 @@ def invoke(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark sealed-optimizer across multiple pools.")
-    parser.add_argument("--set", dest="set_code", default="ECL")
+    parser.add_argument("--set", dest="set_code", default="TMT")
     parser.add_argument("--format", dest="fmt", default="ArenaDirect_Sealed")
     parser.add_argument(
         "--pools-glob",

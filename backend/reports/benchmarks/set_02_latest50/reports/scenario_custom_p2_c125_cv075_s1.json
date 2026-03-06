@@ -1,0 +1,14 @@
+[
+  {
+    "id": "custom_p2_c125_cv075_s1",
+    "description": "Custom blend: power 2.0, consistency 1.25, curve 0.75, synergy 1.0",
+    "w_power": 2.0,
+    "w_consistency": 1.25,
+    "w_curve": 0.75,
+    "w_synergy": 1.0,
+    "hc_restarts": 3,
+    "hc_iterations": 55,
+    "seed": 1337,
+    "max_optimize_ms": 10000
+  }
+]

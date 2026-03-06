@@ -7,6 +7,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   type CardMeta,
   type CardStat,
+  type CurveComponentScales,
   type DeckCard,
   type PoolCard,
   type SearchProfile,
@@ -82,6 +83,7 @@ type OptimizationRunPayload = {
   poolText?: string;
   deckText?: string;
   scoreWeights?: Partial<ScoreWeights>;
+  curveComponentScales?: Partial<CurveComponentScales>;
   debug?: boolean;
   debugLimit?: number;
   hcRestarts?: number;
@@ -96,6 +98,7 @@ type ResolvedOptimizationRun = {
   format: string;
   poolText: string;
   scoreWeights?: Partial<ScoreWeights>;
+  curveComponentScales?: Partial<CurveComponentScales>;
   debug: boolean;
   debugLimit: number;
   hcRestarts: number;
@@ -195,6 +198,7 @@ const resolveOptimizationRun = (
     format,
     poolText,
     scoreWeights: input.scoreWeights,
+    curveComponentScales: input.curveComponentScales,
     debug: !!input.debug,
     debugLimit: Math.max(1, Math.min(50, Number(input.debugLimit ?? 20) || 20)),
     // No degraded 1x25 profile in API path.
@@ -857,6 +861,7 @@ const buildOptimization = async (
   format: string,
   poolText: string,
   scoreWeights?: Partial<ScoreWeights>,
+  curveComponentScales?: Partial<CurveComponentScales>,
   debug = false,
   debugLimit = 20,
   searchProfile: SearchProfile = "skeleton",
@@ -1087,6 +1092,7 @@ const buildOptimization = async (
     skeletons,
     weights,
     primaryFormatMean,
+    curveComponentScales,
     debug,
     debugLimit,
     searchProfile,
@@ -1130,6 +1136,7 @@ const scoreCustomDeck = async (
   format: string,
   deckText: string,
   scoreWeights?: Partial<ScoreWeights>,
+  curveComponentScales?: Partial<CurveComponentScales>,
 ): Promise<{
   build: SealedDeckResult;
   metaByName: Record<string, { cmc: number; type: string; colors: string | null; cost: string | null; rarity: string | null }>;
@@ -1203,6 +1210,7 @@ const scoreCustomDeck = async (
     providedLands,
     weights,
     context.primaryFormatMean,
+    curveComponentScales,
   );
 
   const allNames = [
@@ -1284,6 +1292,7 @@ const runOptimization = async (
     input.format,
     input.poolText,
     input.scoreWeights,
+    input.curveComponentScales,
     input.debug,
     input.debugLimit,
     input.searchProfile,
@@ -1516,6 +1525,36 @@ const aggregateShardResults = (
 
   const ranked = selected.map((b, i) => ({ ...b, rank: i + 1 }));
   const sample = doneRows[0].result_payload!.result!;
+  const hcSummaries = doneRows
+    .map((s) => s.result_payload?.result?.debugHcSummary)
+    .filter((x): x is NonNullable<SealedOptimizerResult["debugHcSummary"]> => !!x);
+
+  const debugHcSummary = (() => {
+    if (hcSummaries.length === 0) return undefined;
+    const weighted = hcSummaries.reduce(
+      (acc, s) => {
+        const w = Math.max(1, Number(s.runs || 0));
+        acc.runs += w;
+        acc.evalCalls += Number(s.avgEvalCalls || 0) * w;
+        acc.iterationsDone += Number(s.avgIterationsDone || 0) * w;
+        acc.elapsedMs += Number(s.avgElapsedMs || 0) * w;
+        acc.timeToBestMs += Number(s.avgTimeToBestMs || 0) * w;
+        acc.deadlineHitRate += Number(s.deadlineHitRate || 0) * w;
+        return acc;
+      },
+      { runs: 0, evalCalls: 0, iterationsDone: 0, elapsedMs: 0, timeToBestMs: 0, deadlineHitRate: 0 },
+    );
+    const denom = Math.max(1, weighted.runs);
+    return {
+      runs: weighted.runs,
+      avgEvalCalls: Number((weighted.evalCalls / denom).toFixed(2)),
+      avgIterationsDone: Number((weighted.iterationsDone / denom).toFixed(2)),
+      avgElapsedMs: Number((weighted.elapsedMs / denom).toFixed(2)),
+      avgTimeToBestMs: Number((weighted.timeToBestMs / denom).toFixed(2)),
+      deadlineHitRate: Number((weighted.deadlineHitRate / denom).toFixed(2)),
+    };
+  })();
+
   const computeTimeMs = doneRows.reduce(
     (sum, s) => sum + Number(s.compute_time_ms || s.result_payload?.computeTimeMs || 0),
     0,
@@ -1528,6 +1567,7 @@ const aggregateShardResults = (
       builds: ranked,
       poolSize: sample.poolSize,
       weightsApplied: sample.weightsApplied || DEFAULT_SCORE_WEIGHTS,
+      debugHcSummary,
     },
     computeTimeMs,
   };
@@ -1685,6 +1725,7 @@ Deno.serve(async (req) => {
         format,
         deckText,
         payload.scoreWeights,
+        payload.curveComponentScales,
       );
       return json(200, { build, metaByName });
     }

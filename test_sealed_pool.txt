@@ -1,71 +1,69 @@
-1 Glen Elendra Guardian
-1 Omni-Changeling
-1 Stratosoarer
-1 Rime Chill
-1 Sunderflock
-1 Cinder Strike
-1 Boulder Dash
-1 Feed the Flames
-1 Flamekin Gildweaver
-1 Assert Perfection
-1 Great Forest Druid
+﻿1 Goldmeadow Nomad
+1 Kinsbaile Aspirant
+1 Burdened Stoneback
+1 Personify
+2 Timid Shieldbearer
+1 Brigid, Clachan's Heart
+1 Kinbinding
+1 Virulent Emissary
+1 Lys Alana Informant
+1 Surly Farrier
 1 Crossroads Watcher
-1 Evolving Wilds
-1 Foraging Wickermaw
+1 Gilt-Leaf's Embrace
+1 Bristlebane Outrider
+1 Safewright Cavalry
+1 Sapling Nursery
 
 1 Burdened Stoneback
 1 Keep Out
-1 Timid Shieldbearer
+2 Riverguard's Reflexes
 1 Wanderbrine Preacher
+1 Flock Impostor
 1 Meanders Guide
-1 Protective Response
-1 Tributary Vaulter
-1 Gallant Fowlknight
-1 Liminal Hold
-1 Shore Lurker
-1 Thoughtweft Imbuer
+2 Tributary Vaulter
 1 Sun-Dappled Celebrant
-1 Aquitect's Defenses
-1 Glamer Gifter
-1 Gravelgill Scoundrel
-3 Run Away Together
-1 Glamermite
-1 Pestered Wellguard
+1 Flitterwing Nuisance
+1 Spell Snare
+2 Noggle the Mind
+2 Run Away Together
+3 Summit Sentinel
+1 Unwelcome Sprite
+1 Kulrath Mystic
 1 Temporal Cleansing
-2 Barbed Bloodletter
-1 Boggart Prankster
-3 Creakwood Safewright
+1 Lofty Dreams
+1 Sunderflock
+1 Dawnhand Dissident
+1 Requiting Hex
+1 Bogslither's Embrace
+1 Scarblade Scout
+1 Blight Rot
 1 Moonglove Extractor
+1 Retched Wretch
+1 Darkness Descends
 1 Dawnhand Eulogist
-3 Dream Seizer
-2 Graveshifter
-1 Gutsplitter Gang
+1 Dream Seizer
+1 Nightmare Sower
 1 Blighted Blackthorn
-1 Impolite Entrance
-1 Hexing Squelcher
+3 Gristle Glutton
+1 Lasting Tarfire
 1 Reckless Ransacking
-1 Scuzzback Scrounger
-2 Burning Curiosity
-1 Elder Auntie
-1 Goatnap
+1 Brambleback Brute
+1 Enraged Flamecaster
+1 Meek Attack
 1 Sting-Slinger
-1 Lys Alana Informant
-2 Surly Farrier
+1 Tweeze
+3 Feed the Flames
+1 Sourbread Auntie
+1 Great Forest Druid
+1 Midnight Tilling
 1 Chomping Changeling
-1 Unforgiving Aim
+1 Dawn's Light Archer
+2 Tend the Sprigs
+1 Blood Crypt
 1 Eclipsed Realms
-2 Forest
-1 Island
-3 Plains
-1 Stalactite Dagger
-1 Figure of Fable
-1 Abigale, Eloquent First-Year
-1 Feisty Spikeling
-1 Eclipsed Boggart
-1 Voracious Tome-Skimmer
-2 Chitinous Graspling
-1 High Perfect Morcant
-1 Reaping Willow
-1 Merrow Skyswimmer
-1 Emptiness
-1 Dream Harvest
+4 Forest
+1 Hallowed Fountain
+2 Plains
+1 Firdoch Core
+1 Chaos Spewer
+1 Glister Bairn

@@ -1,0 +1,611 @@
+{
+  "set": "set_02_latest50",
+  "input_file": "backend\\reports\\benchmarks\\set_02_latest50\\data\\arena_direct_trophy_with_pools.json",
+  "summary": {
+    "processed": 49,
+    "failed": 1,
+    "hc_summaries_present": 49,
+    "avg_optimizer_elapsed_ms": 36243.35,
+    "avgEvalCalls": 1273.8422,
+    "avgIterationsDone": 22.8002,
+    "avgElapsedMs": 315.2173,
+    "avgTimeToBestMs": 213.75,
+    "deadlineHitRate": 19.209
+  },
+  "rows": [
+    {
+      "aggregate_id": "8d3eecb2b9394be59eaee37787074eb6",
+      "optimizer_elapsed_ms": 35047,
+      "debugHcSummary": {
+        "runs": 25,
+        "avgElapsedMs": 328.24,
+        "avgEvalCalls": 1303.68,
+        "avgTimeToBestMs": 182.12,
+        "deadlineHitRate": 20,
+        "avgIterationsDone": 24.96
+      }
+    },
+    {
+      "aggregate_id": "789937bdbdb94016848dcf13af938a09",
+      "optimizer_elapsed_ms": 33947,
+      "debugHcSummary": {
+        "runs": 33,
+        "avgElapsedMs": 248.76,
+        "avgEvalCalls": 1197.27,
+        "avgTimeToBestMs": 181.52,
+        "deadlineHitRate": 15.15,
+        "avgIterationsDone": 20.85
+      }
+    },
+    {
+      "aggregate_id": "a99f28cd51bd4ddbb86a81e475ce9d38",
+      "optimizer_elapsed_ms": 34089,
+      "debugHcSummary": {
+        "runs": 18,
+        "avgElapsedMs": 455.72,
+        "avgEvalCalls": 1654.89,
+        "avgTimeToBestMs": 297.67,
+        "deadlineHitRate": 27.78,
+        "avgIterationsDone": 26.94
+      }
+    },
+    {
+      "aggregate_id": "4f0ae083d58947b88217bf0be707a573",
+      "optimizer_elapsed_ms": 39510,
+      "debugHcSummary": {
+        "runs": 19,
+        "avgElapsedMs": 432.11,
+        "avgEvalCalls": 1690.47,
+        "avgTimeToBestMs": 309.74,
+        "deadlineHitRate": 26.32,
+        "avgIterationsDone": 32.26
+      }
+    },
+    {
+      "aggregate_id": "47a18132064548ffaac0e286e4ba0da5",
+      "optimizer_elapsed_ms": 39253,
+      "debugHcSummary": {
+        "runs": 23,
+        "avgElapsedMs": 356.78,
+        "avgEvalCalls": 1080,
+        "avgTimeToBestMs": 240.13,
+        "deadlineHitRate": 21.74,
+        "avgIterationsDone": 20.35
+      }
+    },
+    {
+      "aggregate_id": "7bda68e3c36a4779a8188ee50c3cfb81",
+      "optimizer_elapsed_ms": 35791,
+      "debugHcSummary": {
+        "runs": 28,
+        "avgElapsedMs": 292.89,
+        "avgEvalCalls": 1140.54,
+        "avgTimeToBestMs": 187.18,
+        "deadlineHitRate": 17.86,
+        "avgIterationsDone": 20.32
+      }
+    },
+    {
+      "aggregate_id": "4dbb3417d8234acd87ae27f29a74396a",
+      "optimizer_elapsed_ms": 36465,
+      "debugHcSummary": {
+        "runs": 30,
+        "avgElapsedMs": 273.13,
+        "avgEvalCalls": 1057.5,
+        "avgTimeToBestMs": 176.9,
+        "deadlineHitRate": 16.67,
+        "avgIterationsDone": 22.03
+      }
+    },
+    {
+      "aggregate_id": "272cceebe1bf47778f2e4c52cbd9c0b6",
+      "optimizer_elapsed_ms": 34763,
+      "debugHcSummary": {
+        "runs": 16,
+        "avgElapsedMs": 512.81,
+        "avgEvalCalls": 2103.56,
+        "avgTimeToBestMs": 397.81,
+        "deadlineHitRate": 31.25,
+        "avgIterationsDone": 33.13
+      }
+    },
+    {
+      "aggregate_id": "109214817ebf4ca68060b85788a225c3",
+      "optimizer_elapsed_ms": 34440,
+      "debugHcSummary": {
+        "runs": 21,
+        "avgElapsedMs": 390.38,
+        "avgEvalCalls": 1419.33,
+        "avgTimeToBestMs": 295.43,
+        "deadlineHitRate": 23.81,
+        "avgIterationsDone": 25.67
+      }
+    },
+    {
+      "aggregate_id": "9b5bbef54f104904b5209f15a77d4566",
+      "optimizer_elapsed_ms": 40135,
+      "debugHcSummary": {
+        "runs": 32,
+        "avgElapsedMs": 256.34,
+        "avgEvalCalls": 1051.72,
+        "avgTimeToBestMs": 173.97,
+        "deadlineHitRate": 15.63,
+        "avgIterationsDone": 20.63
+      }
+    },
+    {
+      "aggregate_id": "cdccbb5c2d52476bb5436562a5939d88",
+      "optimizer_elapsed_ms": 36537,
+      "debugHcSummary": {
+        "runs": 35,
+        "avgElapsedMs": 234.69,
+        "avgEvalCalls": 1298.94,
+        "avgTimeToBestMs": 163.06,
+        "deadlineHitRate": 14.29,
+        "avgIterationsDone": 20.46
+      }
+    },
+    {
+      "aggregate_id": "6ccea25599b54a4a98f48808a397bfca",
+      "optimizer_elapsed_ms": 36221,
+      "debugHcSummary": {
+        "runs": 37,
+        "avgElapsedMs": 221.78,
+        "avgEvalCalls": 899.08,
+        "avgTimeToBestMs": 162.57,
+        "deadlineHitRate": 13.51,
+        "avgIterationsDone": 18.57
+      }
+    },
+    {
+      "aggregate_id": "9d3e463138c34eb7bc76966ceddf31f9",
+      "optimizer_elapsed_ms": 35761,
+      "debugHcSummary": {
+        "runs": 22,
+        "avgElapsedMs": 373.05,
+        "avgEvalCalls": 1329.77,
+        "avgTimeToBestMs": 264.46,
+        "deadlineHitRate": 22.73,
+        "avgIterationsDone": 26.45
+      }
+    },
+    {
+      "aggregate_id": "0af6ba7bcdea4d6890bcb12f14ee92fc",
+      "optimizer_elapsed_ms": 36030,
+      "debugHcSummary": {
+        "runs": 26,
+        "avgElapsedMs": 315.58,
+        "avgEvalCalls": 1217.23,
+        "avgTimeToBestMs": 210.27,
+        "deadlineHitRate": 19.23,
+        "avgIterationsDone": 20.35
+      }
+    },
+    {
+      "aggregate_id": "eb1d7be2c90e423dbf190482cc19f0f4",
+      "optimizer_elapsed_ms": 39762,
+      "debugHcSummary": {
+        "runs": 25,
+        "avgElapsedMs": 327.92,
+        "avgEvalCalls": 1419.92,
+        "avgTimeToBestMs": 208.36,
+        "deadlineHitRate": 20,
+        "avgIterationsDone": 24.68
+      }
+    },
+    {
+      "aggregate_id": "58a92f0b0e24472998f107cd9eeecc21",
+      "optimizer_elapsed_ms": 33951,
+      "debugHcSummary": {
+        "runs": 40,
+        "avgElapsedMs": 204.97,
+        "avgEvalCalls": 845.32,
+        "avgTimeToBestMs": 140,
+        "deadlineHitRate": 12.5,
+        "avgIterationsDone": 15.45
+      }
+    },
+    {
+      "aggregate_id": "4292694cfc044d959a64fc9d2285147c",
+      "optimizer_elapsed_ms": 34425,
+      "debugHcSummary": {
+        "runs": 33,
+        "avgElapsedMs": 248.67,
+        "avgEvalCalls": 1025.15,
+        "avgTimeToBestMs": 164.76,
+        "deadlineHitRate": 15.15,
+        "avgIterationsDone": 21.7
+      }
+    },
+    {
+      "aggregate_id": "7d3a8baca1c44337954484ef1c6c6327",
+      "optimizer_elapsed_ms": 34310,
+      "debugHcSummary": {
+        "runs": 14,
+        "avgElapsedMs": 586.07,
+        "avgEvalCalls": 2170.21,
+        "avgTimeToBestMs": 438,
+        "deadlineHitRate": 35.71,
+        "avgIterationsDone": 29.36
+      }
+    },
+    {
+      "aggregate_id": "64a09c60d24c487c9d439ed9d4613817",
+      "optimizer_elapsed_ms": 35332,
+      "debugHcSummary": {
+        "runs": 18,
+        "avgElapsedMs": 455.89,
+        "avgEvalCalls": 1742.17,
+        "avgTimeToBestMs": 306.89,
+        "deadlineHitRate": 27.78,
+        "avgIterationsDone": 23.89
+      }
+    },
+    {
+      "aggregate_id": "157863f97e654e9abcf3f0a62cc811f1",
+      "optimizer_elapsed_ms": 36243,
+      "debugHcSummary": {
+        "runs": 33,
+        "avgElapsedMs": 248.49,
+        "avgEvalCalls": 922.24,
+        "avgTimeToBestMs": 182.76,
+        "deadlineHitRate": 15.15,
+        "avgIterationsDone": 20
+      }
+    },
+    {
+      "aggregate_id": "57b990c118ef4a7cbfbfeaff65928ff6",
+      "optimizer_elapsed_ms": 35654,
+      "debugHcSummary": {
+        "runs": 43,
+        "avgElapsedMs": 190.86,
+        "avgEvalCalls": 806.07,
+        "avgTimeToBestMs": 104.82,
+        "deadlineHitRate": 11.63,
+        "avgIterationsDone": 17.7
+      }
+    },
+    {
+      "aggregate_id": "4f6fc14593574b68b7216cdad5238a28",
+      "optimizer_elapsed_ms": 39165,
+      "debugHcSummary": {
+        "runs": 42,
+        "avgElapsedMs": 195.02,
+        "avgEvalCalls": 900.33,
+        "avgTimeToBestMs": 135.57,
+        "deadlineHitRate": 11.9,
+        "avgIterationsDone": 18.24
+      }
+    },
+    {
+      "aggregate_id": "0f0fb954ea3746f8a31e3c1acaa084a2",
+      "optimizer_elapsed_ms": 35482,
+      "debugHcSummary": {
+        "runs": 21,
+        "avgElapsedMs": 390.67,
+        "avgEvalCalls": 1570.33,
+        "avgTimeToBestMs": 251.71,
+        "deadlineHitRate": 23.81,
+        "avgIterationsDone": 27.38
+      }
+    },
+    {
+      "aggregate_id": "c2bf7d707de24d7bb8ce6622e758a36a",
+      "optimizer_elapsed_ms": 34170,
+      "debugHcSummary": {
+        "runs": 37,
+        "avgElapsedMs": 221.78,
+        "avgEvalCalls": 1103.84,
+        "avgTimeToBestMs": 146.46,
+        "deadlineHitRate": 13.51,
+        "avgIterationsDone": 22
+      }
+    },
+    {
+      "aggregate_id": "3e33a4c274654793b0e13a9e7aaed43f",
+      "optimizer_elapsed_ms": 36752,
+      "debugHcSummary": {
+        "runs": 38,
+        "avgElapsedMs": 215.95,
+        "avgEvalCalls": 981.61,
+        "avgTimeToBestMs": 159.98,
+        "deadlineHitRate": 13.16,
+        "avgIterationsDone": 17.31
+      }
+    },
+    {
+      "aggregate_id": "12e86ad187d94728a7d8799af46b8f10",
+      "optimizer_elapsed_ms": 41314,
+      "debugHcSummary": {
+        "runs": 32,
+        "avgElapsedMs": 256.56,
+        "avgEvalCalls": 1252.53,
+        "avgTimeToBestMs": 168.47,
+        "deadlineHitRate": 15.63,
+        "avgIterationsDone": 22.94
+      }
+    },
+    {
+      "aggregate_id": "e0c417409a7a415080e8d226d71b8bcb",
+      "optimizer_elapsed_ms": 37068,
+      "debugHcSummary": {
+        "runs": 27,
+        "avgElapsedMs": 303.63,
+        "avgEvalCalls": 1058.04,
+        "avgTimeToBestMs": 194.22,
+        "deadlineHitRate": 18.52,
+        "avgIterationsDone": 16.59
+      }
+    },
+    {
+      "aggregate_id": "b5ff25e10fb84902a6b0cde755042aad",
+      "optimizer_elapsed_ms": 35552,
+      "debugHcSummary": {
+        "runs": 29,
+        "avgElapsedMs": 282.97,
+        "avgEvalCalls": 1314.41,
+        "avgTimeToBestMs": 178.83,
+        "deadlineHitRate": 17.24,
+        "avgIterationsDone": 25.14
+      }
+    },
+    {
+      "aggregate_id": "e779c6a72c6f4dbc87d9de4a196ff193",
+      "optimizer_elapsed_ms": 34426,
+      "debugHcSummary": {
+        "runs": 18,
+        "avgElapsedMs": 455.72,
+        "avgEvalCalls": 1511.89,
+        "avgTimeToBestMs": 309.06,
+        "deadlineHitRate": 27.78,
+        "avgIterationsDone": 21.72
+      }
+    },
+    {
+      "aggregate_id": "505e7cce660e480ea0b62a74b7cd64e5",
+      "optimizer_elapsed_ms": 38248,
+      "debugHcSummary": {
+        "runs": 53,
+        "avgElapsedMs": 154.7,
+        "avgEvalCalls": 558.24,
+        "avgTimeToBestMs": 102.62,
+        "deadlineHitRate": 9.43,
+        "avgIterationsDone": 10.81
+      }
+    },
+    {
+      "aggregate_id": "c33da3416c2844e5aabd10a3688cd247",
+      "optimizer_elapsed_ms": 33965,
+      "debugHcSummary": {
+        "runs": 20,
+        "avgElapsedMs": 410.5,
+        "avgEvalCalls": 1732.85,
+        "avgTimeToBestMs": 257.55,
+        "deadlineHitRate": 25,
+        "avgIterationsDone": 32.75
+      }
+    },
+    {
+      "aggregate_id": "1d0e7e3c39644e3eb1cf37f2c129e490",
+      "optimizer_elapsed_ms": 37149,
+      "debugHcSummary": {
+        "runs": 18,
+        "avgElapsedMs": 455.89,
+        "avgEvalCalls": 1793,
+        "avgTimeToBestMs": 344.39,
+        "deadlineHitRate": 27.78,
+        "avgIterationsDone": 27.89
+      }
+    },
+    {
+      "aggregate_id": "10a6a9973fc846f18e70bb335c33489d",
+      "optimizer_elapsed_ms": 34632,
+      "debugHcSummary": {
+        "runs": 33,
+        "avgElapsedMs": 248.7,
+        "avgEvalCalls": 1021.73,
+        "avgTimeToBestMs": 153.58,
+        "deadlineHitRate": 15.15,
+        "avgIterationsDone": 17.06
+      }
+    },
+    {
+      "aggregate_id": "ab30bc9a7dce43ff99c5591ed0755f30",
+      "optimizer_elapsed_ms": 35032,
+      "debugHcSummary": {
+        "runs": 23,
+        "avgElapsedMs": 356.56,
+        "avgEvalCalls": 1358.04,
+        "avgTimeToBestMs": 230,
+        "deadlineHitRate": 21.74,
+        "avgIterationsDone": 29
+      }
+    },
+    {
+      "aggregate_id": "1b8833e93cf642c8b7285e44f90015e5",
+      "optimizer_elapsed_ms": 35268,
+      "debugHcSummary": {
+        "runs": 31,
+        "avgElapsedMs": 264.36,
+        "avgEvalCalls": 1044.23,
+        "avgTimeToBestMs": 163.68,
+        "deadlineHitRate": 16.13,
+        "avgIterationsDone": 19.65
+      }
+    },
+    {
+      "aggregate_id": "d2df4a2d012c430286a35b48fa4d632e",
+      "optimizer_elapsed_ms": 35154,
+      "debugHcSummary": {
+        "runs": 24,
+        "avgElapsedMs": 341.83,
+        "avgEvalCalls": 1444.33,
+        "avgTimeToBestMs": 231.54,
+        "deadlineHitRate": 20.83,
+        "avgIterationsDone": 27.38
+      }
+    },
+    {
+      "aggregate_id": "23bc377a15e3436aa78d1c75d0af5d5a",
+      "optimizer_elapsed_ms": 36034,
+      "debugHcSummary": {
+        "runs": 24,
+        "avgElapsedMs": 342.04,
+        "avgEvalCalls": 1511.71,
+        "avgTimeToBestMs": 220.46,
+        "deadlineHitRate": 20.83,
+        "avgIterationsDone": 26.17
+      }
+    },
+    {
+      "aggregate_id": "5f5755b6fe914b529307a1bc5e07c886",
+      "optimizer_elapsed_ms": 36883,
+      "debugHcSummary": {
+        "runs": 27,
+        "avgElapsedMs": 303.93,
+        "avgEvalCalls": 1340.7,
+        "avgTimeToBestMs": 256.89,
+        "deadlineHitRate": 18.52,
+        "avgIterationsDone": 20.15
+      }
+    },
+    {
+      "aggregate_id": "ea6d8359166b4201b52aa6702dce2960",
+      "optimizer_elapsed_ms": 35054,
+      "debugHcSummary": {
+        "runs": 39,
+        "avgElapsedMs": 210.44,
+        "avgEvalCalls": 895.8,
+        "avgTimeToBestMs": 145.36,
+        "deadlineHitRate": 12.82,
+        "avgIterationsDone": 20.18
+      }
+    },
+    {
+      "aggregate_id": "1b4da0773fa3435e84aed1573efd8704",
+      "optimizer_elapsed_ms": 40729,
+      "debugHcSummary": {
+        "runs": 19,
+        "avgElapsedMs": 432.21,
+        "avgEvalCalls": 1582.95,
+        "avgTimeToBestMs": 245.37,
+        "deadlineHitRate": 26.32,
+        "avgIterationsDone": 32.79
+      }
+    },
+    {
+      "aggregate_id": "9dbb934995b54c6e83c5989ccc03abbe",
+      "optimizer_elapsed_ms": 38849,
+      "debugHcSummary": {
+        "runs": 29,
+        "avgElapsedMs": 282.97,
+        "avgEvalCalls": 1140.45,
+        "avgTimeToBestMs": 182.79,
+        "deadlineHitRate": 17.24,
+        "avgIterationsDone": 18.69
+      }
+    },
+    {
+      "aggregate_id": "914a1488d9374295ad7ac5738cffa00b",
+      "optimizer_elapsed_ms": 39724,
+      "debugHcSummary": {
+        "runs": 25,
+        "avgElapsedMs": 328.36,
+        "avgEvalCalls": 1324.8,
+        "avgTimeToBestMs": 235.64,
+        "deadlineHitRate": 20,
+        "avgIterationsDone": 23.04
+      }
+    },
+    {
+      "aggregate_id": "ba659564aa054d419f22f178a8df727b",
+      "optimizer_elapsed_ms": 39492,
+      "debugHcSummary": {
+        "runs": 24,
+        "avgElapsedMs": 342,
+        "avgEvalCalls": 1550.58,
+        "avgTimeToBestMs": 245.83,
+        "deadlineHitRate": 20.83,
+        "avgIterationsDone": 27.13
+      }
+    },
+    {
+      "aggregate_id": "6520c56ca96b42f99ef8ab002314a739",
+      "optimizer_elapsed_ms": 34411,
+      "debugHcSummary": {
+        "runs": 41,
+        "avgElapsedMs": 200.19,
+        "avgEvalCalls": 964.1,
+        "avgTimeToBestMs": 136.61,
+        "deadlineHitRate": 12.19,
+        "avgIterationsDone": 20.56
+      }
+    },
+    {
+      "aggregate_id": "fb9b5295c4784f41bc206b9780a9684c",
+      "optimizer_elapsed_ms": 36158,
+      "debugHcSummary": {
+        "runs": 26,
+        "avgElapsedMs": 315.65,
+        "avgEvalCalls": 1120.77,
+        "avgTimeToBestMs": 200.31,
+        "deadlineHitRate": 19.23,
+        "avgIterationsDone": 19.42
+      }
+    },
+    {
+      "aggregate_id": "f1c3c40eb24740f7b9b0727b033fa086",
+      "optimizer_elapsed_ms": 34406,
+      "debugHcSummary": {
+        "runs": 25,
+        "avgElapsedMs": 328.36,
+        "avgEvalCalls": 1298.8,
+        "avgTimeToBestMs": 227.6,
+        "deadlineHitRate": 20,
+        "avgIterationsDone": 19.56
+      }
+    },
+    {
+      "aggregate_id": "0fe18892a1554e838efa5af689097887",
+      "optimizer_elapsed_ms": 33705,
+      "debugHcSummary": {
+        "runs": 31,
+        "avgElapsedMs": 264.71,
+        "avgEvalCalls": 1037.19,
+        "avgTimeToBestMs": 166.58,
+        "deadlineHitRate": 16.13,
+        "avgIterationsDone": 19.71
+      }
+    },
+    {
+      "aggregate_id": "d8572475708f41b4a68413dc09741a01",
+      "optimizer_elapsed_ms": 34297,
+      "debugHcSummary": {
+        "runs": 32,
+        "avgElapsedMs": 256.5,
+        "avgEvalCalls": 1202,
+        "avgTimeToBestMs": 176.91,
+        "deadlineHitRate": 15.63,
+        "avgIterationsDone": 25.56
+      }
+    },
+    {
+      "aggregate_id": "0a363ab62cc441ddab4fc2cd6225739b",
+      "optimizer_elapsed_ms": 35139,
+      "debugHcSummary": {
+        "runs": 25,
+        "avgElapsedMs": 328.32,
+        "avgEvalCalls": 1427.96,
+        "avgTimeToBestMs": 217.32,
+        "deadlineHitRate": 20,
+        "avgIterationsDone": 22.64
+      }
+    }
+  ],
+  "failures": [
+    {
+      "aggregate_id": "f9c0de638bf5445b8617f3c875d7eca1",
+      "error": "status failed 546: {\"code\": \"WORKER_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+    }
+  ]
+}

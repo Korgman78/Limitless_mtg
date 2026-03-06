@@ -33,6 +33,7 @@ class Scenario:
     hc_iterations: int
     seed: int
     max_optimize_ms: int
+    curve_component_scales: dict[str, float] | None = None
 
     def weights(self) -> dict[str, float]:
         return {
@@ -275,6 +276,8 @@ def run_one_scenario(
                 "debug": False,
                 "debugLimit": 10,
             }
+            if scenario.curve_component_scales:
+                optimizer_payload["curveComponentScales"] = scenario.curve_component_scales
 
             started = time.time()
             optimizer_result = run_optimizer_async(
@@ -293,6 +296,7 @@ def run_one_scenario(
                 format_code=format_code,
                 deck_text=custom_deck_text,
                 weights=weights,
+                curve_component_scales=scenario.curve_component_scales,
             )
 
             top_builds = list(optimizer_result.get("builds", []))[:3]
@@ -342,6 +346,7 @@ def run_one_scenario(
             "hc_iterations": scenario.hc_iterations,
             "seed": scenario.seed,
             "max_optimize_ms": scenario.max_optimize_ms,
+            "curve_component_scales": scenario.curve_component_scales,
         },
         "summary": summary,
         "elapsed_seconds": round(elapsed_s, 2),
@@ -460,7 +465,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/reports/benchmarks/calibration_runner_report.md"),
     )
-    parser.add_argument("--set", dest="set_code", default="ECL")
+    parser.add_argument("--set", dest="set_code", default="TMT")
     parser.add_argument("--format", dest="format_code", default="ArenaDirect_Sealed")
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--poll-interval-s", type=float, default=0.8)

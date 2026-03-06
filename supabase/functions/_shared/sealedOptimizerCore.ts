@@ -80,6 +80,14 @@ export type ScoreWeights = {
   synergy: number;
 };
 
+export type CurveComponentScales = {
+  topHeavy: number;
+  skeletonShape: number;
+  earlyCreature: number;
+  creatureCorridor: number;
+  removalAxis: number;
+};
+
 export type SearchProfile =
   | "skeleton"
   | "power_mana_safe"
@@ -136,6 +144,24 @@ export type SealedOptimizerResult = {
     curvePenalty: number;
     dependencyPenalty: number;
   }[];
+  debugHcSummary?: {
+    runs: number;
+    avgEvalCalls: number;
+    avgIterationsDone: number;
+    avgElapsedMs: number;
+    avgTimeToBestMs: number;
+    deadlineHitRate: number;
+  };
+};
+
+export type HcTelemetry = {
+  evalCalls: number;
+  iterationsDone: number;
+  elapsedMs: number;
+  timeToBestMs: number;
+  deadlineHit: boolean;
+  restartsStarted: number;
+  restartsCompleted: number;
 };
 
 export type Skeleton = {
@@ -205,6 +231,8 @@ const FINAL_DIVERSITY_LAMBDA = 2.2;
 const FINAL_BUILD_COUNT = 3;
 const HC_BEST_OF_K = 2;
 const HC_BEST_OF_K_STRONG_DELTA = 0.20;
+const FINAL_LOCAL_SWAP_MAX_ADDS = 10;
+const FINAL_LOCAL_SWAP_MAX_EVALS = 120;
 const DEFAULT_SEARCH_PROFILE: SearchProfile = "skeleton";
 
 const VALID_SEARCH_PROFILES = new Set<SearchProfile>([
@@ -1339,8 +1367,33 @@ const normalizeConsistencyScore = (manaPenalty: number): number =>
 const normalizeCurveScore = (curvePenalty: number): number =>
   clamp(100 - curvePenalty * 90, 0, 100);
 
-const CURVE_COMPONENT_SCALE = 90;
-const REMOVAL_AXIS_SCALE = 4;
+const DEFAULT_CURVE_COMPONENT_SCALE = 90;
+const DEFAULT_REMOVAL_AXIS_SCALE = 4;
+
+export const DEFAULT_CURVE_COMPONENT_SCALES: CurveComponentScales = {
+  topHeavy: DEFAULT_CURVE_COMPONENT_SCALE,
+  skeletonShape: DEFAULT_CURVE_COMPONENT_SCALE,
+  earlyCreature: DEFAULT_CURVE_COMPONENT_SCALE,
+  creatureCorridor: DEFAULT_CURVE_COMPONENT_SCALE,
+  removalAxis: DEFAULT_REMOVAL_AXIS_SCALE,
+};
+
+const sanitizeCurveComponentScales = (
+  input?: Partial<CurveComponentScales> | null,
+): CurveComponentScales => {
+  const clampScale = (value: unknown, fallback: number, min: number, max: number): number => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  return {
+    topHeavy: clampScale(input?.topHeavy, DEFAULT_CURVE_COMPONENT_SCALES.topHeavy, 0, 200),
+    skeletonShape: clampScale(input?.skeletonShape, DEFAULT_CURVE_COMPONENT_SCALES.skeletonShape, 0, 200),
+    earlyCreature: clampScale(input?.earlyCreature, DEFAULT_CURVE_COMPONENT_SCALES.earlyCreature, 0, 200),
+    creatureCorridor: clampScale(input?.creatureCorridor, DEFAULT_CURVE_COMPONENT_SCALES.creatureCorridor, 0, 200),
+    removalAxis: clampScale(input?.removalAxis, DEFAULT_CURVE_COMPONENT_SCALES.removalAxis, 0, 12),
+  };
+};
 
 const computeCurveAndStructurePenalty = (
   expanded: PoolCard[],
@@ -1348,6 +1401,7 @@ const computeCurveAndStructurePenalty = (
   poolMap: Map<string, PoolCard>,
   skeleton: Skeleton | null,
   creatureCount: number,
+  curveScales: CurveComponentScales,
 ): {
   topHeavy: number;
   skeletonShape: number;
@@ -1435,7 +1489,13 @@ const computeCurveAndStructurePenalty = (
     creatureCorridorPenalty += (creatureCount - CREATURE_CORRIDOR_MAX) * 0.05;
   }
 
-  const total = topHeavyPenalty + skeletonPenalty + earlyCreaturePenalty + creatureCorridorPenalty;
+  const topHeavyScaled = topHeavyPenalty * (curveScales.topHeavy / DEFAULT_CURVE_COMPONENT_SCALE);
+  const skeletonScaled = skeletonPenalty * (curveScales.skeletonShape / DEFAULT_CURVE_COMPONENT_SCALE);
+  const earlyCreatureScaled = earlyCreaturePenalty * (curveScales.earlyCreature / DEFAULT_CURVE_COMPONENT_SCALE);
+  const creatureCorridorScaled =
+    creatureCorridorPenalty * (curveScales.creatureCorridor / DEFAULT_CURVE_COMPONENT_SCALE);
+
+  const total = topHeavyScaled + skeletonScaled + earlyCreatureScaled + creatureCorridorScaled;
   return {
     topHeavy: topHeavyPenalty,
     skeletonShape: skeletonPenalty,
@@ -1481,6 +1541,7 @@ const computeStructureAdjustment = (
 
 const computeLegacyEquivalentAxisScales = (
   scoreWeights: ScoreWeights,
+  curveScales: CurveComponentScales,
 ): { dependencyAxisScale: number; removalAxisScale: number } => {
   const totalWeight =
     scoreWeights.power +
@@ -1490,7 +1551,7 @@ const computeLegacyEquivalentAxisScales = (
 
   const dependencyAxisScale =
     scoreWeights.synergy > 0 ? totalWeight / scoreWeights.synergy : 0;
-  const removalAxisScale = REMOVAL_AXIS_SCALE;
+  const removalAxisScale = curveScales.removalAxis;
 
   return { dependencyAxisScale, removalAxisScale };
 };
@@ -1501,6 +1562,7 @@ const computeAdjustedAxisScores = (
   dependencyAdjustment: number,
   removalAdjustment: number,
   scoreWeights: ScoreWeights,
+  curveScales: CurveComponentScales,
 ): {
   dependencyAxisScale: number;
   dependencyAxisDelta: number;
@@ -1509,7 +1571,7 @@ const computeAdjustedAxisScores = (
   synergyAxisScore: number;
   curveAxisScore: number;
 } => {
-  const scales = computeLegacyEquivalentAxisScales(scoreWeights);
+  const scales = computeLegacyEquivalentAxisScales(scoreWeights, curveScales);
   const dependencyAxisDelta = dependencyAdjustment * scales.dependencyAxisScale;
   const removalAxisDelta = removalAdjustment * scales.removalAxisScale;
   return {
@@ -1576,7 +1638,9 @@ export const calculateDeckScore = (
   skeleton: Skeleton | null,
   scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
   formatMean = 55,
+  curveComponentScales?: Partial<CurveComponentScales> | null,
 ): { score: number; breakdown: ScoreBreakdown; stats: DeckStats } => {
+  const curveScales = sanitizeCurveComponentScales(curveComponentScales);
   const poolMap = new Map<string, PoolCard>();
   for (const pc of pool) poolMap.set(pc.name, pc);
 
@@ -1658,6 +1722,7 @@ export const calculateDeckScore = (
     poolMap,
     skeleton,
     creatureCount,
+    curveScales,
   );
   const curvePenalty = curvePenaltyBreakdown.total;
 
@@ -1683,6 +1748,7 @@ export const calculateDeckScore = (
     structureAdjustment.dependencyAdjustment,
     structureAdjustment.removalAdjustment,
     scoreWeights,
+    curveScales,
   );
   const weightedCompositeScore = computeCompositeScore(
     wrNormalized,
@@ -1728,10 +1794,10 @@ export const calculateDeckScore = (
       skeletonSimilarity,
       creatureTarget,
       curvePenalty,
-      curveTopHeavyScale: CURVE_COMPONENT_SCALE,
-      curveSkeletonScale: CURVE_COMPONENT_SCALE,
-      curveEarlyCreatureScale: CURVE_COMPONENT_SCALE,
-      curveCreatureCorridorScale: CURVE_COMPONENT_SCALE,
+      curveTopHeavyScale: curveScales.topHeavy,
+      curveSkeletonScale: curveScales.skeletonShape,
+      curveEarlyCreatureScale: curveScales.earlyCreature,
+      curveCreatureCorridorScale: curveScales.creatureCorridor,
       curveTopHeavyPenalty: curvePenaltyBreakdown.topHeavy,
       curveSkeletonPenalty: curvePenaltyBreakdown.skeletonShape,
       curveEarlyCreaturePenalty: curvePenaltyBreakdown.earlyCreatureProfile,
@@ -1759,6 +1825,7 @@ export const scoreDeckWithResolvedLands = (
   skeleton: Skeleton | null,
   scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
   formatMean = 55,
+  curveComponentScales?: Partial<CurveComponentScales> | null,
 ): {
   score: number;
   breakdown: ScoreBreakdown;
@@ -1774,6 +1841,7 @@ export const scoreDeckWithResolvedLands = (
     skeleton,
     scoreWeights,
     formatMean,
+    curveComponentScales,
   );
 
   const lands = determineLands(cards, pool, mainColors, splashColor);
@@ -1829,6 +1897,7 @@ export const scoreDeckWithProvidedLands = (
   providedLands: DeckCard[],
   scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
   formatMean = 55,
+  curveComponentScales?: Partial<CurveComponentScales> | null,
 ): {
   score: number;
   breakdown: ScoreBreakdown;
@@ -1844,6 +1913,7 @@ export const scoreDeckWithProvidedLands = (
     skeleton,
     scoreWeights,
     formatMean,
+    curveComponentScales,
   );
 
   const lands = providedLands
@@ -2052,11 +2122,19 @@ export const hillClimbOptimize = (
   hcIterationLimit = ITERATION_LIMIT,
   rng: () => number = Math.random,
   optimizeDeadlineMs?: number,
-): { deck: DeckCard[]; score: number; breakdown: ScoreBreakdown; stats: DeckStats } => {
+  curveComponentScales?: Partial<CurveComponentScales> | null,
+): { deck: DeckCard[]; score: number; breakdown: ScoreBreakdown; stats: DeckStats; telemetry: HcTelemetry } => {
+  const runStartedMs = Date.now();
   const hardDeadline = Number.isFinite(Number(optimizeDeadlineMs))
     ? Number(optimizeDeadlineMs)
     : null;
   const isTimeUp = () => hardDeadline != null && Date.now() >= hardDeadline;
+  let deadlineHit = false;
+  let evalCalls = 0;
+  let iterationsDone = 0;
+  let restartsStarted = 0;
+  let restartsCompleted = 0;
+  let timeToBestMs = 0;
 
   const eligibleMap = new Map<string, PoolCard>();
   for (const pc of eligible) eligibleMap.set(pc.name, pc);
@@ -2077,6 +2155,20 @@ export const hillClimbOptimize = (
       ),
     );
   }
+  const scoreDeck = (deck: DeckCard[]) => {
+    evalCalls++;
+    return calculateDeckScore(
+      deck,
+      eligible,
+      pairMap,
+      mainColors,
+      splashColor,
+      skeleton,
+      scoreWeights,
+      formatMean,
+      curveComponentScales,
+    );
+  };
 
   let bestDeck: DeckCard[] = [];
   let bestScore = -Infinity;
@@ -2122,7 +2214,11 @@ export const hillClimbOptimize = (
   let bestStats: DeckStats = { creatureCount: 0, removalCount: 0, avgCmc: 0, totalCards: 0, skeletonSimilarity: 0 };
 
   for (let restart = 0; restart < hcRestarts; restart++) {
-    if (isTimeUp()) break;
+    if (isTimeUp()) {
+      deadlineHit = true;
+      break;
+    }
+    restartsStarted++;
     const restartJitter = 0.9 + restart * 0.8;
     let currentDeck = initCompetitive(
       eligible,
@@ -2138,10 +2234,14 @@ export const hillClimbOptimize = (
 
     if (totalQty(currentDeck) < targetSpells * 0.5) continue;
 
-    let current = calculateDeckScore(currentDeck, eligible, pairMap, mainColors, splashColor, skeleton, scoreWeights, formatMean);
+    let current = scoreDeck(currentDeck);
 
     for (let iter = 0; iter < hcIterationLimit; iter++) {
-      if (isTimeUp()) break;
+      if (isTimeUp()) {
+        deadlineHit = true;
+        break;
+      }
+      iterationsDone++;
       let improved = false;
       const deckQtyByName = new Map<string, number>();
       for (const c of currentDeck) deckQtyByName.set(c.name, c.qty);
@@ -2195,16 +2295,7 @@ export const hillClimbOptimize = (
         const ei = newDeck.findIndex((c) => c.name === addCard.name);
         if (ei >= 0) newDeck[ei] = { name: addCard.name, qty: newDeck[ei].qty + 1 };
         else newDeck.push({ name: addCard.name, qty: 1 });
-        const newResult = calculateDeckScore(
-          newDeck,
-          eligible,
-          pairMap,
-          mainColors,
-          splashColor,
-          skeleton,
-          scoreWeights,
-          formatMean,
-        );
+        const newResult = scoreDeck(newDeck);
         return { newDeck, newResult };
       };
 
@@ -2214,7 +2305,10 @@ export const hillClimbOptimize = (
       let stopSearch = false;
 
       for (const addCard of sideboard) {
-        if (isTimeUp()) break;
+        if (isTimeUp()) {
+          deadlineHit = true;
+          break;
+        }
         if (stopSearch || positiveCount >= HC_BEST_OF_K) break;
         // CMC-aware neighborhood:
         // favor "replace role with role" swaps first (same/near CMC),
@@ -2237,7 +2331,10 @@ export const hillClimbOptimize = (
         });
 
         for (const cutCandidate of cutsForAdd) {
-          if (isTimeUp()) break;
+          if (isTimeUp()) {
+            deadlineHit = true;
+            break;
+          }
           const swap = buildSwap(addCard, cutCandidate);
           if (!swap) continue;
           const { newDeck, newResult } = swap;
@@ -2263,11 +2360,17 @@ export const hillClimbOptimize = (
         // allow a few mildly negative moves early in the run.
         const annealIters = Math.min(10, hcIterationLimit);
         if (iter < annealIters && sideboard.length > 0 && cutCandidates.length > 0) {
-          if (isTimeUp()) break;
+          if (isTimeUp()) {
+            deadlineHit = true;
+            break;
+          }
           const temp = Math.max(0.06, 0.55 * (1 - iter / Math.max(1, annealIters)));
           let accepted = false;
           for (let t = 0; t < 4; t++) {
-            if (isTimeUp()) break;
+            if (isTimeUp()) {
+              deadlineHit = true;
+              break;
+            }
             const addCard = sideboard[Math.floor(rng() * sideboard.length)];
             const cutCard = cutCandidates[Math.floor(rng() * cutCandidates.length)];
             const swap = buildSwap(addCard, cutCard);
@@ -2282,6 +2385,7 @@ export const hillClimbOptimize = (
           }
           if (accepted) continue;
         }
+
         break;
       }
     }
@@ -2291,10 +2395,27 @@ export const hillClimbOptimize = (
       bestScore = current.score;
       bestBreakdown = current.breakdown;
       bestStats = current.stats;
+      timeToBestMs = Date.now() - runStartedMs;
     }
+    restartsCompleted++;
   }
 
-  return { deck: bestDeck, score: bestScore, breakdown: bestBreakdown, stats: bestStats };
+  const elapsedMs = Date.now() - runStartedMs;
+  return {
+    deck: bestDeck,
+    score: bestScore,
+    breakdown: bestBreakdown,
+    stats: bestStats,
+    telemetry: {
+      evalCalls,
+      iterationsDone,
+      elapsedMs,
+      timeToBestMs,
+      deadlineHit,
+      restartsStarted,
+      restartsCompleted,
+    },
+  };
 };
 
 // â”€â”€â”€ Land determination (Karsten-based) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2611,6 +2732,17 @@ const multisetJaccard = (a: DeckCard[], b: DeckCard[]): number => {
   return inter / uni;
 };
 
+const isInColorPlan = (
+  pc: PoolCard,
+  mainColors: string[],
+  splashColor: string | null,
+): boolean => {
+  const allowed = new Set<string>([...mainColors, ...(splashColor ? [splashColor] : [])]);
+  const cardColors = extractColors(pc.colors);
+  if (cardColors.length === 0) return true;
+  return cardColors.every((c) => allowed.has(c));
+};
+
 
 // Main optimizer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -2620,6 +2752,7 @@ export const optimizePool = (
   skeletons: Skeleton[],
   scoreWeights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
   formatMean = 55,
+  curveComponentScales?: Partial<CurveComponentScales> | null,
   debug = false,
   debugLimit = 20,
   searchProfile: SearchProfile = DEFAULT_SEARCH_PROFILE,
@@ -2648,6 +2781,7 @@ export const optimizePool = (
     removalCount?: number;
     reason: string;
   }[] = [];
+  const hcTelemetryRuns: HcTelemetry[] = [];
 
   const mainColorSets = getMainColorSetsForProfile(activeSearchProfile);
   const preRankedMainSets = [...mainColorSets]
@@ -2758,7 +2892,9 @@ export const optimizePool = (
         hcIterationLimit,
         attemptRng,
         optimizeDeadline,
+        curveComponentScales,
       );
+      if (debug) hcTelemetryRuns.push(result.telemetry);
       if (result.deck.length <= 0) {
         if (debug) {
           debugPairDiagnostics.push({
@@ -2898,7 +3034,9 @@ export const optimizePool = (
           hcIterationLimit,
           attemptRng,
           optimizeDeadline,
+          curveComponentScales,
         );
+        if (debug) hcTelemetryRuns.push(result.telemetry);
         if (result.deck.length <= 0) {
           if (debug) {
             debugPairDiagnostics.push({
@@ -3108,8 +3246,148 @@ export const optimizePool = (
   }
   const top3 = selected;
 
+  // Final local polish (single improving 1-for-1 swap, in-color only).
+  // Purpose: remove weak filler cards missed by HC neighborhood truncation,
+  // without changing global scoring or search profile behavior.
+  const polishFinalSingleSwap = (cand: typeof top3[number]) => {
+    const initialSplash = hasActiveSplashDemand(cand.deck, poolMap, cand.mainColors, cand.activeSplash)
+      ? cand.activeSplash
+      : null;
+    const initialTrioCode = initialSplash
+      ? [...cand.mainColors, initialSplash].join("")
+      : cand.mainColors.join("");
+    const initialSkeleton = findBestSkeleton(initialTrioCode, skeletons) || findBestSkeleton(cand.mainColors.join(""), skeletons);
+    const scoringEligible = filterEligibleCards(poolCards, cand.mainColors, initialSplash)
+      .filter((pc) => !isLandType(pc.type));
+    const currentLight = calculateDeckScore(
+      cand.deck,
+      scoringEligible,
+      pairMap,
+      cand.mainColors,
+      initialSplash,
+      initialSkeleton,
+      scoreWeights,
+      formatMean,
+      curveComponentScales,
+    );
+
+    const deckQty = new Map<string, number>();
+    for (const dc of cand.deck) deckQty.set(dc.name, (deckQty.get(dc.name) || 0) + dc.qty);
+
+    const candidatePool = filterEligibleCards(poolCards, cand.mainColors, initialSplash)
+      .filter((pc) => !isLandType(pc.type))
+      .filter((pc) => isInColorPlan(pc, cand.mainColors, initialSplash));
+    if (candidatePool.length === 0) return cand;
+
+    const addCandidates = candidatePool
+      .filter((pc) => (deckQty.get(pc.name) || 0) < pc.qty)
+      .sort((a, b) => (b.wr - a.wr))
+      .slice(0, FINAL_LOCAL_SWAP_MAX_ADDS);
+    if (addCandidates.length === 0) return cand;
+
+    const cutCandidates = [...cand.deck].sort((a, b) => {
+      const awr = poolMap.get(a.name)?.wr || 50;
+      const bwr = poolMap.get(b.name)?.wr || 50;
+      return awr - bwr;
+    });
+    if (cutCandidates.length === 0) return cand;
+
+    let bestDelta = 0.001;
+    let best: {
+      deck: DeckCard[];
+      score: number;
+      breakdown: ScoreBreakdown;
+      stats: DeckStats;
+      lands: DeckCard[];
+      activeSplash: string | null;
+      resolvedArchetype: string;
+      signature: string;
+    } | null = null;
+    let evals = 0;
+
+    for (const add of addCandidates) {
+      if (evals >= FINAL_LOCAL_SWAP_MAX_EVALS) break;
+      for (const cut of cutCandidates) {
+        if (evals >= FINAL_LOCAL_SWAP_MAX_EVALS) break;
+        if (add.name === cut.name) continue;
+        evals++;
+
+        const di = cand.deck.findIndex((c) => c.name === cut.name);
+        if (di < 0) continue;
+        const newDeck = cand.deck
+          .map((c, i) => i === di ? (c.qty > 1 ? { name: c.name, qty: c.qty - 1 } : null) : c)
+          .filter((c): c is DeckCard => c != null && c.qty > 0);
+        const ei = newDeck.findIndex((c) => c.name === add.name);
+        if (ei >= 0) newDeck[ei] = { name: add.name, qty: newDeck[ei].qty + 1 };
+        else newDeck.push({ name: add.name, qty: 1 });
+
+        const trialSplash = hasActiveSplashDemand(newDeck, poolMap, cand.mainColors, initialSplash)
+          ? initialSplash
+          : null;
+        const trioCode = trialSplash
+          ? [...cand.mainColors, trialSplash].join("")
+          : cand.mainColors.join("");
+        const trialSkeleton = findBestSkeleton(trioCode, skeletons) || findBestSkeleton(cand.mainColors.join(""), skeletons);
+        const trialEligible = filterEligibleCards(poolCards, cand.mainColors, trialSplash).filter((pc) => !isLandType(pc.type));
+        const trialLight = calculateDeckScore(
+          newDeck,
+          trialEligible,
+          pairMap,
+          cand.mainColors,
+          trialSplash,
+          trialSkeleton,
+          scoreWeights,
+          formatMean,
+          curveComponentScales,
+        );
+        const delta = trialLight.score - currentLight.score;
+        if (delta > bestDelta) {
+          const trial = scoreDeckWithResolvedLands(
+            newDeck,
+            poolCards,
+            pairMap,
+            cand.mainColors,
+            trialSplash,
+            trialSkeleton,
+            scoreWeights,
+            formatMean,
+            curveComponentScales,
+          );
+          bestDelta = delta;
+          best = {
+            deck: newDeck,
+            score: trial.score,
+            breakdown: trial.breakdown,
+            stats: trial.stats,
+            lands: trial.lands,
+            activeSplash: trialSplash,
+            resolvedArchetype: trialSplash
+              ? cand.mainColors.join("") + trialSplash.toLowerCase()
+              : cand.mainColors.join(""),
+            signature: deckSignature(newDeck),
+          };
+        }
+      }
+    }
+
+    if (!best) return cand;
+    return {
+      ...cand,
+      deck: best.deck,
+      score: best.score,
+      breakdown: best.breakdown,
+      stats: best.stats,
+      lands: best.lands,
+      activeSplash: best.activeSplash,
+      resolvedArchetype: best.resolvedArchetype,
+      signature: best.signature,
+    };
+  };
+
+  const polishedTop3 = top3.map(polishFinalSingleSwap);
+
   // Post-processing: compute display metadata
-  const builds: SealedDeckResult[] = top3.map((r, idx) => ({
+  const builds: SealedDeckResult[] = polishedTop3.map((r, idx) => ({
     rank: idx + 1,
     score: Number(r.score.toFixed(2)),
     archetype: r.resolvedArchetype,
@@ -3164,6 +3442,30 @@ export const optimizePool = (
     },
   }));
 
+  const debugHcSummary = (() => {
+    if (!debug || hcTelemetryRuns.length === 0) return undefined;
+    const runs = hcTelemetryRuns.length;
+    const sum = hcTelemetryRuns.reduce(
+      (acc, t) => {
+        acc.evalCalls += t.evalCalls;
+        acc.iterationsDone += t.iterationsDone;
+        acc.elapsedMs += t.elapsedMs;
+        acc.timeToBestMs += t.timeToBestMs;
+        acc.deadlineHits += t.deadlineHit ? 1 : 0;
+        return acc;
+      },
+      { evalCalls: 0, iterationsDone: 0, elapsedMs: 0, timeToBestMs: 0, deadlineHits: 0 },
+    );
+    return {
+      runs,
+      avgEvalCalls: Number((sum.evalCalls / runs).toFixed(2)),
+      avgIterationsDone: Number((sum.iterationsDone / runs).toFixed(2)),
+      avgElapsedMs: Number((sum.elapsedMs / runs).toFixed(2)),
+      avgTimeToBestMs: Number((sum.timeToBestMs / runs).toFixed(2)),
+      deadlineHitRate: Number(((sum.deadlineHits * 100) / runs).toFixed(2)),
+    };
+  })();
+
   return {
     setCode: "",
     format: "",
@@ -3189,6 +3491,7 @@ export const optimizePool = (
           manaDebug: r.manaDebug,
         }))
       : undefined,
+    debugHcSummary,
   };
 };
 

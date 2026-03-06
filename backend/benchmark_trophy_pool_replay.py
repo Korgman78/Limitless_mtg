@@ -12,6 +12,7 @@ import requests
 from dotenv import load_dotenv
 
 BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
+TRANSIENT_HTTP_STATUS = {429, 500, 502, 503, 504}
 
 
 def counts_to_text(card_counts: dict[str, int], include_header: bool) -> str:
@@ -76,16 +77,46 @@ def call_optimizer(
     supabase_key: str,
     payload: dict[str, Any],
     timeout_s: float = 40.0,
+    max_retries: int = 3,
 ) -> requests.Response:
-    return requests.post(
-        f"{supabase_url}/functions/v1/sealed-optimizer",
-        headers={
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=timeout_s,
-    )
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{supabase_url}/functions/v1/sealed-optimizer",
+                headers={
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=timeout_s,
+            )
+            if resp.status_code in TRANSIENT_HTTP_STATUS and attempt < max_retries - 1:
+                time.sleep(1.2 * (attempt + 1))
+                continue
+            return resp
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < max_retries - 1:
+                time.sleep(1.2 * (attempt + 1))
+                continue
+    raise RuntimeError(f"HTTP call failed after retries: {last_error}")
+
+
+def parse_json_response(resp: requests.Response, context: str) -> dict[str, Any]:
+    try:
+        data = resp.json()
+    except ValueError:
+        body = (resp.text or "").strip()
+        snippet = body[:220] if body else "<empty-body>"
+        raise RuntimeError(
+            f"{context} returned non-JSON (HTTP {resp.status_code}): {snippet}"
+        )
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"{context} returned unexpected payload type: {type(data).__name__}"
+        )
+    return data
 
 
 def run_optimizer_async(
@@ -96,8 +127,14 @@ def run_optimizer_async(
     poll_timeout_s: float,
 ) -> dict[str, Any]:
     submit_payload = {**payload, "action": "submit", "async": True}
-    submit_resp = call_optimizer(supabase_url, supabase_key, submit_payload, timeout_s=40.0)
-    submit_data = submit_resp.json()
+    submit_resp = call_optimizer(
+        supabase_url,
+        supabase_key,
+        submit_payload,
+        timeout_s=40.0,
+        max_retries=4,
+    )
+    submit_data = parse_json_response(submit_resp, "submit")
     if submit_resp.status_code != 202:
         raise RuntimeError(f"submit failed {submit_resp.status_code}: {json.dumps(submit_data)[:400]}")
     job_id = submit_data.get("jobId")
@@ -105,6 +142,7 @@ def run_optimizer_async(
         raise RuntimeError("submit response has no jobId")
 
     started = time.time()
+    transient_json_failures = 0
     while True:
         if time.time() - started > poll_timeout_s:
             raise TimeoutError(f"async optimization timeout after {poll_timeout_s:.1f}s (job={job_id})")
@@ -114,8 +152,17 @@ def run_optimizer_async(
             supabase_key,
             {"action": "status", "jobId": job_id},
             timeout_s=40.0,
+            max_retries=2,
         )
-        status_data = status_resp.json()
+        if status_resp.status_code in TRANSIENT_HTTP_STATUS:
+            continue
+        try:
+            status_data = parse_json_response(status_resp, "status")
+        except RuntimeError:
+            transient_json_failures += 1
+            if transient_json_failures <= 5:
+                continue
+            raise
         if status_resp.status_code == 202:
             continue
         if status_resp.status_code != 200:
@@ -137,6 +184,7 @@ def score_custom_deck(
     format_code: str,
     deck_text: str,
     weights: dict[str, float],
+    curve_component_scales: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "action": "score_custom_deck",
@@ -145,8 +193,16 @@ def score_custom_deck(
         "deckText": deck_text,
         "scoreWeights": weights,
     }
-    resp = call_optimizer(supabase_url, supabase_key, payload, timeout_s=40.0)
-    data = resp.json()
+    if curve_component_scales:
+        payload["curveComponentScales"] = curve_component_scales
+    resp = call_optimizer(
+        supabase_url,
+        supabase_key,
+        payload,
+        timeout_s=40.0,
+        max_retries=4,
+    )
+    data = parse_json_response(resp, "score_custom_deck")
     if resp.status_code != 200:
         raise RuntimeError(f"score_custom_deck failed {resp.status_code}: {json.dumps(data)[:400]}")
     build = data.get("build")
@@ -364,7 +420,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/tmp/_tmp_trophy_pool_replay_report.json"),
     )
-    parser.add_argument("--set", dest="set_code", default="ECL")
+    parser.add_argument("--set", dest="set_code", default="TMT")
     parser.add_argument("--format", dest="format_code", default="ArenaDirect_Sealed")
     parser.add_argument("--limit", type=int, default=None)
 

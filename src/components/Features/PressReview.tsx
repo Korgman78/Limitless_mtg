@@ -475,19 +475,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                       <div className="md:flex">
                         <div className="md:w-56 md:flex-shrink-0 relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 h-40 md:h-auto flex items-center justify-center">
                           <BarChart3 className="w-12 h-12 text-indigo-400/40" />
-                          <div className="absolute top-2 left-2">
-                            <div className="bg-indigo-600/90 backdrop-blur-md text-white px-2 py-1 rounded text-[10px] font-black flex items-center gap-1 shadow-lg">
-                              <Zap size={10} fill="currentColor" /> {article.strategic_score}/10
-                            </div>
-                          </div>
-                          {pulsePreview?.format_health && (
-                            <div className="absolute bottom-2 left-2 right-2">
-                              <div className="h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${pulsePreview.format_health.archetype_score >= 7 ? 'bg-emerald-500' : pulsePreview.format_health.archetype_score >= 5 ? 'bg-lime-500' : 'bg-amber-500'}`}
-                                  style={{ width: `${pulsePreview.format_health.archetype_score * 10}%` }} />
-                              </div>
-                            </div>
-                          )}
                         </div>
 
                         <div className="p-4 flex-1">
@@ -623,67 +610,6 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
             <SwipeableOverlay onClose={() => setSelectedArticle(null)} zIndex={900}>
               <div className="flex flex-col h-full bg-slate-950">
                 <MetaPulseArticle data={pulseData} article={selectedArticle} />
-
-                {/* Voting section at bottom */}
-                <div className="px-6 pb-8">
-                  <div className="max-w-2xl mx-auto p-6 bg-slate-900/40 rounded-3xl border border-slate-800/50 text-center backdrop-blur-sm">
-                    <h4 className="text-xs font-black text-slate-300 mb-6 uppercase tracking-[0.2em]">
-                      Was this Meta Pulse helpful?
-                    </h4>
-
-                    {!hasVoted ? (
-                      <div className="flex flex-wrap justify-center gap-3">
-                        <button onClick={() => handleVote('yes')} className="flex-1 min-w-[100px] py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
-                          <Check size={14} strokeWidth={3} /> YES!
-                        </button>
-                        <button onClick={() => handleVote('meh')} className="flex-1 min-w-[100px] py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
-                          <Minus size={14} strokeWidth={3} /> SOMEWHAT
-                        </button>
-                        <button onClick={() => handleVote('no')} className="flex-1 min-w-[100px] py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-black transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
-                          <X size={14} strokeWidth={3} /> NOT REALLY
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-3 max-w-sm mx-auto">
-                        {(() => {
-                          const yes = (selectedArticle as any).votes_yes || 0;
-                          const meh = (selectedArticle as any).votes_meh || 0;
-                          const no = (selectedArticle as any).votes_no || 0;
-                          const total = yes + meh + no;
-                          const getPercent = (val: number) => total === 0 ? 0 : Math.round((val / total) * 100);
-                          return (
-                            <>
-                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(yes), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-emerald-500/40 border-r border-emerald-500/50" />
-                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
-                                  <span className="text-emerald-400 flex items-center gap-1.5"><Check size={12} strokeWidth={3} /> Yes</span>
-                                  <span className="text-white">{yes} <span className="text-slate-500 ml-1">({getPercent(yes)}%)</span></span>
-                                </div>
-                              </div>
-                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(meh), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-amber-500/40 border-r border-amber-500/50" />
-                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
-                                  <span className="text-amber-400 flex items-center gap-1.5"><Minus size={12} strokeWidth={3} /> Somewhat</span>
-                                  <span className="text-white">{meh} <span className="text-slate-500 ml-1">({getPercent(meh)}%)</span></span>
-                                </div>
-                              </div>
-                              <div className="relative w-full h-8 bg-slate-800 rounded-lg overflow-hidden flex items-center px-3 shadow-inner">
-                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(getPercent(no), 2)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="absolute left-0 top-0 bottom-0 bg-rose-500/40 border-r border-rose-500/50" />
-                                <div className="relative z-10 flex justify-between w-full text-[10px] font-black uppercase tracking-wide">
-                                  <span className="text-rose-400 flex items-center gap-1.5"><X size={12} strokeWidth={3} /> Not Really</span>
-                                  <span className="text-white">{no} <span className="text-slate-500 ml-1">({getPercent(no)}%)</span></span>
-                                </div>
-                              </div>
-                              <div className="text-center mt-2">
-                                <span className="text-[9px] text-slate-500 italic">Thank you for voting!</span>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             </SwipeableOverlay>
           );

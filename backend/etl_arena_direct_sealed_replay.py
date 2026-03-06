@@ -405,7 +405,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch latest ArenaDirect Sealed trophies with full pool + played deck.",
     )
-    parser.add_argument("--set", dest="set_code", default="ECL")
+    parser.add_argument("--set", dest="set_code", default="TMT")
     parser.add_argument("--format", dest="format_code", default="ArenaDirect_Sealed")
     parser.add_argument("--limit", type=int, default=50, help="Number of latest trophies to keep.")
     parser.add_argument(
