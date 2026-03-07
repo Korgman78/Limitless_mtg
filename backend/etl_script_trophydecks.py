@@ -389,12 +389,15 @@ def ingest_trophy_decks(set_code, formats):
                     print(f"   ⏸️ Pause préventive (après {request_count} requêtes)...")
                     time.sleep(45)
 
-                # Fetch deck details
-                deck_data = fetch_deck_details(agg_id)
+                # Fetch deck details (avec le bon deck_index du trophy)
+                trophy_deck_index = trophy.get('deck_index', 0)
+                deck_data = fetch_deck_details(agg_id, deck_index=trophy_deck_index)
                 random_sleep(4.0, 6.0)  # Sleep plus long entre chaque requête
 
-                if not deck_data:
+                if not deck_data or deck_data.get('status') == 'error':
                     stats["skipped_error"] += 1
+                    if deck_data and deck_data.get('message'):
+                        print(f"      ⚠️ {agg_id[:16]}... : {deck_data['message']}")
                     continue
 
                 # Extraire la liste de cartes

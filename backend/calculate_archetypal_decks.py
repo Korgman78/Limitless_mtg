@@ -13,7 +13,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = ["ECL"]
+TARGET_SET_CODES = ["TMT"]
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 
 # --- ENVIRONNEMENT ---
