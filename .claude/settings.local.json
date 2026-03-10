@@ -57,7 +57,8 @@
       "Bash(cd C:/Users/rapha/mtg-front-new && PYTHONIOENCODING=utf-8 py backend/generate_meta_pulse.py --sets ECL --formats PremierDraft --min-games 100 2>&1)",
       "Bash(cd C:/Users/rapha/mtg-front-new && py -c \"\nimport os, requests\nfrom dotenv import load_dotenv\nfrom pathlib import Path\nload_dotenv\\(dotenv_path=Path\\('.env'\\)\\)\nurl = os.getenv\\('SUPABASE_URL'\\) or os.getenv\\('VITE_SUPABASE_URL'\\)\nkey = os.getenv\\('SUPABASE_KEY'\\) or os.getenv\\('VITE_SUPABASE_KEY'\\)\nh = {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}\n\n# card_stats columns\nr = requests.get\\(f'{url}/rest/v1/card_stats?limit=1&select=*', headers=h\\)\nprint\\('card_stats:', list\\(r.json\\(\\)[0].keys\\(\\)\\) if r.status_code == 200 and r.json\\(\\) else r.text[:200]\\)\n\n# trophy_decks columns\nr2 = requests.get\\(f'{url}/rest/v1/trophy_decks?limit=1&select=*', headers=h\\)\nprint\\('trophy_decks:', list\\(r2.json\\(\\)[0].keys\\(\\)\\) if r2.status_code == 200 and r2.json\\(\\) else r2.text[:200]\\)\n\" 2>&1)",
       "Bash(cd C:/Users/rapha/mtg-front-new && PYTHONIOENCODING=utf-8 py backend/generate_meta_pulse.py --sets ECL --formats PremierDraft --min-games 100 --dry-run 2>&1)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(echo === deck_index=1 \\(correct\\) ===:*)"
     ]
   }
 }

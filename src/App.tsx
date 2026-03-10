@@ -183,6 +183,9 @@ const getArchetypeSurface = (colors: string) => {
   };
 };
 
+const getMobileArchetypeLabel = (name: string) =>
+  normalizeArchetypeName(name).replace(/\s*\([WUBRG]+\)/g, '').replace(/\s+/g, ' ').trim();
+
 export default function MTGLimitedApp(): React.ReactElement {
   // --- Coach Marks for Onboarding ---
   const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
@@ -695,12 +698,14 @@ export default function MTGLimitedApp(): React.ReactElement {
                       {filteredDecks.map((deck, idx) => {
                         const accent = getArchetypeSurface(deck.colors);
                         const metaShare = totalGames > 0 ? (deck.games / totalGames * 100).toFixed(1) : '0.0';
+                        const desktopLabel = normalizeArchetypeName(deck.name);
+                        const mobileLabel = getMobileArchetypeLabel(deck.name);
 
                         return (
                         <motion.button
                           whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
                           key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
-                          className="group relative isolate w-full overflow-hidden rounded-xl border bg-slate-900/95 p-4 transition-all hover:bg-slate-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-32px_rgba(15,23,42,0.95)] md:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_48px_-34px_rgba(15,23,42,1)]"
+                          className="group relative isolate w-full overflow-hidden rounded-xl border bg-slate-900/95 p-3 md:p-4 transition-all hover:bg-slate-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-32px_rgba(15,23,42,0.95)] md:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_48px_-34px_rgba(15,23,42,1)]"
                           style={{ borderColor: accent.border, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${accent.cardShadow}` }}
                         >
                           <div className="absolute inset-0 opacity-95 transition-opacity duration-300 group-hover:opacity-100" style={{ backgroundImage: accent.panel }} />
@@ -708,20 +713,25 @@ export default function MTGLimitedApp(): React.ReactElement {
                           <div className="absolute inset-x-6 top-0 h-px opacity-70" style={{ backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0))' }} />
                           <div className="absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full opacity-80 transition-opacity duration-300 group-hover:opacity-100" style={{ backgroundImage: accent.rail }} />
 
-                          <div className="relative z-10 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
-                              <div className="text-left">
-                                <h3 className="font-bold text-sm text-slate-200 transition-colors group-hover:text-white">
-                                  {normalizeArchetypeName(deck.name)}
+                          <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 md:flex md:items-center md:justify-between">
+                            <div className="flex min-w-0 items-center gap-2.5 md:gap-3">
+                              <div className="scale-90 md:scale-100 origin-left shrink-0">
+                                <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
+                              </div>
+                              <div className="min-w-0 text-left">
+                                <h3 className="hidden md:block font-bold text-sm text-slate-200 transition-colors group-hover:text-white">
+                                  {desktopLabel}
+                                </h3>
+                                <h3 className="block md:hidden font-bold text-[15px] leading-[1.15] text-slate-100 transition-colors group-hover:text-white break-words">
+                                  {mobileLabel}
                                 </h3>
                               </div>
                             </div>
 
-                            <div className="flex flex-col items-end min-w-[5.5rem]">
-                              <div className="flex items-center gap-2">
+                            <div className="flex min-w-[4.75rem] flex-col items-end justify-center gap-1 md:min-w-[5.5rem] md:gap-0">
+                              <div className="flex items-center gap-1.5 md:gap-2">
                                 <div
-                                  className="rounded-lg border border-white/5 px-1.5 py-1 backdrop-blur-sm transition-colors group-hover:border-white/10"
+                                  className="rounded-md md:rounded-lg border border-white/5 px-1 py-0.5 md:px-1.5 md:py-1 backdrop-blur-sm transition-colors group-hover:border-white/10"
                                   style={{ backgroundColor: accent.sparkBg, borderColor: accent.pillBorder }}
                                 >
                                   {idx === 0 ? (
@@ -740,16 +750,16 @@ export default function MTGLimitedApp(): React.ReactElement {
                                   )}
                                 </div>
                                 <div
-                                  className="rounded-xl border px-2.5 py-1.5 bg-slate-950/70 backdrop-blur-sm"
+                                  className="rounded-lg md:rounded-xl border px-2 py-1 md:px-2.5 md:py-1.5 bg-slate-950/70 backdrop-blur-sm"
                                   style={{ borderColor: accent.pillBorder, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${accent.statShadow}` }}
                                 >
-                                  <span className={`block text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
+                                  <span className={`block w-[4rem] text-right text-xl md:w-[4.5rem] md:text-2xl font-black leading-none tracking-tight tabular-nums ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
                                     {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
                                   </span>
                                 </div>
                               </div>
                               <span
-                                className="mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold text-slate-300 tabular-nums"
+                                className="mt-1 inline-flex items-center self-end rounded-full px-2 py-0.5 text-[9px] md:mt-1.5 md:text-[10px] font-semibold text-slate-300 tabular-nums"
                                 style={{ backgroundColor: accent.pillBg, border: `1px solid ${accent.pillBorder}` }}
                               >
                                 {metaShare}% Meta
