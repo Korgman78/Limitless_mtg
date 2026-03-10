@@ -25,21 +25,24 @@ export const PairBreakdownChart: React.FC<PairBreakdownChartProps> = ({ decks })
   });
 
   return (
-    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col h-full">
-      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-38px_rgba(99,102,241,0.28)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(99,102,241,0.08),transparent_26%),linear-gradient(180deg,rgba(15,23,42,0.04),rgba(2,6,23,0.18))]" />
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-white/20 to-transparent" />
+
+      <h3 className="relative mb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
         META SHARE
       </h3>
 
-      <div className="space-y-2 flex-1 overflow-y-auto pr-4 custom-scrollbar">
+      <div className="relative flex-1 space-y-2 overflow-y-auto pr-4 custom-scrollbar">
         {pairStats.sort((a, b) => b.value - a.value).map(p => (
           <div key={p.code} className="flex items-center gap-3 text-xs">
             <div className="w-8 font-bold text-slate-400 tabular-nums">
               {p.code}
             </div>
 
-            <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div className="flex-1 h-2 overflow-hidden rounded-full bg-slate-800/90 shadow-inner">
               <div
-                className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+                className="h-full bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(99,102,241,0.2)]"
                 style={{
                   width: totalBicoloreGames > 0
                     ? `${Math.min(((p.value / totalBicoloreGames) * 100) * 2, 100)}%`
@@ -55,7 +58,7 @@ export const PairBreakdownChart: React.FC<PairBreakdownChartProps> = ({ decks })
         ))}
       </div>
 
-      <div className="text-[9px] text-center text-slate-600 italic pt-2 border-t border-slate-800/50 mt-2">
+      <div className="text-[9px] text-center text-slate-400 italic pt-2 border-t border-slate-800/50 mt-2">
         *Share of all 2-Color & 2-Color + Splash
       </div>
     </div>

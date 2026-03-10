@@ -28,7 +28,7 @@ import { useUrlState } from './hooks/useUrlState';
 import { haptics } from './utils/haptics';
 
 // Helpers
-import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName } from './utils/helpers';
+import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName, sortColorsWUBRG } from './utils/helpers';
 
 // Components
 import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
@@ -156,6 +156,32 @@ const DecksTabSkeleton: React.FC = () => (
     </motion.div>
   </motion.div>
 );
+
+const ARCHETYPE_TINTS: Record<string, string> = {
+  W: '248, 250, 252',
+  U: '96, 165, 250',
+  B: '192, 132, 252',
+  R: '251, 113, 133',
+  G: '74, 222, 128',
+};
+
+const getArchetypeSurface = (colors: string) => {
+  const symbols = sortColorsWUBRG(extractColors(colors)).split('').filter(Boolean);
+  const palette = (symbols.length > 0 ? symbols : ['U']).map((symbol) => ARCHETYPE_TINTS[symbol] || ARCHETYPE_TINTS.U);
+  const [primary, secondary = primary, tertiary = secondary] = palette;
+
+  return {
+    border: `rgba(${primary}, 0.22)`,
+    glow: `radial-gradient(circle at 0% 50%, rgba(${primary}, 0.1), transparent 52%), radial-gradient(circle at 100% 0%, rgba(${secondary}, 0.08), transparent 34%)`,
+    panel: `linear-gradient(135deg, rgba(${primary}, 0.08), rgba(15, 23, 42, 0) 30%), linear-gradient(120deg, rgba(${secondary}, 0.05), rgba(15, 23, 42, 0) 54%), linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98))`,
+    rail: `linear-gradient(180deg, rgba(${primary}, 0.72), rgba(${secondary}, 0.3), rgba(${tertiary}, 0.08))`,
+    pillBg: `rgba(${primary}, 0.07)`,
+    pillBorder: `rgba(${primary}, 0.18)`,
+    cardShadow: `0 20px 40px -36px rgba(${primary}, 0.22)`,
+    statShadow: `0 16px 28px -26px rgba(${primary}, 0.28)`,
+    sparkBg: `rgba(${secondary}, 0.04)`,
+  };
+};
 
 export default function MTGLimitedApp(): React.ReactElement {
   // --- Coach Marks for Onboarding ---
@@ -651,56 +677,87 @@ export default function MTGLimitedApp(): React.ReactElement {
                 </div>
 
                 {/* Section Header: Archetype Breakdown */}
-                <div className="relative pt-2">
+                <div className="relative pt-3">
+                  <div className="pointer-events-none absolute left-0 top-0 h-14 w-56 bg-gradient-to-r from-indigo-500/8 via-cyan-400/4 to-transparent blur-xl" />
                   {/* Decorative line */}
-                  <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+                  <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-400/30 to-transparent" />
 
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex items-center gap-2">
+                  <div className="relative flex items-center gap-3 mb-5">
+                    <div className="flex items-center gap-2 rounded-full border border-slate-800/80 bg-slate-900/60 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-30px_rgba(99,102,241,0.42)] backdrop-blur-sm">
                       <div className="w-1 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-purple-500" />
-                      <h2 className="text-lg md:text-xl font-black text-white tracking-tight">Archetypes Breakdown</h2>
+                      <h2 className="text-lg md:text-xl font-black text-white tracking-tight drop-shadow-[0_1px_6px_rgba(99,102,241,0.14)]">Archetypes Breakdown</h2>
                     </div>
-                    <div className="flex-1 h-px bg-gradient-to-r from-slate-700/50 to-transparent" />
+                    <div className="flex-1 h-px bg-gradient-to-r from-indigo-400/20 via-slate-700/50 to-transparent" />
                   </div>
                 </div>
 
                     <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {filteredDecks.map((deck, idx) => (
+                      {filteredDecks.map((deck, idx) => {
+                        const accent = getArchetypeSurface(deck.colors);
+                        const metaShare = totalGames > 0 ? (deck.games / totalGames * 100).toFixed(1) : '0.0';
+
+                        return (
                         <motion.button
                           whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
                           key={deck.id || idx} onClick={() => setSelectedDeck(deck)}
-                          className="w-full flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/80 transition-all group shadow-sm md:shadow-md"
+                          className="group relative isolate w-full overflow-hidden rounded-xl border bg-slate-900/95 p-4 transition-all hover:bg-slate-800/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-32px_rgba(15,23,42,0.95)] md:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_48px_-34px_rgba(15,23,42,1)]"
+                          style={{ borderColor: accent.border, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${accent.cardShadow}` }}
                         >
-                      <div className="flex items-center gap-3">
-                        <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
-                        <div className="text-left"><h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition-colors">{normalizeArchetypeName(deck.name)}</h3></div>
-                      </div>
-                      <div className="flex flex-col items-end min-w-[5.5rem]">
-                        <div className="flex items-center gap-2">
-                          {idx === 0 ? (
-                            <CoachMarkWrapper
-                              id="sparkline-longpress"
-                              message={getMessage('sparkline-longpress')}
-                              isUnseen={isUnseen('sparkline-longpress')}
-                              onMarkSeen={() => markAsSeen('sparkline-longpress')}
-                              position="left"
-                              delay={1500}
-                            >
-                              <Sparkline data={deck.history} />
-                            </CoachMarkWrapper>
-                          ) : (
-                            <Sparkline data={deck.history} />
-                          )}
-                          <span className={`text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
-                            {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-medium tabular-nums">
-                          {(deck.games / totalGames * 100).toFixed(1)}% Meta
-                        </span>
-                      </div>
-                    </motion.button>
-                  ))}
+                          <div className="absolute inset-0 opacity-95 transition-opacity duration-300 group-hover:opacity-100" style={{ backgroundImage: accent.panel }} />
+                          <div className="absolute inset-0 opacity-0 blur-xl transition-opacity duration-300 group-hover:opacity-70" style={{ backgroundImage: accent.glow }} />
+                          <div className="absolute inset-x-6 top-0 h-px opacity-70" style={{ backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0))' }} />
+                          <div className="absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full opacity-80 transition-opacity duration-300 group-hover:opacity-100" style={{ backgroundImage: accent.rail }} />
+
+                          <div className="relative z-10 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <ManaIcons colors={deck.colors.split(' +')[0]} size="lg" isSplash={deck.colors.includes('Splash')} />
+                              <div className="text-left">
+                                <h3 className="font-bold text-sm text-slate-200 transition-colors group-hover:text-white">
+                                  {normalizeArchetypeName(deck.name)}
+                                </h3>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-end min-w-[5.5rem]">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="rounded-lg border border-white/5 px-1.5 py-1 backdrop-blur-sm transition-colors group-hover:border-white/10"
+                                  style={{ backgroundColor: accent.sparkBg, borderColor: accent.pillBorder }}
+                                >
+                                  {idx === 0 ? (
+                                    <CoachMarkWrapper
+                                      id="sparkline-longpress"
+                                      message={getMessage('sparkline-longpress')}
+                                      isUnseen={isUnseen('sparkline-longpress')}
+                                      onMarkSeen={() => markAsSeen('sparkline-longpress')}
+                                      position="left"
+                                      delay={1500}
+                                    >
+                                      <Sparkline data={deck.history} />
+                                    </CoachMarkWrapper>
+                                  ) : (
+                                    <Sparkline data={deck.history} />
+                                  )}
+                                </div>
+                                <div
+                                  className="rounded-xl border px-2.5 py-1.5 bg-slate-950/70 backdrop-blur-sm"
+                                  style={{ borderColor: accent.pillBorder, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${accent.statShadow}` }}
+                                >
+                                  <span className={`block text-2xl font-black leading-none tracking-tight tabular-nums w-[4.5rem] text-right ${getDeltaStyle(deck.wr, globalMeanWR)}`}>
+                                    {deck.wr > 0 ? deck.wr.toFixed(1) + '%' : '-'}
+                                  </span>
+                                </div>
+                              </div>
+                              <span
+                                className="mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold text-slate-300 tabular-nums"
+                                style={{ backgroundColor: accent.pillBg, border: `1px solid ${accent.pillBorder}` }}
+                              >
+                                {metaShare}% Meta
+                              </span>
+                            </div>
+                          </div>
+                        </motion.button>
+                      )})}
                 </div>
 
                 {/* Format Blueprint - utilise les données globales, pas le filtre d'archétype de l'onglet Cards */}

@@ -5,7 +5,7 @@ import { Tooltip } from '../Common/Tooltip';
 import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
 import { haptics } from '../../utils/haptics';
-import { getCardImage } from '../../utils/helpers';
+import { extractColors, getCardImage, sortColorsWUBRG } from '../../utils/helpers';
 import { CmcStack } from './CmcStack';
 import { InsightCardList } from './InsightCardList';
 import { DeckTestPanel } from './DeckTestPanel/index';
@@ -30,6 +30,30 @@ interface ArchSelection {
     archetype: string | null;
     isAlternative: boolean;
 }
+
+const ARCHETYPE_TINTS: Record<string, string> = {
+    W: '248, 250, 252',
+    U: '96, 165, 250',
+    B: '192, 132, 252',
+    R: '251, 146, 60',
+    G: '74, 222, 128',
+};
+
+const getArchetypeSurface = (colors: string | null | undefined) => {
+    const symbols = sortColorsWUBRG(extractColors(colors ?? '')).split('').filter(Boolean);
+    const palette = (symbols.length > 0 ? symbols : ['U']).map((symbol) => ARCHETYPE_TINTS[symbol] || ARCHETYPE_TINTS.U);
+    const [primary, secondary = primary] = palette;
+
+    return {
+        border: `rgba(${primary}, 0.2)`,
+        softBorder: `rgba(${primary}, 0.14)`,
+        panel: `linear-gradient(135deg, rgba(${primary}, 0.05), rgba(15, 23, 42, 0) 30%), linear-gradient(115deg, rgba(${secondary}, 0.035), rgba(15, 23, 42, 0) 54%), linear-gradient(180deg, rgba(2, 6, 23, 0.94), rgba(2, 6, 23, 0.98))`,
+        glow: `radial-gradient(circle at 0% 50%, rgba(${primary}, 0.045), transparent 52%), radial-gradient(circle at 100% 0%, rgba(${secondary}, 0.035), transparent 28%)`,
+        pillBg: `rgba(${primary}, 0.06)`,
+        pillBorder: `rgba(${primary}, 0.18)`,
+        shadow: `0 18px 34px -34px rgba(${primary}, 0.18)`,
+    };
+};
 
 export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect, onFormatChange }) => {
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
@@ -140,6 +164,11 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
         return { ...counts, total: totalNonLand };
     }, [skeleton]);
+
+    const selectedAccent = useMemo(
+        () => getArchetypeSurface(selectedArch ?? skeleton?.archetype_name ?? 'WU'),
+        [selectedArch, skeleton?.archetype_name]
+    );
 
     React.useEffect(() => {
         if (filteredSkeletons.length > 0) {
@@ -281,15 +310,42 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             <button
                                 key={s.id}
                                 onClick={() => { haptics.light(); setSelectedArch(s.archetype_name); }}
-                                className={`flex flex-col items-center justify-center p-2.5 md:p-5 rounded-xl md:rounded-2xl border transition-all duration-300 group ${selectedArch === s.archetype_name
-                                    ? 'bg-indigo-600 border-indigo-400 shadow-[0_0_25px_rgba(79,70,229,0.3)] scale-105 z-10'
-                                    : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-500 hover:bg-slate-800'
+                                className={`group relative isolate flex flex-col items-center justify-center overflow-hidden rounded-xl md:rounded-2xl border p-2.5 md:p-5 transition-all duration-300 ${selectedArch === s.archetype_name
+                                    ? 'scale-105 z-10'
+                                    : 'hover:bg-slate-800'
                                     }`}
+                                style={(() => {
+                                    const accent = getArchetypeSurface(s.archetype_name);
+                                    return selectedArch === s.archetype_name
+                                        ? {
+                                            borderColor: accent.border,
+                                            backgroundImage: accent.panel,
+                                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), ${accent.shadow}`,
+                                        }
+                                        : {
+                                            borderColor: accent.softBorder,
+                                            backgroundImage: `linear-gradient(180deg, rgba(15,23,42,0.52), rgba(2,6,23,0.9))`,
+                                        };
+                                })()}
                             >
+                                {(() => {
+                                    const accent = getArchetypeSurface(s.archetype_name);
+                                    return (
+                                        <>
+                                            <div className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-60" style={{ backgroundImage: accent.glow }} />
+                                            {selectedArch === s.archetype_name && (
+                                                <div className="absolute inset-0 opacity-45" style={{ backgroundImage: accent.glow }} />
+                                            )}
+                                            <div className="absolute inset-x-4 top-0 h-px opacity-70" style={{ backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0))' }} />
+                                        </>
+                                    );
+                                })()}
+                                <div className="relative z-10 flex flex-col items-center justify-center">
                                 <ManaIcons colors={s.archetype_name} size="md" />
-                                <span className={`text-[9px] md:text-[11px] font-bold mt-2 tracking-wider uppercase ${selectedArch === s.archetype_name ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                                <span className={`text-[9px] md:text-[11px] font-bold mt-2 tracking-wider uppercase ${selectedArch === s.archetype_name ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>
                                     {s.archetype_name}
                                 </span>
+                                </div>
                             </button>
                         ))}
                     </div>
@@ -308,13 +364,25 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                         {/* MERGED DASHBOARD */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 px-2 md:px-0">
                             {/* Spell Curve Card */}
-                            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
+                            <div
+                                className="relative overflow-hidden rounded-[2.5rem] border p-6 backdrop-blur-xl"
+                                style={{
+                                    borderColor: selectedAccent.softBorder,
+                                    backgroundImage: selectedAccent.panel,
+                                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${selectedAccent.shadow}`,
+                                }}
+                            >
+                                <div className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: selectedAccent.glow }} />
+                                <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-white/15 to-transparent" />
                                 <div className="flex items-center justify-between mb-8">
-                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                    <h3 className="relative text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                                         <BarChart3 size={14} className="text-indigo-400/80" />
                                         Spell Curve {skeleton.sample_size ? <span className="text-slate-500 lowercase font-medium tracking-normal text-[11px] ml-1">(based on {skeleton.sample_size} trophies)</span> : ''}
                                     </h3>
-                                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-950/40 rounded-full border border-slate-800/30">
+                                    <div
+                                        className="relative flex items-center gap-2 px-3 py-1 bg-slate-950/40 rounded-full border"
+                                        style={{ borderColor: selectedAccent.pillBorder, backgroundColor: selectedAccent.pillBg }}
+                                    >
                                         <Clock size={12} className="text-indigo-400" />
                                         <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider whitespace-nowrap">
                                             AVG: <span className="text-white">{stats?.avgCmc}</span>
@@ -349,33 +417,51 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             </div>
 
                             {/* Combined Stats Card - Triple Balanced Column */}
-                            <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
+                            <div
+                                className="relative overflow-hidden rounded-[2.5rem] border p-6 backdrop-blur-xl"
+                                style={{
+                                    borderColor: selectedAccent.softBorder,
+                                    backgroundImage: selectedAccent.panel,
+                                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${selectedAccent.shadow}`,
+                                }}
+                            >
+                                <div className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: selectedAccent.glow }} />
+                                <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-white/15 to-transparent" />
                                 <div className="flex items-center mb-8 min-h-[28px]">
-                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                    <h3 className="relative text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                                         <Users size={14} className="text-emerald-500/80" />
                                         Composition & Mana Base
                                     </h3>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 h-[100px]">
+                                <div className="relative grid grid-cols-3 gap-2 h-[100px]">
                                     {/* Creatures / Spells Ratio */}
-                                    <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
+                                    <div
+                                        className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border"
+                                        style={{ borderColor: selectedAccent.pillBorder }}
+                                    >
                                         <div className="flex items-baseline gap-1">
                                             <span className="text-3xl lg:text-4xl font-black text-emerald-400 tracking-tighter">{(skeleton.creature_ratio * 100).toFixed(0)}</span>
                                             <span className="text-xl text-slate-600 font-bold">/</span>
                                             <span className="text-3xl lg:text-4xl font-black text-indigo-400 tracking-tighter">{(100 - skeleton.creature_ratio * 100).toFixed(0)}</span>
                                         </div>
                                         <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[8px] font-bold text-emerald-500/60 uppercase">Crea</span>
-                                            <span className="text-[8px] font-bold text-indigo-500/60 uppercase">Spells</span>
+                                            <span className="text-[8px] font-bold text-emerald-400/80 uppercase">Crea</span>
+                                            <span className="text-[8px] font-bold text-indigo-300/80 uppercase">Spells</span>
                                         </div>
                                     </div>
                                     {/* Lands */}
-                                    <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
+                                    <div
+                                        className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border"
+                                        style={{ borderColor: selectedAccent.pillBorder }}
+                                    >
                                         <span className="text-3xl lg:text-4xl font-black text-white tracking-tighter">{skeleton.avg_lands}</span>
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1 text-center whitespace-nowrap">LANDS</span>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1 text-center whitespace-nowrap">LANDS</span>
                                     </div>
                                     {/* Color Distribution - Only show active colors */}
-                                    <div className="flex flex-col items-center justify-center p-2 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
+                                    <div
+                                        className="flex flex-col items-center justify-center p-2 bg-slate-950/40 rounded-[1.5rem] border"
+                                        style={{ borderColor: selectedAccent.pillBorder }}
+                                    >
                                         <div className="flex items-center justify-center gap-2">
                                             {(['W', 'U', 'B', 'R', 'G'] as const)
                                                 .filter(color => colorDistribution[color] > 0)
@@ -394,7 +480,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                     </div>
                                                 ))}
                                         </div>
-                                        <span className="text-[8px] font-bold text-slate-600 uppercase mt-2">Cards by Color</span>
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase mt-2">Cards by Color</span>
                                     </div>
                                 </div>
                             </div>
@@ -444,7 +530,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             {/* 1. CREATURES */}
                             <div className="space-y-6">
                                 <div className="flex items-center gap-6">
-                                    <div className="px-4 py-1.5 rounded-full bg-emerald-500/5 border border-emerald-500/20 text-[9px] font-bold text-emerald-500/60 tracking-wider uppercase">CREATURES</div>
+                                    <div className="px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-[9px] font-bold text-emerald-300 tracking-wider uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_24px_-22px_rgba(16,185,129,0.45)]">
+                                        CREATURES
+                                    </div>
                                     <div className="h-px bg-slate-900/60 flex-1" />
                                 </div>
                                 <div className="flex flex-wrap md:flex-nowrap gap-4 md:gap-3">
@@ -457,7 +545,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             {/* 2. NON-CREATURES & LANDS */}
                             <div className="space-y-6">
                                 <div className="flex items-center gap-6">
-                                    <div className="px-4 py-1.5 rounded-full bg-indigo-500/5 border border-indigo-500/20 text-[9px] font-bold text-indigo-500/60 tracking-wider uppercase">NON-CREATURES & LANDS</div>
+                                    <div className="px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-400/30 text-[9px] font-bold text-indigo-200 tracking-wider uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_24px_-22px_rgba(99,102,241,0.4)]">
+                                        NON-CREATURES & LANDS
+                                    </div>
                                     <div className="h-px bg-slate-900/60 flex-1" />
                                 </div>
                                 <div className="flex flex-wrap md:flex-nowrap gap-4 md:gap-3">
@@ -470,23 +560,37 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
 
                         {/* ARCHETYPE INSIGHTS SECTION */}
                         <div className="space-y-8 px-2 md:px-0 pt-8 border-t border-slate-800/50">
-                            <div className="flex items-center gap-6">
-                                <div className="px-4 py-1.5 rounded-full bg-purple-500/5 border border-purple-500/20 text-[9px] font-bold text-purple-500/60 tracking-wider uppercase">Archetype Insights</div>
-                                <div className="h-px bg-slate-900/60 flex-1" />
-                            </div>
+                                <div className="flex items-center gap-6">
+                                    <div
+                                        className="px-4 py-1.5 rounded-full text-[9px] font-bold tracking-wider uppercase"
+                                        style={{ backgroundColor: selectedAccent.pillBg, border: `1px solid ${selectedAccent.pillBorder}`, color: 'rgb(196 181 253)' }}
+                                    >
+                                        Archetype Insights
+                                    </div>
+                                    <div className="h-px bg-slate-900/60 flex-1" />
+                                </div>
 
                             {/* Openness Score + Sleepers + Trending + Declining Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-5">
                                 {/* Openness Score */}
-                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-4">
+                                <div
+                                    className="relative overflow-hidden rounded-2xl border p-5 backdrop-blur-xl"
+                                    style={{
+                                        borderColor: selectedAccent.softBorder,
+                                        backgroundImage: selectedAccent.panel,
+                                        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${selectedAccent.shadow}`,
+                                    }}
+                                >
+                                    <div className="pointer-events-none absolute inset-0 opacity-35" style={{ backgroundImage: selectedAccent.glow }} />
+                                    <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-white/15 to-transparent" />
+                                    <div className="relative flex items-center gap-2 mb-4">
                                         <Sparkles size={14} className="text-purple-400" />
-                                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Archetype Flexibility</h4>
+                                        <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Archetype Flexibility</h4>
                                         <Tooltip content={<div className="text-center max-w-[220px]"><div className="font-semibold">{skeleton.openness_cards ?? '?'} different cards cover 80% of slots</div><div className="text-slate-400 mt-1">More cards = more flexibility. Fewer = must draft specific cards.</div></div>}>
                                             <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                         </Tooltip>
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="relative flex items-center gap-4">
                                         <div className="text-4xl font-black text-white">{skeleton.openness_cards ?? '--'}</div>
                                         <div className="flex-1">
                                             <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -496,10 +600,10 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 />
                                             </div>
                                             <div className="flex justify-between mt-1">
-                                                <span className="text-[8px] text-slate-600">Narrow</span>
-                                                <span className="text-[8px] text-slate-600">Flexible</span>
+                                                <span className="text-[8px] text-slate-500">Narrow</span>
+                                                <span className="text-[8px] text-slate-500">Flexible</span>
                                             </div>
-                                            <p className="text-[9px] text-slate-500 mt-1">
+                                            <p className="text-[9px] text-slate-400 mt-1">
                                                 {(skeleton.openness_cards ?? 0) >= 55 ? 'Many viable cards, easy to pivot' :
                                                     (skeleton.openness_cards ?? 0) >= 40 ? 'Moderate flexibility' :
                                                         'Requires specific cards'}
@@ -521,6 +625,12 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     renderSubtext={(card) => (
                                         <p className="text-[9px] text-slate-500">ALSA {card.alsa} · {card.frequency}% freq</p>
                                     )}
+                                    surface={{
+                                        borderColor: selectedAccent.softBorder,
+                                        backgroundImage: selectedAccent.panel,
+                                        glow: selectedAccent.glow,
+                                        shadow: selectedAccent.shadow,
+                                    }}
                                 />
 
                                 {/* Trending Cards */}
@@ -536,6 +646,12 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     renderSubtext={(card) => (
                                         <p className="text-[9px] text-emerald-400 font-bold">+{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
                                     )}
+                                    surface={{
+                                        borderColor: selectedAccent.softBorder,
+                                        backgroundImage: selectedAccent.panel,
+                                        glow: selectedAccent.glow,
+                                        shadow: selectedAccent.shadow,
+                                    }}
                                 />
 
                                 {/* Declining Cards */}
@@ -551,23 +667,38 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                     renderSubtext={(card) => (
                                         <p className="text-[9px] text-red-400 font-bold">{card.delta}% <span className="text-slate-500 font-normal">vs last week</span></p>
                                     )}
+                                    surface={{
+                                        borderColor: selectedAccent.softBorder,
+                                        backgroundImage: selectedAccent.panel,
+                                        glow: selectedAccent.glow,
+                                        shadow: selectedAccent.shadow,
+                                    }}
                                 />
                             </div>
 
                             {/* Card Importance - Collapsible */}
                             {skeleton.importance_cards && skeleton.importance_cards.length > 0 && (
-                                <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 rounded-2xl overflow-hidden">
+                                <div
+                                    className="relative overflow-hidden rounded-2xl border backdrop-blur-xl"
+                                    style={{
+                                        borderColor: selectedAccent.softBorder,
+                                        backgroundImage: selectedAccent.panel,
+                                        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), ${selectedAccent.shadow}`,
+                                    }}
+                                >
+                                    <div className="pointer-events-none absolute inset-0 opacity-28" style={{ backgroundImage: selectedAccent.glow }} />
+                                    <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-white/15 to-transparent" />
                                     <button
                                         onClick={() => { haptics.light(); setShowImportance(!showImportance); }}
-                                        className="w-full flex items-center justify-between p-5 hover:bg-slate-800/20 transition-colors"
+                                        className="relative z-10 w-full flex items-center justify-between p-5 hover:bg-slate-800/10 transition-colors"
                                     >
                                         <div className="flex items-center gap-2">
                                             <Star size={14} className="text-yellow-400" />
-                                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card Importance Ranking</h4>
+                                            <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Card Importance Ranking</h4>
                                             <Tooltip content={<div className="text-center"><div>Score = Frequency + Synergy + WR</div><div className="text-slate-400 mt-1">Synergy: avg with skeleton cards. WR: normalized (0-100) based on ±10% from format avg.</div></div>}>
                                                 <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                                             </Tooltip>
-                                            <span className="text-[9px] text-slate-600 ml-2">Top 25 cards</span>
+                                            <span className="text-[9px] text-slate-500 ml-2">Top 25 cards</span>
                                         </div>
                                         <ChevronDown size={16} className={`text-slate-500 transition-transform duration-300 ${showImportance ? 'rotate-180' : ''}`} />
                                     </button>
@@ -581,7 +712,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                 transition={{ duration: 0.3 }}
                                                 className="overflow-hidden"
                                             >
-                                                <div className="px-5 pb-3 overflow-x-auto scrollbar-hide">
+                                                <div className="relative z-10 px-5 pb-3 overflow-x-auto scrollbar-hide">
                                                     <div className="flex items-center gap-1.5 whitespace-nowrap min-w-max">
                                                         <span className="hidden sm:inline text-[9px] text-slate-600 uppercase tracking-wider">Sort by:</span>
                                                     <button
@@ -622,7 +753,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                     </button>
                                                     </div>
                                                 </div>
-                                                <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div className="relative z-10 px-5 pb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
                                                     {(() => {
                                                         const sorted = [...skeleton.importance_cards].sort((a, b) => {
                                                             switch (importanceSort) {
@@ -638,7 +769,11 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                             <button
                                                                 key={card.name}
                                                                 onClick={() => onCardSelect({ name: card.name, cmc: 0, type: '', cost: '', rarity: '' })}
-                                                                className="flex items-center gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/30 hover:border-indigo-500/30 transition-colors group text-left"
+                                                                className="group flex items-center gap-3 p-3 rounded-xl border transition-colors text-left"
+                                                                style={{
+                                                                    borderColor: selectedAccent.pillBorder,
+                                                                    backgroundImage: 'linear-gradient(180deg, rgba(2,6,23,0.72), rgba(2,6,23,0.92))',
+                                                                }}
                                                             >
                                                                 <div className="relative flex-shrink-0">
                                                                     <div className="w-10 h-14 rounded-lg overflow-hidden ring-1 ring-white/10 group-hover:ring-indigo-500/30 transition-all shadow-lg">
@@ -664,7 +799,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                                                                                 style={{ width: `${(card.importance / maxImportance) * 100}%` }}
                                                                             />
                                                                         </div>
-                                                                        <span className="text-[10px] font-black text-indigo-400 w-10">{Math.round(card.importance)}</span>
+                                                                        <span className="text-[10px] font-black text-indigo-300 w-10">{Math.round(card.importance)}</span>
                                                                     </div>
                                                                     <div className="flex gap-3 mt-1">
                                                                         <span className="text-[10px] text-slate-500">

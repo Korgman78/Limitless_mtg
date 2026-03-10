@@ -33,12 +33,15 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
   };
 
   return (
-    <div className="flex flex-col bg-slate-900 p-4 rounded-xl border border-slate-800 h-full overflow-hidden">
-      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-38px_rgba(59,130,246,0.32)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(99,102,241,0.08),transparent_28%),radial-gradient(circle_at_100%_0%,rgba(168,85,247,0.05),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.04),rgba(2,6,23,0.2))]" />
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-white/20 to-transparent" />
+
+      <h3 className="relative mb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
         COLORS BREAKDOWN (NUMBER OF GAMES)
       </h3>
 
-      <div className="flex items-start gap-3 md:gap-6 flex-1 pt-1 md:pt-0">
+      <div className="relative flex flex-1 items-start gap-3 pt-1 md:gap-6 md:pt-0">
         <div className="relative w-32 h-32 md:w-36 md:h-36 flex-shrink-0">
           <svg viewBox="-1.1 -1.1 2.2 2.2" className="transform -rotate-90">
             <defs>
@@ -85,7 +88,7 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
             {hoveredIndex !== null && data[hoveredIndex] ? (
               <>
                 <span className="text-[8px] text-slate-400 font-bold uppercase">{data[hoveredIndex].label}</span>
-                <span className="text-sm font-black text-white tabular-nums">
+                <span className="text-sm font-black text-white tabular-nums drop-shadow-[0_0_10px_rgba(255,255,255,0.08)]">
                   {((data[hoveredIndex].value / total) * 100).toFixed(1)}%
                 </span>
                 <span className="text-[8px] text-slate-500 tabular-nums">
@@ -95,7 +98,7 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
             ) : (
               <>
                 <span className="text-[9px] text-slate-400 font-bold uppercase">Total</span>
-                <span className="text-xs font-black text-white">{(total / 1000).toFixed(0)}k</span>
+                <span className="text-xs font-black text-white drop-shadow-[0_0_10px_rgba(99,102,241,0.25)]">{(total / 1000).toFixed(0)}k</span>
               </>
             )}
           </div>
@@ -106,10 +109,11 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
             {data.map((d, i) => (
               <div
                 key={i}
-                className="flex justify-between items-center text-[10px] md:text-[11px] p-1 md:p-1.5 rounded-md border border-transparent transition-all hover:bg-slate-800/50 hover:border-slate-700"
+                className="flex items-center justify-between rounded-md border border-white/5 p-1 text-[10px] transition-all hover:border-slate-600 hover:bg-slate-800/50 md:p-1.5 md:text-[11px]"
                 style={{
                   borderLeftColor: d.value > 0 ? d.color : 'transparent',
-                  borderLeftWidth: '3px'
+                  borderLeftWidth: '3px',
+                  boxShadow: d.value > 0 ? `0 10px 26px -24px ${d.color}` : undefined,
                 }}
               >
                 <div className="flex items-center gap-1.5 md:gap-2">
