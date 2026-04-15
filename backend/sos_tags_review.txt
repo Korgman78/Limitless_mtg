@@ -1,0 +1,405 @@
+================================================================================
+SOS (Secrets of Strixhaven) - Tag Review Export
+Total: 271 cards
+================================================================================
+
+REMOVAL (43 cards)
+----------------------------------------
+  Ajani's Response
+  Artistic Process
+  Banishing Betrayal
+  Cauldron of Essence
+  Chelonian Tackle
+  Conciliator's Duelist
+  Dissection Practice
+  Duel Tactics
+  Emeritus of Conflict // Lightning Bolt
+  Emeritus of Truce // Swords to Plowshares
+  End of the Hunt
+  Erode
+  Foolish Fate
+  Glorious Decay
+  Grapple with Death
+  Harsh Annotation
+  Heated Argument
+  Impractical Joke
+  Last Gasp
+  Matterbending Mage
+  Moment of Reckoning
+  Nita, Forum Conciliator
+  Poisoner's Apprentice
+  Prismari Charm
+  Proctor's Gaze
+  Professor Dellian Fel
+  Run Behind
+  Shattered Acolyte
+  Silverquill Charm
+  Skycoach Conductor // All Aboard
+  Splatter Technique
+  Stand Up for Yourself
+  Stress Dream
+  Sundering Archaic
+  Suspend Aggression
+  Tome Blast
+  Unsubtle Mockery
+  Vibrant Outburst
+  Vicious Rivalry
+  Wander Off
+  Wilt in the Heat
+  Witherbloom Charm
+  Withering Curse
+
+MANA PRODUCERS (30 cards)
+----------------------------------------
+  Abstract Paintmage                            -> UR
+  Berta, Wise Extrapolator                      -> WUBRG
+  Blazing Firesinger // Seething Song           -> R
+  Deathcap Glade                                -> BG
+  Dreamroot Cascade                             -> UG
+  Fields of Strife                              -> WR
+  Forest                                        -> G
+  Forum of Amity                                -> WB
+  Goblin Glasswright // Craft with Pride        -> WUBRG
+  Great Hall of the Biblioplex                  -> WUBRG
+  Hydro-Channeler                               -> WUBRG
+  Island                                        -> U
+  Molten-Core Maestro                           -> R
+  Mountain                                      -> R
+  Noxious Newt                                  -> G
+  Paradox Gardens                               -> UG
+  Plains                                        -> W
+  Potioner's Trove                              -> WUBRG
+  Rapturous Moment                              -> UR
+  Resonating Lute                               -> WUBRG
+  Rubble Rouser                                 -> R
+  Seize the Spoils                              -> WUBRG
+  Shattered Sanctum                             -> WB
+  Spectacle Summit                              -> UR
+  Stormcarved Coast                             -> UR
+  Sundown Pass                                  -> WR
+  Swamp                                         -> B
+  Tablet of Discovery                           -> R
+  Titan's Grave                                 -> BG
+  Topiary Lecturer                              -> G
+
+DEPENDENCIES (85 cards)
+----------------------------------------
+
+  [converge] (9 cards)
+    Arcane Omens                                       tags=[converge]  min=3
+    Archaic's Agony                                    tags=[converge]  min=3
+    Magmablood Archaic                                 tags=[converge,instant_sorcery]  min=7
+    Rancorous Archaic                                  tags=[converge]  min=3
+    Snarl Song                                         tags=[converge]  min=3
+    Sundering Archaic                                  tags=[converge]  min=3
+    Together as One                                    tags=[converge]  min=3
+    Transcendent Archaic                               tags=[converge]  min=3
+    Wildgrowth Archaic                                 tags=[converge]  min=3
+
+  [fixer_only] (2 cards)
+    Potioner's Trove                                   tags=[fixer_only,instant_sorcery]  min=6
+    Terramorphic Expanse                               tags=[fixer_only]  min=-
+
+  [graveyard_leaves] (9 cards)
+    Ark of Hunger                                      tags=[graveyard_leaves]  min=5
+    Garrison Excavator                                 tags=[graveyard_leaves]  min=5
+    Hardened Academic                                  tags=[graveyard_leaves]  min=5
+    Kirol, History Buff // Pack a Punch                tags=[graveyard_leaves]  min=5
+    Living History                                     tags=[graveyard_leaves]  min=4
+    Owlin Historian                                    tags=[graveyard_leaves]  min=4
+    Primary Research                                   tags=[graveyard_leaves]  min=5
+    Spirit Mascot                                      tags=[graveyard_leaves]  min=5
+    Wilt in the Heat                                   tags=[graveyard_leaves]  min=3
+
+  [instant_sorcery] (48 cards)
+    Aberrant Manawurm                                  tags=[instant_sorcery]  min=7
+    Abstract Paintmage                                 tags=[instant_sorcery]  min=4
+    Aziza, Mage Tower Captain                          tags=[instant_sorcery]  min=7
+    Choreographed Sparks                               tags=[instant_sorcery]  min=6
+    Colorstorm Stallion                                tags=[instant_sorcery]  min=7
+    Conciliator's Duelist                              tags=[instant_sorcery]  min=7
+    Deluge Virtuoso                                    tags=[instant_sorcery]  min=7
+    Diary of Dreams                                    tags=[instant_sorcery]  min=7
+    Divergent Equation                                 tags=[instant_sorcery]  min=4
+    Elemental Mascot                                   tags=[instant_sorcery]  min=7
+    Exhibition Tidecaller                              tags=[instant_sorcery]  min=7
+    Expressive Firedancer                              tags=[instant_sorcery]  min=7
+    Flashback                                          tags=[instant_sorcery]  min=4
+    Forum Necroscribe                                  tags=[instant_sorcery]  min=7
+    Graduation Day                                     tags=[instant_sorcery]  min=7
+    Great Hall of the Biblioplex                       tags=[instant_sorcery]  min=7
+    Hydro-Channeler                                    tags=[instant_sorcery]  min=6
+    Informed Inkwright                                 tags=[instant_sorcery]  min=7
+    Inkling Mascot                                     tags=[instant_sorcery]  min=7
+    Inkshape Demonstrator                              tags=[instant_sorcery]  min=7
+    Lecturing Scornmage                                tags=[instant_sorcery]  min=7
+    Lorehold, the Historian                            tags=[instant_sorcery]  min=3
+    Magmablood Archaic                                 tags=[converge,instant_sorcery]  min=7
+    Melancholic Poet                                   tags=[instant_sorcery]  min=7
+    Mica, Reader of Ruins                              tags=[instant_sorcery]  min=7
+    Molten-Core Maestro                                tags=[instant_sorcery]  min=7
+    Muse Seeker                                        tags=[instant_sorcery]  min=7
+    Pigment Wrangler // Striking Palette               tags=[instant_sorcery]  min=6
+    Postmortem Professor                               tags=[instant_sorcery]  min=4
+    Potioner's Trove                                   tags=[fixer_only,instant_sorcery]  min=6
+    Prismari, the Inspiration                          tags=[instant_sorcery]  min=7
+    Quandrix, the Proof                                tags=[instant_sorcery]  min=4
+    Rehearsed Debater                                  tags=[instant_sorcery]  min=7
+    Resonating Lute                                    tags=[instant_sorcery]  min=6
+    Sanar, Unfinished Genius // Wild Idea              tags=[instant_sorcery]  min=6
+    Scolding Administrator                             tags=[instant_sorcery]  min=7
+    Silverquill, the Disputant                         tags=[instant_sorcery]  min=3
+    Snooping Page                                      tags=[instant_sorcery]  min=7
+    Spectacular Skywhale                               tags=[instant_sorcery]  min=7
+    Steal the Show                                     tags=[instant_sorcery]  min=5
+    Stirring Hopesinger                                tags=[instant_sorcery]  min=7
+    Tablet of Discovery                                tags=[instant_sorcery]  min=4
+    Tackle Artist                                      tags=[instant_sorcery]  min=7
+    The Dawning Archaic                                tags=[instant_sorcery]  min=7
+    Thunderdrum Soloist                                tags=[instant_sorcery]  min=7
+    Wisdom of Ages                                     tags=[instant_sorcery]  min=6
+    Zaffai and the Tempests                            tags=[instant_sorcery]  min=6
+    Zealous Lorecaster                                 tags=[instant_sorcery]  min=4
+
+  [lifegain] (17 cards)
+    Blech, Loafing Pest                                tags=[lifegain]  min=5
+    Comforting Counsel                                 tags=[lifegain]  min=5
+    Efflorescence                                      tags=[lifegain]  min=4
+    Follow the Lumarets                                tags=[lifegain]  min=4
+    Foolish Fate                                       tags=[lifegain]  min=4
+    Leech Collector // Bloodletting                    tags=[lifegain]  min=5
+    Lumaret's Favor                                    tags=[lifegain]  min=4
+    Moseo, Vein's New Dean                             tags=[lifegain]  min=5
+    Old-Growth Educator                                tags=[lifegain]  min=4
+    Pest Mascot                                        tags=[lifegain]  min=5
+    Poisoner's Apprentice                              tags=[lifegain]  min=4
+    Scheming Silvertongue // Sign in Blood             tags=[lifegain]  min=4
+    Tenured Concocter                                  tags=[lifegain]  min=4
+    Thornfist Striker                                  tags=[lifegain]  min=5
+    Tragedy Feaster                                    tags=[lifegain]  min=4
+    Ulna Alley Shopkeep                                tags=[lifegain]  min=4
+    Withering Curse                                    tags=[lifegain]  min=4
+
+  [multicolored] (1 cards)
+    Mage Tower Referee                                 tags=[multicolored]  min=7
+
+  [wizard] (1 cards)
+    Mana Sculpt                                        tags=[wizard]  min=3
+
+NO DEPENDENCY TAGS (186 cards)
+----------------------------------------
+  Abigale, Poet Laureate // Heroic Stanza
+  Additive Evolution  (tokens:fractalx1)
+  Adventurous Eater // Have a Bite
+  Ajani's Response  (removal)
+  Ambitious Augmenter  (tokens:fractalx1)
+  Ancestral Anger
+  Antiquities on the Loose  (tokens:spiritx2)
+  Applied Geometry
+  Arnyn, Deathbloom Botanist
+  Artistic Process  (removal, tokens:elementalx1)
+  Ascendant Dustspeaker
+  Banishing Betrayal  (removal)
+  Berta, Wise Extrapolator  (mana:WUBRG, tokens:fractalx1)
+  Biblioplex Tomekeeper
+  Blazing Firesinger // Seething Song  (mana:R)
+  Bogwater Lumaret
+  Borrowed Knowledge
+  Brush Off
+  Burrog Banemaker
+  Burrog Barrage
+  Campus Composer // Aqueous Aria  (tokens:elementalx1)
+  Cauldron of Essence  (removal)
+  Charging Strifeknight
+  Chase Inspiration
+  Cheerful Osteomancer // Raise Dead
+  Chelonian Tackle  (removal)
+  Colossus of the Blood Age
+  Cost of Brilliance
+  Cuboid Colony
+  Daydream
+  Deathcap Glade  (mana:BG)
+  Decorum Dissertation
+  Dig Site Inventory
+  Dina's Guidance
+  Dissection Practice  (removal)
+  Dreamroot Cascade  (mana:UG)
+  Duel Tactics  (removal)
+  Eager Glyphmage  (tokens:inklingx1)
+  Echocasting Symposium
+  Elite Interceptor // Rejoinder
+  Embrace the Paradox
+  Emeritus of Abundance // Regrowth
+  Emeritus of Conflict // Lightning Bolt  (removal)
+  Emeritus of Ideation // Ancestral Recall
+  Emeritus of Truce // Swords to Plowshares  (removal)
+  Emeritus of Woe // Demonic Tutor
+  Emil, Vastlands Roamer  (tokens:fractalx1)
+  Encouraging Aviator // Jump
+  End of the Hunt  (removal)
+  Ennis, Debate Moderator
+  Environmental Scientist
+  Erode  (removal)
+  Essence Scatter
+  Essenceknit Scholar  (tokens:pestx1)
+  Eternal Student  (tokens:inklingx2)
+  Fields of Strife  (mana:WR)
+  Fix What's Broken
+  Flow State
+  Forest  (mana:G)
+  Forum of Amity  (mana:WB)
+  Fractal Anomaly  (tokens:fractalx1)
+  Fractal Mascot
+  Fractal Tender  (tokens:fractalx1)
+  Fractalize
+  Geometer's Arthropod
+  Germination Practicum
+  Glorious Decay  (removal)
+  Goblin Glasswright // Craft with Pride  (mana:WUBRG)
+  Grapple with Death  (removal)
+  Grave Researcher // Reanimate
+  Group Project  (tokens:spiritx1)
+  Growth Curve
+  Harmonized Trio // Brainstorm
+  Harsh Annotation  (removal)
+  Heated Argument  (removal)
+  Homesickness
+  Honorbound Page // Forum's Favor
+  Hungry Graffalon
+  Imperious Inkmage
+  Impractical Joke  (removal)
+  Improvisation Capstone
+  Infirmary Healer // Stream of Life
+  Interjection
+  Island  (mana:U)
+  Jadzi, Steward of Fate // Oracle's Gift  (tokens:fractalx1)
+  Joined Researchers // Secret Rendezvous
+  Killian's Confidence
+  Landscape Painter // Vibrant Idea
+  Last Gasp  (removal)
+  Lluwen, Exchange Student // Pest Friend  (tokens:pestx1)
+  Lorehold Charm
+  Maelstrom Artisan // Rocket Volley
+  Masterful Flourish
+  Mathemagics
+  Matterbending Mage  (removal)
+  Mind into Matter
+  Mind Roots
+  Mindful Biomancer
+  Molten Note
+  Moment of Reckoning  (removal)
+  Mountain  (mana:R)
+  Muse's Encouragement  (tokens:elementalx1)
+  Nita, Forum Conciliator  (removal)
+  Noxious Newt  (mana:G)
+  Oracle's Restoration
+  Orysa, Tide Choreographer
+  Page, Loose Leaf
+  Paradox Gardens  (mana:UG)
+  Paradox Surveyor
+  Pensive Professor
+  Pestbrood Sloth  (tokens:pestx2)
+  Petrified Hamlet
+  Plains  (mana:W)
+  Planar Engineering
+  Pox Plague
+  Practiced Offense
+  Practiced Scrollsmith
+  Prismari Charm  (removal)
+  Procrastinate
+  Proctor's Gaze  (removal)
+  Professor Dellian Fel  (removal)
+  Pterafractyl
+  Pull from the Grave
+  Pursue the Past
+  Quandrix Charm
+  Quick Study
+  Quill-Blade Laureate // Twofold Intent
+  Rabid Attack
+  Ral Zarek, Guest Lecturer
+  Rapier Wit
+  Rapturous Moment  (mana:UR)
+  Rearing Embermare
+  Render Speechless
+  Restoration Seminar
+  Root Manipulation
+  Rubble Rouser  (mana:R)
+  Run Behind  (removal)
+  Scathing Shadelock // Venomous Words
+  Seize the Spoils  (mana:WUBRG)
+  Send in the Pest  (tokens:pestx1)
+  Shattered Acolyte  (removal)
+  Shattered Sanctum  (mana:WB)
+  Shopkeeper's Bane
+  Silverquill Charm  (removal)
+  Skycoach Conductor // All Aboard  (removal)
+  Skycoach Waypoint
+  Slumbering Trudge
+  Sneering Shadewriter
+  Soaring Stoneglider
+  Social Snub
+  Spectacle Summit  (mana:UR)
+  Spellbook Seeker // Careful Study
+  Spiritcall Enthusiast // Scrollboost
+  Splatter Technique  (removal)
+  Stadium Tidalmage
+  Stand Up for Yourself  (removal)
+  Startled Relic Sloth
+  Stirring Honormancer
+  Stone Docent
+  Stormcarved Coast  (mana:UR)
+  Stress Dream  (removal)
+  Strife Scholar // Awaken the Ages  (tokens:spiritx2)
+  Strixhaven Skycoach
+  Studious First-Year // Rampant Growth
+  Summoned Dromedary
+  Sundown Pass  (mana:WR)
+  Suspend Aggression  (removal)
+  Swamp  (mana:B)
+  Tam, Observant Sequencer // Deep Sight
+  Teacher's Pest
+  Tester of the Tangential
+  Textbook Tabulator
+  Titan's Grave  (mana:BG)
+  Tome Blast  (removal)
+  Topiary Lecturer  (mana:G)
+  Traumatic Critique
+  Unsubtle Mockery  (removal)
+  Vastlands Scavenger // Bind to Life
+  Vibrant Outburst  (removal)
+  Vicious Rivalry  (removal)
+  Visionary's Dance  (tokens:elementalx2)
+  Wander Off  (removal)
+  Wild Hypothesis  (tokens:fractalx1)
+  Witherbloom Charm  (removal)
+  Witherbloom, the Balancer
+  Zimone's Experiment
+
+TOKEN SUPPORT (26 cards)
+----------------------------------------
+  Additive Evolution                                 -> [fractal] x1
+  Ambitious Augmenter                                -> [fractal] x1
+  Antiquities on the Loose                           -> [spirit] x2
+  Artistic Process                                   -> [elemental] x1
+  Berta, Wise Extrapolator                           -> [fractal] x1
+  Campus Composer // Aqueous Aria                    -> [elemental] x1
+  Eager Glyphmage                                    -> [inkling] x1
+  Emil, Vastlands Roamer                             -> [fractal] x1
+  Essenceknit Scholar                                -> [pest] x1
+  Eternal Student                                    -> [inkling] x2
+  Fractal Anomaly                                    -> [fractal] x1
+  Fractal Tender                                     -> [fractal] x1
+  Garrison Excavator                                 -> [spirit] x1
+  Group Project                                      -> [spirit] x1
+  Informed Inkwright                                 -> [inkling] x1
+  Jadzi, Steward of Fate // Oracle's Gift            -> [fractal] x1
+  Living History                                     -> [spirit] x1
+  Lluwen, Exchange Student // Pest Friend            -> [pest] x1
+  Moseo, Vein's New Dean                             -> [pest] x1
+  Muse's Encouragement                               -> [elemental] x1
+  Pestbrood Sloth                                    -> [pest] x2
+  Send in the Pest                                   -> [pest] x1
+  Snarl Song                                         -> [fractal] x2
+  Strife Scholar // Awaken the Ages                  -> [spirit] x2
+  Visionary's Dance                                  -> [elemental] x2
+  Wild Hypothesis                                    -> [fractal] x1
