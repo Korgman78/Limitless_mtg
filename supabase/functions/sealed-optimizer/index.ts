@@ -286,12 +286,13 @@ type CardListRow = {
   dependency_scope?: string | null;
   token_support_tags?: string[] | null;
   token_support_count?: number | null;
+  support_tags?: string[] | null;
 };
 
 const CARD_LIST_COLS_BASE =
   "card_name,card_cmc,card_type,rarity,colors,card_cost,oracle_text,is_removal,is_mana_producer,produced_colours,dependency_tags,dependency_min_support,dependency_scope";
 const CARD_LIST_COLS_WITH_TOKEN =
-  `${CARD_LIST_COLS_BASE},token_support_tags,token_support_count`;
+  `${CARD_LIST_COLS_BASE},token_support_tags,token_support_count,support_tags`;
 
 const resolveCardMeta = async (
   supabase: ReturnType<typeof createClient>,
@@ -399,6 +400,7 @@ const rowToMeta = (row: CardListRow, hasNewCols: boolean): CardMeta => ({
   dependency_min_support: hasNewCols ? (row.dependency_min_support ?? null) : null,
   dependency_scope: hasNewCols ? (row.dependency_scope || null) : null,
   token_support_tags: hasNewCols ? (row.token_support_tags || []) : [],
+  support_tags: hasNewCols ? (row.support_tags || []) : [],
   token_support_count: hasNewCols ? (row.token_support_count ?? null) : null,
 });
 

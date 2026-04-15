@@ -29,6 +29,7 @@ export type PoolCard = {
   dependencyScope: string | null;
   tokenSupportTags: string[];
   tokenSupportCount: number;
+  supportTags: string[];
 };
 
 export type DeckCard = { name: string; qty: number };
@@ -193,6 +194,7 @@ export type CardMeta = {
   dependency_scope?: string | null;
   token_support_tags?: string[] | null;
   token_support_count?: number | null;
+  support_tags?: string[] | null;
 };
 
 export type CardStat = { card_name: string; gih_wr: number | null; filter_context: string };
@@ -497,6 +499,7 @@ export const buildPoolCards = (
       dependencyScope: meta?.dependency_scope ?? null,
       tokenSupportTags: (meta?.token_support_tags || []).map((t) => (t || "").toLowerCase().trim()).filter(Boolean),
       tokenSupportCount: Math.max(0, Number(meta?.token_support_count ?? 0) || 0),
+      supportTags: (meta?.support_tags || []).map((t) => (t || "").toLowerCase().trim()).filter(Boolean),
     };
     });
 };
@@ -933,9 +936,14 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
   // Build creature type support map from deck
   const typeSupport = new Map<string, number>();
   let creatureCount = 0;
+  // Generic support tags (lifegain, converge, graveyard_leaves, etc.)
+  const supportTagCounts = new Map<string, number>();
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
     if (!pc) continue;
+    for (const tag of pc.supportTags) {
+      supportTagCounts.set(tag, (supportTagCounts.get(tag) || 0) + dc.qty);
+    }
     const typeLine = pc.type || "";
     if (!typeLine.includes("Creature")) continue;
     creatureCount += dc.qty;
@@ -1025,6 +1033,12 @@ const computeDependencyPenalty = (cards: DeckCard[], poolMap: Map<string, PoolCa
         if (Number.isFinite(threshold)) {
           specialSupports.push(mvGeCount(threshold));
         }
+        continue;
+      }
+      // Generic support_tags fallback (lifegain, converge, graveyard_leaves, etc.)
+      const genericCount = supportTagCounts.get(tag);
+      if (genericCount != null && genericCount > 0) {
+        specialSupports.push(genericCount);
         continue;
       }
       tribalTags.push(tag);
@@ -1129,6 +1143,7 @@ type SupportContext = {
   instantSorceryCount: number;
   nonCreatureSpellCount: number;
   mvGeCounts: Map<number, number>;
+  supportTagCounts: Map<string, number>;
 };
 
 const buildSupportContext = (cards: PoolCard[]): SupportContext => {
@@ -1138,6 +1153,7 @@ const buildSupportContext = (cards: PoolCard[]): SupportContext => {
   let instantSorceryCount = 0;
   let nonCreatureSpellCount = 0;
   const mvGeCounts = new Map<number, number>();
+  const supportTagCounts = new Map<string, number>();
 
   for (const pc of cards) {
     const qty = Math.max(0, pc.qty || 0);
@@ -1152,6 +1168,11 @@ const buildSupportContext = (cards: PoolCard[]): SupportContext => {
       if (cmc >= threshold) {
         mvGeCounts.set(threshold, (mvGeCounts.get(threshold) || 0) + qty);
       }
+    }
+
+    // Generic support tags (lifegain, converge, graveyard_leaves, etc.)
+    for (const tag of pc.supportTags) {
+      supportTagCounts.set(tag, (supportTagCounts.get(tag) || 0) + qty);
     }
 
     if (!typeLine.includes("Creature")) continue;
@@ -1181,6 +1202,7 @@ const buildSupportContext = (cards: PoolCard[]): SupportContext => {
     instantSorceryCount,
     nonCreatureSpellCount,
     mvGeCounts,
+    supportTagCounts,
   };
 };
 
@@ -1223,6 +1245,12 @@ const getDependencySupportForCard = (
       if (Number.isFinite(threshold)) {
         specialSupports.push(ctx.mvGeCounts.get(threshold) || 0);
       }
+      continue;
+    }
+    // Generic support_tags fallback (lifegain, converge, graveyard_leaves, etc.)
+    const genericCount = ctx.supportTagCounts.get(tag);
+    if (genericCount != null && genericCount > 0) {
+      specialSupports.push(genericCount);
       continue;
     }
     tribalTags.push(tag);

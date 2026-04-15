@@ -11,6 +11,7 @@ Corrections cover:
   5. New GRAVEYARD_LEAVES dependency tags — Lorehold RW archetype (9 cards)
   6. Missed INSTANT_SORCERY tags (13 cards)
   7. Removal tag corrections (6 cards)
+  8-10. Support tags — what cards PROVIDE (lifegain, graveyard_leaves, converge)
 """
 
 import requests
@@ -61,6 +62,14 @@ def removal(card_name, is_removal):
         "card_name": card_name,
         "set_code": SET,
         "is_removal": is_removal,
+    }
+
+def sup(card_name, tags):
+    """Support-tags-only correction (what the card PROVIDES)."""
+    return {
+        "card_name": card_name,
+        "set_code": SET,
+        "support_tags": sorted(tags) if tags else [],
     }
 
 # ======================================================================
@@ -303,6 +312,59 @@ removal_corrections = [
 ]
 
 # ======================================================================
+# 8. SUPPORT TAGS — what cards PROVIDE to the deck
+#    These complement the regex-detected support_tags from enrich_card_tags.
+#    The regex catches lifelink, "you gain X life", flashback, multicolored,
+#    and "any color" mana. Below we add cards the regex misses.
+# ======================================================================
+
+lifegain_support = [
+    # --- ETB / triggered lifegain (not caught by regex patterns) ---
+    sup("Adventurous Eater",         ["lifegain"]),  # prepare: gain 1
+    sup("Arnyn, Bane of the Hive",   ["lifegain"]),  # small creature dies: drain 2
+    sup("Cauldron of Essence",       ["lifegain"]),  # creature dies: gain 1
+    sup("Root Manipulation",         ["lifegain"]),  # attack: gain 1
+    sup("Infirmary Healer",          ["lifegain"]),  # prepare: gain X
+    sup("Potioner's Trove",          ["lifegain"]),  # conditional gain 2
+    # --- Pest token producers (Pests have "dies: gain 1 life") ---
+    sup("Essenceknit Scholar",       ["lifegain"]),
+    sup("Lluwen, Foul Propagator",   ["lifegain"]),
+    sup("Moseo, Vein's New Dean",    ["lifegain"]),
+    sup("Pestbrood Sloth",           ["lifegain"]),
+    sup("Send in the Pest",          ["lifegain"]),
+    # --- Cards with conditional lifelink or drain ---
+    sup("Inkshape Demonstrator",     ["lifegain"]),  # repartee: lifelink
+    sup("Melancholic Poet",          ["lifegain"]),  # repartee: drain 1
+    sup("Professor Dellian Fel",     ["lifegain"]),  # +2: gain 3
+]
+
+graveyard_leaves_support = [
+    # --- Cards that exile or return from your GY (not flashback) ---
+    sup("Rubble Rouser",             ["graveyard_leaves"]),  # exile from GY for mana
+    sup("Postmortem Professor",      ["graveyard_leaves"]),  # exile spell from GY
+    sup("Practiced Scrollsmith",     ["graveyard_leaves"]),  # exile card from GY
+    sup("Startled Relic Sloth",      ["graveyard_leaves"]),  # exile card from GY
+    sup("Ascendant Dustspeaker",     ["graveyard_leaves"]),  # exile card from GY
+    sup("Soaring Stoneglider",       ["graveyard_leaves"]),  # exile 2 from GY as alt cost
+    sup("Heated Argument",           ["graveyard_leaves"]),  # may exile from GY
+    sup("Lorehold Charm",            ["graveyard_leaves"]),  # return from GY
+    sup("Cheerful Osteomancer",      ["graveyard_leaves"]),  # return from GY
+    sup("Stone Docent",              ["graveyard_leaves"]),  # exile from GY
+]
+
+converge_support = [
+    # --- Mana fixers that help cast converge spells with 3+ colors ---
+    # (Cards that produce "any color" already caught by regex.)
+    sup("Goblin Glasswright",        ["converge"]),  # treasure = any color
+    sup("Hydro-Channeler",           ["converge"]),  # adds any color
+    sup("Berta, Foul Alchemist",     ["converge"]),  # treasure maker
+    sup("Seize the Spoils",          ["converge"]),  # treasure maker
+    sup("Strixhaven Skycoach",       ["converge"]),  # adds WU
+    sup("Environmental Scientist",   ["converge"]),  # fetches basic
+    sup("Great Hall of Strixhaven",  ["converge"]),  # any-color land
+]
+
+# ======================================================================
 # APPLY
 # ======================================================================
 
@@ -333,10 +395,15 @@ if __name__ == "__main__":
     upsert_batch(graveyard_leaves_deps,      "5. Graveyard leaves (Lorehold)")
     upsert_batch(missed_spells_deps,         "6. Instant/sorcery manques")
     upsert_batch(removal_corrections,        "7. Removal corrections")
+    upsert_batch(lifegain_support,           "8. Support: lifegain")
+    upsert_batch(graveyard_leaves_support,   "9. Support: graveyard_leaves")
+    upsert_batch(converge_support,           "10. Support: converge")
 
     n = (len(false_positive_removals) + len(false_positive_fixes)
          + len(lifegain_deps) + len(converge_deps)
          + len(graveyard_leaves_deps) + len(missed_spells_deps)
-         + len(removal_corrections))
+         + len(removal_corrections)
+         + len(lifegain_support) + len(graveyard_leaves_support)
+         + len(converge_support))
 
     print(f"\nTotal: {n} corrections en {round(time.time() - start, 2)}s")

@@ -117,6 +117,19 @@ GENERIC_THRESHOLD_PATTERNS = [
     (re.compile(r'mana value\s+(\d+)\s+or greater', re.IGNORECASE), "mv_ge", 4),
 ]
 
+# --- SUPPORT TAG PATTERNS (what a card PROVIDES to the deck) ---
+SUPPORT_TAG_PATTERNS = [
+    # Lifegain enablers
+    (re.compile(r'\blifelink\b', re.IGNORECASE), "lifegain"),
+    (re.compile(r'\byou gain \d+ life\b', re.IGNORECASE), "lifegain"),
+    (re.compile(r'\bgains? lifelink\b', re.IGNORECASE), "lifegain"),
+    (re.compile(r'\beach opponent loses? \d+ life and you gain\b', re.IGNORECASE), "lifegain"),
+    # Graveyard-leaves enablers
+    (re.compile(r'\bflashback\b', re.IGNORECASE), "graveyard_leaves"),
+    (re.compile(r'\bexile .{0,40}? from your graveyard\b', re.IGNORECASE), "graveyard_leaves"),
+    (re.compile(r'\breturn .{0,40}? from your graveyard\b', re.IGNORECASE), "graveyard_leaves"),
+]
+
 # ==============================================================================
 # 2. SCRYFALL FETCH
 # ==============================================================================
@@ -203,6 +216,11 @@ def _extract_card_data(c, set_code, known_creature_types):
     is_removal = _detect_removal(all_text)
     dependency_tags, dependency_min_support, dependency_scope = _detect_dependencies(all_text)
     token_support_tags, token_support_count = _detect_token_support(all_text, known_creature_types)
+    # Card colors for multicolored detection
+    card_colors = c.get('colors', [])
+    if not card_colors and 'card_faces' in c:
+        card_colors = c['card_faces'][0].get('colors', []) if c['card_faces'] else []
+    support_tags = _detect_support_tags(all_text, c.get('mana_cost', ''), card_colors)
     is_fixer_only = _detect_fixer_only(
         name=name,
         type_line=type_line,
@@ -226,6 +244,7 @@ def _extract_card_data(c, set_code, known_creature_types):
         "dependency_scope": dependency_scope,
         "token_support_tags": token_support_tags,
         "token_support_count": token_support_count,
+        "support_tags": support_tags,
     }
 
 
@@ -418,6 +437,31 @@ def _detect_token_support(oracle_text, known_creature_types):
 
     return sorted(tags), max(1, total_tokens)
 
+
+def _detect_support_tags(oracle_text, mana_cost, colors):
+    """
+    Detect what a card PROVIDES to the deck (generic support tags).
+    Used by the optimizer to match against dependency_tags generically.
+    """
+    tags = set()
+    text = (oracle_text or "").lower()
+
+    # Lifegain enablers
+    for pattern, tag in SUPPORT_TAG_PATTERNS:
+        if pattern.search(text):
+            tags.add(tag)
+
+    # Multicolored: card has 2+ colors
+    if colors and len(colors) >= 2:
+        tags.add("multicolored")
+
+    # Converge enablers: mana producers that make 2+ different colors or "any color"
+    if "add one mana of any color" in text or "add one mana of any type" in text:
+        tags.add("converge")
+
+    return sorted(tags) if tags else []
+
+
 # ==============================================================================
 # 3. UPSERT SUPABASE
 # ==============================================================================
@@ -496,6 +540,7 @@ def print_stats(cards):
     mana_cards = [c for c in cards if c['is_mana_producer']]
     dependency_cards = [c for c in cards if c.get('dependency_tags')]
     token_support_cards = [c for c in cards if c.get('token_support_tags')]
+    support_tag_cards = [c for c in cards if c.get('support_tags')]
     hard_dependency_cards = [c for c in dependency_cards if c.get('dependency_min_support') is not None]
     other_dependency_cards = [c for c in dependency_cards if c.get('dependency_min_support') is None]
 
@@ -507,6 +552,7 @@ def print_stats(cards):
     print(f"Mana producers: {len(mana_cards)}")
     print(f"Dependency tags: {len(dependency_cards)}")
     print(f"Token support tags: {len(token_support_cards)}")
+    print(f"Support tags  : {len(support_tag_cards)}")
     print(f"  - hard_dependency (min_support set): {len(hard_dependency_cards)}")
     print(f"  - no-threshold (to clean): {len(other_dependency_cards)}")
 
@@ -531,6 +577,11 @@ def print_stats(cards):
         tags = ",".join(c.get("token_support_tags") or [])
         count = c.get("token_support_count")
         print(f"  {c['card_name']} -> [{tags}] count={count}")
+
+    print(f"\n--- Support Tags ({len(support_tag_cards)}) ---")
+    for c in sorted(support_tag_cards, key=lambda x: x['card_name']):
+        tags = ",".join(c.get("support_tags") or [])
+        print(f"  {c['card_name']} -> [{tags}]")
 
 # ==============================================================================
 # MAIN
