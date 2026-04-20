@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -34,8 +34,9 @@ import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardI
 import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
-import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay } from './components/Overlays';
+import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, SwipeableOverlay } from './components/Overlays';
 import { FormatComparison, PressReview, FormatBlueprint, TrophyDecks } from './components/Features';
+import { MetagamePulsePopup } from './components/Features/MetagamePulse/MetagamePulsePopup';
 import { SearchAutocomplete } from './components/Common';
 
 // Memoized Sidebar component to prevent unnecessary re-renders
@@ -227,6 +228,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
+  const [showPulse, setShowPulse] = useState<boolean>(false);
   const [pendingCardView, setPendingCardView] = useState<{ cardName: string; format: string } | null>(null);
 
   // --- Error State ---
@@ -555,6 +557,11 @@ export default function MTGLimitedApp(): React.ReactElement {
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={handleCloseDeck} onCardClick={handleCardSelect} />}
         {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
+        {showPulse && (
+          <SwipeableOverlay key="pulse-overlay" onClose={() => setShowPulse(false)}>
+            <MetagamePulsePopup activeSet={activeSet} activeFormat={activeFormat} />
+          </SwipeableOverlay>
+        )}
       </AnimatePresence>
 
       <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onPrefetch={prefetchTabData} />
@@ -665,6 +672,16 @@ export default function MTGLimitedApp(): React.ReactElement {
                   </div>
                 </div>
 
+                {/* Metagame Pulse button — desktop: above charts */}
+                <button
+                  onClick={() => setShowPulse(true)}
+                  className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold text-sm hover:border-indigo-400/50 hover:from-indigo-500/25 hover:via-purple-500/15 hover:to-indigo-500/25 transition-all shadow-[0_0_20px_rgba(99,102,241,0.1)] hover:shadow-[0_0_24px_rgba(99,102,241,0.2)] group"
+                >
+                  <Activity size={16} className="text-indigo-400 group-hover:animate-pulse" />
+                  <span>Metagame Pulse</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Live</span>
+                </button>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className={`${chartMode === 'meta' ? 'block' : 'hidden'} lg:block h-64`}>
                     <MetagamePieChart decks={decks} totalGames={totalGames} globalMeanWR={globalMeanWR} />
@@ -678,6 +695,16 @@ export default function MTGLimitedApp(): React.ReactElement {
                     </button>
                   </div>
                 </div>
+
+                {/* Metagame Pulse button — mobile: above archetypes */}
+                <button
+                  onClick={() => setShowPulse(true)}
+                  className="md:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold text-sm active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(99,102,241,0.1)]"
+                >
+                  <Activity size={16} className="text-indigo-400" />
+                  <span>Metagame Pulse</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Live</span>
+                </button>
 
                 {/* Section Header: Archetype Breakdown */}
                 <div className="relative pt-3">

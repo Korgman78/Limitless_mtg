@@ -2,8 +2,8 @@ name: Daily Data Update
 
 on:
   schedule:
-    # Se lance tous les 2 jours à 15:00 UTC
-    - cron: '0 15 */2 * *'
+    # Se lance tous les jours à 15:00 UTC
+    - cron: '0 15 * * *'
   # Permet de lancer manuellement depuis GitHub pour tester
   workflow_dispatch:
 

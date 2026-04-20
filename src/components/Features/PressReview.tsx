@@ -219,7 +219,8 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
   const filteredArticles = useMemo(() => {
     if (!articles) return [];
 
-    let filtered = articles;
+    // Exclude Meta Pulse articles (replaced by Metagame Pulse in the decks tab)
+    let filtered = articles.filter((a: Article) => a.channel_name !== 'Meta Pulse');
 
     // Déduplication par video_url (idempotence) - garde le plus ancien pour préserver les votes
     const videoUrlToKeep = new Map<string, Article>();

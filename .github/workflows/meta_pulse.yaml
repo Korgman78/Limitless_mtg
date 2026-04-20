@@ -1,9 +1,8 @@
-name: Meta Pulse Generator
+name: Meta Pulse Generator (DISABLED — replaced by Metagame Pulse)
 
 on:
-  schedule:
-    # Samedi a 10:00 UTC (hebdomadaire)
-    - cron: '0 10 * * 6'
+  # schedule:
+  #   - cron: '0 10 * * 6'
   workflow_dispatch:
 
 jobs:

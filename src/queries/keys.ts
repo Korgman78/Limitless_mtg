@@ -15,4 +15,6 @@ export const queryKeys = {
   skeletons: (set: string, format: string) => ['skeletons', set, format] as const,
   cardSynergies: (set: string, format: string, cardName: string) =>
     ['cardSynergies', set, format, cardName] as const,
+  metagamePulse: (set: string, format: string, window: string) =>
+    ['metagamePulse', set, format, window] as const,
 }
