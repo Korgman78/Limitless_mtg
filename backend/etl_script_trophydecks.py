@@ -12,7 +12,7 @@ from pathlib import Path
 # ==============================================================================
 
 # Sets et formats à traiter (modifiable)
-TARGET_SET_CODES = ["TMT"]  # Ex: ["FDN", "DSK"] ou [] pour tous les sets actifs
+TARGET_SET_CODES = ["SOS"]  # Ex: ["FDN", "DSK"] ou [] pour tous les sets actifs
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]  # Formats à scraper
 
 # Date cible (None = dernières 24h, ou "YYYY-MM-DD" pour une date spécifique)
