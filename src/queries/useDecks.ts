@@ -16,7 +16,7 @@ export function useDecks(activeSet: string, activeFormat: string) {
 
       const { data, error } = await supabase
         .from('archetype_stats')
-        .select('*')
+        .select('id, archetype_name, colors, win_rate, games_count, win_rate_history')
         .eq('set_code', activeSet)
         .eq('format', activeFormat)
         .order('win_rate', { ascending: false })
@@ -59,5 +59,6 @@ export function useDecks(activeSet: string, activeFormat: string) {
       return { decks: formattedDecks, totalGames }
     },
     enabled: !!activeSet,
+    staleTime: 5 * 60_000,
   })
 }

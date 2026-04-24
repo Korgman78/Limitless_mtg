@@ -55,7 +55,7 @@ export function useCardCrossPerf(
         // Fetch all card stats across archetypes
         const { data, error: dataError } = await supabase
           .from('card_stats')
-          .select('*')
+          .select('filter_context, gih_wr, img_count')
           .eq('set_code', activeSet)
           .eq('card_name', cardName)
           .eq('format', activeFormat)
@@ -107,5 +107,6 @@ export function useCardCrossPerf(
       }
     },
     enabled: !!cardName && !!activeSet,
+    staleTime: 5 * 60_000,
   })
 }

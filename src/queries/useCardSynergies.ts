@@ -27,13 +27,13 @@ export function useCardSynergies(
                 const [resultA, resultB] = await Promise.all([
                     supabase
                         .from('synergy_scores')
-                        .select('*')
+                        .select('card_a, card_b, synergy_score, lift_score, confidence_a_to_b, confidence_b_to_a')
                         .eq('set_code', activeSet)
                         .eq('format', activeFormat)
                         .eq('card_a', cardName),
                     supabase
                         .from('synergy_scores')
-                        .select('*')
+                        .select('card_a, card_b, synergy_score, lift_score, confidence_a_to_b, confidence_b_to_a')
                         .eq('set_code', activeSet)
                         .eq('format', activeFormat)
                         .eq('card_b', cardName)
@@ -86,5 +86,6 @@ export function useCardSynergies(
             }
         },
         enabled: !!cardName && !!activeSet && !!activeFormat,
+        staleTime: 5 * 60_000,
     })
 }

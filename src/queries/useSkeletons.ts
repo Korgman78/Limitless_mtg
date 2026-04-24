@@ -81,5 +81,6 @@ export function useSkeletons(activeSet: string, activeFormat: string) {
             return data || []
         },
         enabled: !!activeSet,
+        staleTime: 5 * 60_000,
     })
 }

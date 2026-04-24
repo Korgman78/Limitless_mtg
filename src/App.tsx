@@ -359,15 +359,15 @@ export default function MTGLimitedApp(): React.ReactElement {
     }
 
     if (colorFilters.length > 0) {
+      const wantsMulti = colorFilters.includes('M');
+      const wantsColorless = colorFilters.includes('C');
+      const monoFilters = colorFilters.filter((f: string) => 'WUBRG'.includes(f));
       res = res.filter((c: Card) => {
         const cColors = extractColors(c.colors);
-        if (colorFilters.includes('M') && cColors.length > 1) return true;
-        if (colorFilters.includes('C') && cColors.length === 0) return true;
-        const monoFilters = colorFilters.filter((f: string) => ['W', 'U', 'B', 'R', 'G'].includes(f));
-        if (monoFilters.length > 0) {
-          for (let f of monoFilters) {
-            if (cColors.includes(f)) return true;
-          }
+        if (wantsMulti && cColors.length > 1) return true;
+        if (wantsColorless && cColors.length === 0) return true;
+        for (const f of monoFilters) {
+          if (cColors.includes(f)) return true;
         }
         return false;
       });

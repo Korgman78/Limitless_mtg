@@ -25,7 +25,7 @@ export function useCards(activeSet: string, activeFormat: string, archetypeFilte
           .single(),
         supabase
           .from('card_stats')
-          .select('*')
+          .select('id, card_name, rarity, colors, gih_wr, alsa, img_count, win_rate_history')
           .eq('set_code', activeSet)
           .eq('filter_context', archetypeFilter)
           .eq('format', activeFormat)
@@ -50,5 +50,6 @@ export function useCards(activeSet: string, activeFormat: string, archetypeFilte
       return { cards: formattedCards, globalMeanWR }
     },
     enabled: !!activeSet,
+    staleTime: 5 * 60_000,
   })
 }
