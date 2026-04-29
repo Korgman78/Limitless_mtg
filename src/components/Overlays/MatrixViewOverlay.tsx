@@ -156,6 +156,30 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
     return { avgWR, minWR, maxWR, avgALSA };
   }, [cards, decks, archetypeFilter, globalMeanWR]);
 
+  // Pearson correlation WR / ALSA (Draft only)
+  const correlation = useMemo(() => {
+    if (!isDraft) return null;
+    const valid = filteredCards.filter(c => c.alsa != null);
+    const n = valid.length;
+    if (n < 3) return null;
+
+    const wrs = valid.map(c => c.gih_wr!);
+    const alsas = valid.map(c => c.alsa!);
+    const meanWR = wrs.reduce((s, v) => s + v, 0) / n;
+    const meanALSA = alsas.reduce((s, v) => s + v, 0) / n;
+
+    let num = 0, denWR = 0, denALSA = 0;
+    for (let i = 0; i < n; i++) {
+      const dw = wrs[i] - meanWR;
+      const da = alsas[i] - meanALSA;
+      num += dw * da;
+      denWR += dw * dw;
+      denALSA += da * da;
+    }
+    const den = Math.sqrt(denWR * denALSA);
+    return den === 0 ? null : num / den;
+  }, [filteredCards, isDraft]);
+
   // Matrix bounds
   const minALSA = 1.25;
   const maxALSA = 8.75;
@@ -326,9 +350,37 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
           <Grid3X3 className="text-indigo-400" size={24} />
           <div>
             <h2 className="text-lg font-black text-white">Matrix View</h2>
-            <p className="text-xs text-slate-500">
-              {activeFormat} • {archetypeFilter === 'Global' ? 'Global' : archetypeFilter} • {filteredCards.length} cards
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-slate-500">
+                {activeFormat} • {archetypeFilter === 'Global' ? 'Global' : archetypeFilter} • {filteredCards.length} cards
+              </p>
+              {correlation !== null && (
+                <Tooltip content={
+                  <div className="text-center max-w-[220px]">
+                    <div className="text-[10px] font-bold text-white mb-1">WR / ALSA Correlation</div>
+                    <div className="text-[9px] text-slate-300">
+                      {correlation < -0.67
+                        ? 'Cards are picked very consistently with their win rate'
+                        : correlation < -0.63
+                          ? 'Cards are picked fairly consistently with their win rate'
+                          : correlation < -0.58
+                            ? 'Pick order moderately reflects win rate'
+                            : 'Pick order weakly reflects win rate'}
+                    </div>
+                    <div className="text-[8px] text-slate-500 mt-1">Calibrated on {filteredCards.filter(c => c.alsa != null).length} cards</div>
+                  </div>
+                }>
+                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded cursor-help ${
+                    correlation < -0.67 ? 'bg-emerald-500/20 text-emerald-400'
+                    : correlation < -0.63 ? 'bg-indigo-500/20 text-indigo-400'
+                    : correlation < -0.58 ? 'bg-yellow-500/20 text-yellow-400'
+                    : 'bg-orange-500/20 text-orange-400'
+                  }`}>
+                    r = {correlation.toFixed(2)}
+                  </span>
+                </Tooltip>
+              )}
+            </div>
           </div>
         </div>
         <button
