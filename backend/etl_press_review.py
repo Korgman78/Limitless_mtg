@@ -172,12 +172,17 @@ def fetch_transcript_rapidapi(video_id):
     try:
         resp = requests.get(url, headers=headers, timeout=30)
         if resp.status_code != 200:
+            print(f"    [WARN] RapidAPI {resp.status_code}: {resp.text[:200]}")
             return None
         data = resp.json()
         subtitles = data.get("data", [])
+        if not subtitles:
+            print(f"    [WARN] RapidAPI returned no subtitles for {video_id}")
+            return None
         full_text = " ".join(s.get("subtitle", "") for s in subtitles if s.get("subtitle"))
         return full_text[:MAX_TRANSCRIPT_CHARS] if full_text.strip() else None
-    except Exception:
+    except Exception as e:
+        print(f"    [WARN] RapidAPI error: {e}")
         return None
 
 
