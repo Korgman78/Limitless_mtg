@@ -175,11 +175,21 @@ def fetch_transcript_rapidapi(video_id):
             print(f"    [WARN] RapidAPI {resp.status_code}: {resp.text[:200]}")
             return None
         data = resp.json()
-        subtitles = data.get("data", [])
-        if not subtitles:
+        # RapidAPI returns either {"data": [{"subtitle": ...}, ...]}
+        # or {"data": [["text", start, end], ...]} depending on version
+        raw = data.get("data", data) if isinstance(data, dict) else data
+        if not raw:
             print(f"    [WARN] RapidAPI returned no subtitles for {video_id}")
             return None
-        full_text = " ".join(s.get("subtitle", "") for s in subtitles if s.get("subtitle"))
+        parts = []
+        for item in raw:
+            if isinstance(item, dict):
+                parts.append(item.get("subtitle", "") or item.get("text", ""))
+            elif isinstance(item, list) and len(item) > 0:
+                parts.append(str(item[0]))
+            elif isinstance(item, str):
+                parts.append(item)
+        full_text = " ".join(p for p in parts if p)
         return full_text[:MAX_TRANSCRIPT_CHARS] if full_text.strip() else None
     except Exception as e:
         print(f"    [WARN] RapidAPI error: {e}")
