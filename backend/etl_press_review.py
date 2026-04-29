@@ -42,6 +42,7 @@ load_dotenv(dotenv_path=env_path)
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("VITE_SUPABASE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 HEADERS_SUPABASE = {
     "apikey": SUPABASE_KEY,
@@ -147,16 +148,55 @@ def extract_video_id(entry):
     return None
 
 
-def fetch_transcript(video_id):
+def fetch_transcript_free(video_id):
     """Fetch YouTube transcript using free youtube-transcript-api."""
     try:
         api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=["en", "en-US"])
         full_text = " ".join(snippet.text for snippet in transcript)
         return full_text[:MAX_TRANSCRIPT_CHARS]
-    except Exception as e:
-        print(f"    [WARN] No transcript for {video_id}: {e}")
+    except Exception:
         return None
+
+
+def fetch_transcript_rapidapi(video_id):
+    """Fallback: fetch transcript via RapidAPI (works from cloud IPs)."""
+    url = (
+        "https://youtube-captions-transcript-subtitles-video-combiner"
+        f".p.rapidapi.com/download-all/{video_id}"
+    )
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": "youtube-captions-transcript-subtitles-video-combiner.p.rapidapi.com",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        subtitles = data.get("data", [])
+        full_text = " ".join(s.get("subtitle", "") for s in subtitles if s.get("subtitle"))
+        return full_text[:MAX_TRANSCRIPT_CHARS] if full_text.strip() else None
+    except Exception:
+        return None
+
+
+def fetch_transcript(video_id):
+    """Fetch transcript: try free lib first, fallback to RapidAPI if blocked."""
+    # Try free library first
+    text = fetch_transcript_free(video_id)
+    if text:
+        return text
+
+    # Fallback to RapidAPI (works from cloud IPs)
+    if RAPIDAPI_KEY:
+        print(f"    [INFO] Free transcript blocked, trying RapidAPI...")
+        text = fetch_transcript_rapidapi(video_id)
+        if text:
+            return text
+
+    print(f"    [WARN] No transcript for {video_id}")
+    return None
 
 
 def call_gemini(prompt):
