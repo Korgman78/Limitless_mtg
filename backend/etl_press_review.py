@@ -175,21 +175,41 @@ def fetch_transcript_rapidapi(video_id):
             print(f"    [WARN] RapidAPI {resp.status_code}: {resp.text[:200]}")
             return None
         data = resp.json()
-        # RapidAPI returns either {"data": [{"subtitle": ...}, ...]}
-        # or {"data": [["text", start, end], ...]} depending on version
-        raw = data.get("data", data) if isinstance(data, dict) else data
-        if not raw:
+
+        # Extract all text strings from the response regardless of nesting
+        def extract_texts(obj):
+            """Recursively extract subtitle text from any nested structure."""
+            texts = []
+            if isinstance(obj, str):
+                texts.append(obj)
+            elif isinstance(obj, dict):
+                for key in ("subtitle", "text", "content"):
+                    val = obj.get(key)
+                    if isinstance(val, str) and val.strip():
+                        texts.append(val)
+                        break
+                    elif isinstance(val, list):
+                        texts.extend(extract_texts(val))
+                        break
+            elif isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, str):
+                        texts.append(item)
+                    elif isinstance(item, dict):
+                        texts.extend(extract_texts(item))
+                    elif isinstance(item, list):
+                        # Could be [text, start, end] or nested list
+                        if item and isinstance(item[0], str):
+                            texts.append(item[0])
+                        else:
+                            texts.extend(extract_texts(item))
+            return texts
+
+        parts = extract_texts(data)
+        if not parts:
             print(f"    [WARN] RapidAPI returned no subtitles for {video_id}")
             return None
-        parts = []
-        for item in raw:
-            if isinstance(item, dict):
-                parts.append(item.get("subtitle", "") or item.get("text", ""))
-            elif isinstance(item, list) and len(item) > 0:
-                parts.append(str(item[0]))
-            elif isinstance(item, str):
-                parts.append(item)
-        full_text = " ".join(p for p in parts if p)
+        full_text = " ".join(parts)
         return full_text[:MAX_TRANSCRIPT_CHARS] if full_text.strip() else None
     except Exception as e:
         print(f"    [WARN] RapidAPI error: {e}")
