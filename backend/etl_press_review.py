@@ -4,6 +4,7 @@ import re
 import json
 import time
 import feedparser
+from difflib import get_close_matches
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
@@ -122,7 +123,9 @@ SPECIFIC JSON INSTRUCTIONS:
     9-10: Master level, reveals hidden meta-shifts or advanced pro-level strategies.
     BE CRITICAL: If the video is too generic or too specific (only focused on gameplay), stay below 6.
 
-- set_tag: Identify the set code. Known codes: FIN, VOW, NEO, TLA, EOE, TDM, MH3, OTJ, ECL, TMT, SOS. If unknown, use "UNKNOWN".
+- set_tag: Identify the set code from this list of ACTIVE sets:
+{active_sets}
+If the video does not match any of these sets, use "UNKNOWN".
 - cards: List 5-20 most important cards. Use official US English names only. Fix transcript typos using your internal MTG database knowledge."""
 
 
@@ -208,13 +211,83 @@ def parse_llm_response(response):
         return response.strip(), None
 
 
-def build_prompt(transcript, video_title, channel_name):
+def build_prompt(transcript, video_title, channel_name, active_sets):
     """Build the full Gemini prompt from template."""
+    sets_str = "\n".join(f'  {code} = "{name}"' for code, name in active_sets)
     return GEMINI_PROMPT_TEMPLATE.format(
         transcript=transcript,
         video_title=video_title,
         channel_name=channel_name,
+        active_sets=sets_str,
     )
+
+
+# ==============================================================================
+# 2b. SUPABASE DATA FETCHERS
+# ==============================================================================
+
+def fetch_active_sets():
+    """Fetch active sets from Supabase (code + name)."""
+    url = f"{SUPABASE_URL}/rest/v1/sets?select=code,name&active=eq.true"
+    resp = requests.get(url, headers=HEADERS_SUPABASE)
+    if resp.status_code != 200:
+        print(f"  [WARN] Could not fetch sets ({resp.status_code})")
+        return []
+    return [(row["code"], row["name"]) for row in resp.json()]
+
+
+def fetch_card_names(set_codes):
+    """Fetch all card names from card_list for given sets. Returns a set of lowercase names + a mapping."""
+    all_cards = {}  # lowercase -> official name
+    for code in set_codes:
+        offset = 0
+        page_size = 1000
+        while True:
+            url = (
+                f"{SUPABASE_URL}/rest/v1/card_list"
+                f"?select=card_name&set_code=eq.{code}"
+                f"&limit={page_size}&offset={offset}"
+            )
+            resp = requests.get(url, headers=HEADERS_SUPABASE)
+            if resp.status_code != 200:
+                break
+            rows = resp.json()
+            for row in rows:
+                name = row["card_name"]
+                all_cards[name.lower()] = name
+            if len(rows) < page_size:
+                break
+            offset += page_size
+    return all_cards
+
+
+def fuzzy_match_cards(llm_cards, known_cards, cutoff=0.7):
+    """Match LLM-extracted card names against known card names.
+    Returns deduplicated list of corrected official names."""
+    if not known_cards:
+        return llm_cards
+
+    known_lower = list(known_cards.keys())
+    matched = []
+    seen = set()
+
+    for card in llm_cards:
+        low = card.lower()
+        # Exact match
+        if low in known_cards:
+            official = known_cards[low]
+        else:
+            # Fuzzy match
+            close = get_close_matches(low, known_lower, n=1, cutoff=cutoff)
+            if close:
+                official = known_cards[close[0]]
+            else:
+                official = card  # keep original if no match
+        if official not in seen:
+            matched.append(official)
+            seen.add(official)
+
+    return matched
 
 
 # ==============================================================================
@@ -296,7 +369,7 @@ def fetch_existing_urls():
 # 5. PIPELINE
 # ==============================================================================
 
-def process_video(entry):
+def process_video(entry, active_sets, known_cards):
     """Full pipeline for a single video: transcript → LLM → record."""
     video_id = entry["video_id"]
     print(f"\n  Processing: {entry['title'][:70]}")
@@ -309,7 +382,7 @@ def process_video(entry):
     print(f"    Transcript: {len(transcript)} chars")
 
     # Gemini
-    prompt = build_prompt(transcript, entry["title"], entry["channel_name"])
+    prompt = build_prompt(transcript, entry["title"], entry["channel_name"], active_sets)
     response = call_gemini(prompt)
     if not response:
         return None
@@ -323,7 +396,13 @@ def process_video(entry):
     tags = metadata.get("tags", []) if metadata else []
     strategic_score = metadata.get("strategic_score", 5) if metadata else 5
     set_tag = metadata.get("set_tag", "") if metadata else ""
-    cards = metadata.get("cards", []) if metadata else []
+    raw_cards = metadata.get("cards", []) if metadata else []
+
+    # Fuzzy match card names against DB
+    cards = fuzzy_match_cards(raw_cards, known_cards)
+    if raw_cards and cards != raw_cards:
+        fixed = sum(1 for a, b in zip(raw_cards, cards) if a != b)
+        print(f"    Cards: {len(cards)} matched ({fixed} corrected)")
 
     try:
         strategic_score = max(1, min(10, int(strategic_score)))
@@ -364,6 +443,71 @@ def insert_article(record):
 # 7. MAIN
 # ==============================================================================
 
+def clean_legacy_articles():
+    """One-time cleanup: remove JSON blocks stuck in summary of old articles."""
+    print("\n  Cleaning legacy articles (JSON in summary)...")
+
+    rows = []
+    offset = 0
+    page_size = 1000
+    while True:
+        url = (
+            f"{SUPABASE_URL}/rest/v1/press_articles"
+            f"?select=id,summary&summary=not.is.null"
+            f"&limit={page_size}&offset={offset}"
+        )
+        resp = requests.get(url, headers=HEADERS_SUPABASE)
+        if resp.status_code != 200:
+            print(f"  [ERR] Legacy fetch failed ({resp.status_code})")
+            return
+        page = resp.json()
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+
+    print(f"  Found {len(rows)} articles to check")
+    cleaned = 0
+
+    for row in rows:
+        summary = row.get("summary", "")
+        if not summary:
+            continue
+
+        # Check if summary contains a JSON block that should be removed
+        fence_match = re.search(r'```json\s*\{[\s\S]*?\}\s*```', summary)
+        raw_match = re.search(r'\n\{[\s\S]*"tags"[\s\S]*\}\s*$', summary)
+
+        if not fence_match and not raw_match:
+            continue
+
+        # Strip the JSON block
+        if fence_match:
+            clean = summary[:fence_match.start()].strip()
+        else:
+            clean = summary[:raw_match.start()].strip()
+
+        # Remove trailing markdown artifacts
+        clean = re.sub(r'[\s`*_-]+$', '', clean).strip()
+
+        if clean == summary:
+            continue
+
+        # Update in Supabase
+        patch_url = f"{SUPABASE_URL}/rest/v1/press_articles?id=eq.{row['id']}"
+        patch_resp = requests.patch(
+            patch_url,
+            json={"summary": clean},
+            headers=HEADERS_SUPABASE,
+        )
+        if patch_resp.status_code in (200, 204):
+            cleaned += 1
+        else:
+            print(f"    [ERR] Patch failed for {row['id']}: {patch_resp.status_code}")
+
+    print(f"  Cleaned {cleaned}/{len(rows)} articles")
+
+
 def main():
     print("=" * 60)
     print("  PRESS REVIEW ETL")
@@ -375,6 +519,13 @@ def main():
     if not GEMINI_API_KEY:
         print("[ERR] Missing GEMINI_API_KEY")
         return
+
+    # 0. Load reference data from DB
+    print("\n  Loading reference data...")
+    active_sets = fetch_active_sets()
+    print(f"  Active sets: {', '.join(code for code, _ in active_sets)}")
+    known_cards = fetch_card_names([code for code, _ in active_sets])
+    print(f"  Known cards: {len(known_cards)}")
 
     # 1. RSS
     entries = fetch_rss_entries()
@@ -395,7 +546,7 @@ def main():
     # 3. Process
     inserted = 0
     for i, entry in enumerate(new_entries):
-        record = process_video(entry)
+        record = process_video(entry, active_sets, known_cards)
         if record:
             if insert_article(record):
                 inserted += 1
