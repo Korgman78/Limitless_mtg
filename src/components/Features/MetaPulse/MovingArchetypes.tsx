@@ -61,13 +61,16 @@ const ArchetypeRow: React.FC<{
 };
 
 export const MovingArchetypes: React.FC<Props> = ({ rising, falling }) => {
-  if (rising.length === 0 && falling.length === 0) return null;
+  const filteredRising = useMemo(() => rising.filter(a => a.meta_share >= 0.01), [rising]);
+  const filteredFalling = useMemo(() => falling.filter(a => a.meta_share >= 0.01), [falling]);
+
+  if (filteredRising.length === 0 && filteredFalling.length === 0) return null;
 
   const maxShare = useMemo(() => {
-    const all = [...rising, ...falling];
+    const all = [...filteredRising, ...filteredFalling];
     if (all.length === 0) return 0;
     return all.reduce((acc, cur) => Math.max(acc, cur.meta_share || 0), 0);
-  }, [rising, falling]);
+  }, [filteredRising, filteredFalling]);
 
   return (
     <div className="space-y-3 p-4 bg-slate-900/45 border border-slate-800 rounded-xl">
@@ -83,7 +86,7 @@ export const MovingArchetypes: React.FC<Props> = ({ rising, falling }) => {
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
             <TrendingUp className="w-3.5 h-3.5" /> Rising
           </div>
-          {rising.length > 0 ? rising.map((arch, i) => (
+          {filteredRising.length > 0 ? filteredRising.map((arch, i) => (
             <ArchetypeRow key={arch.colors} arch={arch} isRising index={i} maxShare={maxShare} />
           )) : <div className="text-xs text-slate-500 p-2">No rising archetype this period.</div>}
         </div>
@@ -92,7 +95,7 @@ export const MovingArchetypes: React.FC<Props> = ({ rising, falling }) => {
           <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
             <TrendingDown className="w-3.5 h-3.5" /> Falling
           </div>
-          {falling.length > 0 ? falling.map((arch, i) => (
+          {filteredFalling.length > 0 ? filteredFalling.map((arch, i) => (
             <ArchetypeRow key={arch.colors} arch={arch} isRising={false} index={i} maxShare={maxShare} />
           )) : <div className="text-xs text-slate-500 p-2">No falling archetype this period.</div>}
         </div>
