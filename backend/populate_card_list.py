@@ -36,19 +36,39 @@ HEADERS_SUPABASE = {
 # 2. RÉCUPÉRATION SCRYFALL
 # ==============================================================================
 
-def fetch_scryfall_set(set_code):
+def fetch_bonus_sheet_codes(set_code):
+    """
+    Récupère les set codes des bonus sheets (child sets de type masterpiece)
+    rattachées au set parent via l'API Scryfall.
+    """
+    resp = requests.get("https://api.scryfall.com/sets")
+    if resp.status_code != 200:
+        return []
+    all_sets = resp.json().get("data", [])
+    bonus_codes = [
+        s["code"] for s in all_sets
+        if s.get("parent_set_code", "").lower() == set_code.lower()
+        and s.get("set_type") in ("masterpiece", "bonus")
+    ]
+    if bonus_codes:
+        print(f"  Found bonus sheet set(s): {bonus_codes}")
+    return bonus_codes
+
+
+def fetch_scryfall_set(set_code, store_as=None):
     """
     Récupère toutes les cartes d'un set depuis Scryfall.
+    store_as: set_code à utiliser dans card_list (pour rattacher les bonus sheets au set parent).
     """
-    print(f"📡 Récupération du set {set_code} sur Scryfall...")
+    target_code = store_as or set_code
+    print(f"📡 Récupération du set {set_code} sur Scryfall (stocké sous {target_code})...")
     cards = []
-    # On cherche tout ce qui appartient au set, y compris les bonus sheets rattachées
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
-    
+
     while url:
         resp = requests.get(url)
         if resp.status_code != 200: break
-        
+
         data = resp.json()
         for c in data.get('data', []):
             # Extraction des infos
@@ -69,17 +89,17 @@ def fetch_scryfall_set(set_code):
 
             cards.append({
                 "card_name": name,
-                "set_code": set_code,
+                "set_code": target_code,
                 "colors": colors,
                 "card_cmc": cmc,
                 "card_cost": mana_cost,
                 "rarity": rarity,
                 "card_type": type_line
             })
-            
+
         url = data.get('next_page')
         if url: time.sleep(0.1)
-        
+
     return cards
 
 # ==============================================================================
@@ -97,7 +117,7 @@ def populate_table(cards):
     batch_size = 500
     for i in range(0, len(cards), batch_size):
         chunk = cards[i:i + batch_size]
-        url = f"{SUPABASE_URL}/rest/v1/card_list"
+        url = f"{SUPABASE_URL}/rest/v1/card_list?on_conflict=card_name,set_code"
         # On utilise resolution=merge-duplicates pour gérer la contrainte unique(card_name, set_code)
         resp = requests.post(url, json=chunk, headers=HEADERS_SUPABASE)
         
@@ -113,13 +133,20 @@ def populate_table(cards):
 if __name__ == "__main__":
     target = TARGET_SET.upper()
     print(f"🏁 Démarrage pour le set : {target}")
-    
+
     start_time = time.time()
-    
-    # 1. Scryfall
+
+    # 1. Scryfall — set principal
     all_cards = fetch_scryfall_set(target)
-    
-    # 2. Supabase
+
+    # 2. Scryfall — bonus sheets (child sets rattachés au parent)
+    bonus_codes = fetch_bonus_sheet_codes(target)
+    for bonus_code in bonus_codes:
+        bonus_cards = fetch_scryfall_set(bonus_code, store_as=target)
+        print(f"  {len(bonus_cards)} bonus sheet cards from {bonus_code}")
+        all_cards.extend(bonus_cards)
+
+    # 3. Supabase
     populate_table(all_cards)
-    
+
     print(f"\n✨ Terminé en {round(time.time() - start_time, 2)}s.")
