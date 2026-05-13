@@ -116,10 +116,11 @@ const TogglePill: React.FC<{
 
 // ── Archetype card ──────────────────────────────────────────────────────────
 
-const ArchetypeCard: React.FC<{ item: ArchetypePulseItem; index: number; direction: 'rising' | 'falling' }> = ({
+const ArchetypeCard: React.FC<{ item: ArchetypePulseItem; index: number; direction: 'rising' | 'falling'; onClick?: () => void }> = ({
   item,
   index,
   direction,
+  onClick,
 }) => {
   const isRising = direction === 'rising'
   const deltaColor = isRising ? 'text-emerald-400' : 'text-red-400'
@@ -131,7 +132,8 @@ const ArchetypeCard: React.FC<{ item: ArchetypePulseItem; index: number; directi
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.08, duration: 0.3 }}
-      className={`rounded-xl border ${borderColor} bg-slate-800/50 p-2 md:p-3 space-y-1.5 md:space-y-2.5 backdrop-blur-sm`}
+      onClick={onClick}
+      className={`rounded-xl border ${borderColor} bg-slate-800/50 p-2 md:p-3 space-y-1.5 md:space-y-2.5 backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="flex items-center gap-1.5 md:gap-2">
         <ManaIcons colors={item.colors} size="sm" />
@@ -169,7 +171,8 @@ const CardItem: React.FC<{
   index: number
   direction: 'rising' | 'falling'
   metric: 'wr' | 'alsa'
-}> = ({ item, index, direction, metric }) => {
+  onClick?: () => void
+}> = ({ item, index, direction, metric, onClick }) => {
   const isRising = direction === 'rising'
   const deltaColor = isRising ? 'text-emerald-400' : 'text-red-400'
   const deltaBg = isRising ? 'bg-emerald-500/15' : 'bg-red-500/15'
@@ -186,7 +189,8 @@ const CardItem: React.FC<{
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.07, duration: 0.3 }}
-      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm`}
+      onClick={onClick}
+      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
         <img
@@ -221,10 +225,11 @@ const CardItem: React.FC<{
 
 // ── Trophy card ─────────────────────────────────────────────────────────────
 
-const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'gaining' | 'losing' }> = ({
+const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'gaining' | 'losing'; onClick?: () => void }> = ({
   item,
   index,
   direction,
+  onClick,
 }) => {
   const isGaining = direction === 'gaining'
   const deltaColor = isGaining ? 'text-amber-400' : 'text-red-400'
@@ -236,7 +241,8 @@ const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'g
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.08, duration: 0.3 }}
-      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm`}
+      onClick={onClick}
+      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
         <img
@@ -314,9 +320,11 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 interface Props {
   activeSet: string
   activeFormat: string
+  onArchetypeClick?: (colors: string) => void
+  onCardClick?: (cardName: string) => void
 }
 
-export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat }) => {
+export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, onArchetypeClick, onCardClick }) => {
   const [timeWindow, setTimeWindow] = useState<PulseTimeWindow>('1w')
   const [archDirection, setArchDirection] = useState<'rising' | 'falling'>('rising')
   const [cardDirection, setCardDirection] = useState<'rising' | 'falling'>('rising')
@@ -400,7 +408,7 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat })
               ) : archetypes.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2 md:gap-3">
                   {archetypes.map((a, i) => (
-                    <ArchetypeCard key={a.colors} item={a} index={i} direction={archDirection} />
+                    <ArchetypeCard key={a.colors} item={a} index={i} direction={archDirection} onClick={onArchetypeClick ? () => onArchetypeClick(a.colors) : undefined} />
                   ))}
                 </div>
               ) : (
@@ -440,7 +448,7 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat })
               ) : cards.length > 0 ? (
                 <InfiniteCarousel speed={40}>
                   {cards.map((c, i) => (
-                    <CardItem key={c.name} item={c} index={i} direction={cardDirection} metric={cardMetric} />
+                    <CardItem key={c.name} item={c} index={i} direction={cardDirection} metric={cardMetric} onClick={onCardClick ? () => onCardClick(c.name) : undefined} />
                   ))}
                 </InfiniteCarousel>
               ) : (
@@ -470,7 +478,7 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat })
               ) : trophyMovers.length > 0 ? (
                 <InfiniteCarousel speed={35}>
                   {trophyMovers.map((t, i) => (
-                    <TrophyCard key={t.name} item={t} index={i} direction={trophyDirection} />
+                    <TrophyCard key={t.name} item={t} index={i} direction={trophyDirection} onClick={onCardClick ? () => onCardClick(t.name) : undefined} />
                   ))}
                 </InfiniteCarousel>
               ) : (
