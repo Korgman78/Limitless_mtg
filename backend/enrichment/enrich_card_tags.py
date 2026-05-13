@@ -14,7 +14,7 @@ TARGET_SET = "SOS"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
-root_dir = current_dir.parent
+root_dir = current_dir.parent.parent
 env_path = root_dir / '.env'
 load_dotenv(dotenv_path=env_path)
 
@@ -134,28 +134,54 @@ SUPPORT_TAG_PATTERNS = [
 # 2. SCRYFALL FETCH
 # ==============================================================================
 
-def fetch_scryfall_set(set_code):
-    """Recupere toutes les cartes d'un set depuis Scryfall avec pagination."""
-    print(f"Recuperation du set {set_code} sur Scryfall...")
-    cards = []
+def fetch_bonus_sheet_codes(set_code):
+    """Recupere les set codes des bonus sheets (child sets) rattachees au set parent."""
+    resp = requests.get("https://api.scryfall.com/sets")
+    if resp.status_code != 200:
+        return []
+    all_sets = resp.json().get("data", [])
+    bonus_codes = [
+        s["code"] for s in all_sets
+        if s.get("parent_set_code", "").lower() == set_code.lower()
+        and s.get("set_type") in ("masterpiece", "bonus")
+    ]
+    if bonus_codes:
+        print(f"  Found bonus sheet set(s): {bonus_codes}")
+    return bonus_codes
+
+
+def _fetch_scryfall_raw(set_code):
+    """Fetch raw Scryfall card data for a single set code."""
     raw_cards = []
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
-
     while url:
         resp = requests.get(url)
         if resp.status_code != 200:
             print(f"Erreur Scryfall: {resp.status_code}")
             break
-
         data = resp.json()
         for c in data.get('data', []):
             raw_cards.append(c)
-
         url = data.get('next_page')
         if url:
             time.sleep(0.1)
+    return raw_cards
+
+
+def fetch_scryfall_set(set_code):
+    """Recupere toutes les cartes d'un set + bonus sheets depuis Scryfall."""
+    print(f"Recuperation du set {set_code} sur Scryfall...")
+    raw_cards = _fetch_scryfall_raw(set_code)
+
+    # Bonus sheets (child sets rattaches au parent)
+    bonus_codes = fetch_bonus_sheet_codes(set_code)
+    for bonus_code in bonus_codes:
+        bonus_raw = _fetch_scryfall_raw(bonus_code)
+        print(f"  {len(bonus_raw)} bonus sheet cards from {bonus_code}")
+        raw_cards.extend(bonus_raw)
 
     known_creature_types = _extract_set_creature_types(raw_cards)
+    cards = []
     for c in raw_cards:
         card = _extract_card_data(c, set_code, known_creature_types)
         if card:
