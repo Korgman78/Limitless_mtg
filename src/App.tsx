@@ -684,7 +684,7 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                 {/* Metagame Pulse button — desktop: above charts */}
                 <button
-                  onClick={() => setShowPulse(true)}
+                  onClick={() => { haptics.light(); setShowPulse(true); }}
                   className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold text-sm hover:border-indigo-400/50 hover:from-indigo-500/25 hover:via-purple-500/15 hover:to-indigo-500/25 transition-all shadow-[0_0_20px_rgba(99,102,241,0.1)] hover:shadow-[0_0_24px_rgba(99,102,241,0.2)] group"
                 >
                   <Activity size={16} className="text-indigo-400 group-hover:animate-pulse" />
@@ -708,7 +708,7 @@ export default function MTGLimitedApp(): React.ReactElement {
 
                 {/* Metagame Pulse button — mobile: above archetypes */}
                 <button
-                  onClick={() => setShowPulse(true)}
+                  onClick={() => { haptics.light(); setShowPulse(true); }}
                   className="md:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold text-sm active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(99,102,241,0.1)]"
                 >
                   <Activity size={16} className="text-indigo-400" />
