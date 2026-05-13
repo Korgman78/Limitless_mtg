@@ -215,6 +215,10 @@ export function useMetagamePulse(
 
       const archetypePulseItems: ArchetypePulseItem[] = validArchetypes
         .map((a: any) => {
+          // Filter archetypes below 1% meta share
+          const metaShare = totalGames > 0 ? (a.games_count || 0) / totalGames : 0
+          if (metaShare < 0.01) return null
+
           const history: number[] = a.win_rate_history || []
           const wr = a.win_rate || 0
 
