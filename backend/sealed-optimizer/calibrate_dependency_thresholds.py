@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 SEALED_FORMATS = ("ArenaDirect_Sealed", "ArenaDirectSealed", "Sealed")
 MIN_TROPHY_DECKS = 3  # minimum de decks contenant le payoff pour qu'on calcule un seuil
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("VITE_SUPABASE_KEY")
 

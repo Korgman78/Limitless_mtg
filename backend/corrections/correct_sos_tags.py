@@ -23,7 +23,7 @@ from pathlib import Path
 
 # --- ENV ---
 current_dir = Path(__file__).parent
-root_dir = current_dir.parent
+root_dir = current_dir.parent.parent
 load_dotenv(dotenv_path=root_dir / '.env')
 
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
