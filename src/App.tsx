@@ -558,17 +558,16 @@ export default function MTGLimitedApp(): React.ReactElement {
         {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
         {showPulse && (
-          <SwipeableOverlay key="pulse-overlay" onClose={() => setShowPulse(false)}>
+          <SwipeableOverlay key="pulse-overlay" onClose={() => setShowPulse(false)} zIndex={900}>
             <MetagamePulsePopup
               activeSet={activeSet}
               activeFormat={activeFormat}
               onArchetypeClick={(colors) => {
                 const deck = decks.find(d => d.colors === colors);
-                if (deck) { setSelectedDeck(deck); setShowPulse(false); }
+                if (deck) setSelectedDeck(deck);
               }}
               onCardClick={(cardName) => {
                 handleCardSelect({ name: cardName });
-                setShowPulse(false);
               }}
             />
           </SwipeableOverlay>
