@@ -213,10 +213,14 @@ export function useMetagamePulse(
           !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(a.archetype_name),
       )
 
+      const validGames = validArchetypes.reduce(
+        (sum: number, a: any) => sum + (a.games_count || 0), 0,
+      )
+
       const archetypePulseItems: ArchetypePulseItem[] = validArchetypes
         .map((a: any) => {
           // Filter archetypes below 1% meta share
-          const metaShare = totalGames > 0 ? (a.games_count || 0) / totalGames : 0
+          const metaShare = validGames > 0 ? (a.games_count || 0) / validGames : 0
           if (metaShare < 0.01) return null
 
           const history: number[] = a.win_rate_history || []
