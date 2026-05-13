@@ -425,7 +425,9 @@ const isCastableWithColors = (
   if (splashColor) allowed.add(splashColor);
   const symbols = extractManaSymbols(cost);
   if (symbols.length > 0) return symbols.every((s) => canPaySymbolWithColors(s, allowed));
-  if (cardColors.length === 0) return true;
+  // If cost is null and no color info, metadata is missing — reject rather than
+  // treating the card as colorless (real colorless cards have a cost like {0}/{3}).
+  if (cardColors.length === 0) return cost !== null;
   return cardColors.every((c) => allowed.has(c));
 };
 
