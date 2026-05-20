@@ -93,10 +93,11 @@ def get_cards_metadata(set_code, fmt):
         merged_data[name] = entry
 
         # DFC: index by front face name so 17lands names resolve correctly
+        # Always overwrite: the DFC entry has real metadata while the
+        # ghost entry from 17lands ETL has all nulls
         if " // " in name:
             front = name.split(" // ")[0]
-            if front not in merged_data:
-                merged_data[front] = entry
+            merged_data[front] = entry
 
     print(f"   ✅ {len(merged_data)} cartes chargées avec succès.")
     return merged_data
