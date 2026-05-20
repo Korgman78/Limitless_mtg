@@ -84,13 +84,20 @@ def get_cards_metadata(set_code, fmt):
     for card in metadata_rows:
         name = card['card_name']
         stats = stats_map.get(name, {})
-        
-        merged_data[name] = {
+
+        entry = {
             **card,
             "alsa": stats.get('alsa'),
             "gih_wr": stats.get('gih_wr')
         }
-        
+        merged_data[name] = entry
+
+        # DFC: index by front face name so 17lands names resolve correctly
+        if " // " in name:
+            front = name.split(" // ")[0]
+            if front not in merged_data:
+                merged_data[front] = entry
+
     print(f"   ✅ {len(merged_data)} cartes chargées avec succès.")
     return merged_data
 
