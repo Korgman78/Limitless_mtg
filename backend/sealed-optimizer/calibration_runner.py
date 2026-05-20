@@ -492,7 +492,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+    load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
     supabase_url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY") or os.getenv("VITE_SUPABASE_KEY")

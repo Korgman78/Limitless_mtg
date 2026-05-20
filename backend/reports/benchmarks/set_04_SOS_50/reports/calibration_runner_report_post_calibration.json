@@ -1,0 +1,1436 @@
+{
+  "metadata": {
+    "generated_at": "2026-05-20T07:05:00.563437+00:00",
+    "input_file": "backend\\tmp\\_tmp_arena_direct_sealed_trophy_SOS_50.json",
+    "set_code": "SOS",
+    "format": "ArenaDirect_Sealed",
+    "requested_records": 50,
+    "scenario_count": 1,
+    "jaccard_include_lands": false,
+    "scenario_set": "default"
+  },
+  "baseline_scenario_id": "baseline",
+  "scenarios": [
+    {
+      "scenario": {
+        "id": "baseline",
+        "description": "Current production weights (consistency 1.3) post-calibration",
+        "weights": {
+          "power": 2.0,
+          "consistency": 1.3,
+          "curve": 1.0,
+          "synergy": 1.0
+        },
+        "hc_restarts": 3,
+        "hc_iterations": 55,
+        "seed": 1337,
+        "max_optimize_ms": 10000,
+        "curve_component_scales": null
+      },
+      "summary": {
+        "processed": 47.0,
+        "avg_player_score": 71.9313,
+        "median_player_score": 73.44,
+        "avg_top1_score": 83.0006,
+        "median_top1_score": 83.24,
+        "avg_best3_score": 83.0006,
+        "median_best3_score": 83.24,
+        "avg_delta_best3_minus_player": 11.0694,
+        "optimizer_beats_player_rate": 97.87,
+        "avg_jaccard_top1": 0.3769,
+        "median_jaccard_top1": 0.3243,
+        "avg_jaccard_best3": 0.5031,
+        "median_jaccard_best3": 0.5484,
+        "strict_match_top1_rate": 23.4,
+        "strict_match_top3_rate": 34.04,
+        "color_match_top1_rate": 31.91,
+        "color_match_top3_rate": 55.32,
+        "avg_distinct_archetypes_top3": 3.0,
+        "p10_top1_score": 78.91,
+        "p90_top1_score": 87.74
+      },
+      "elapsed_seconds": 573598.11,
+      "successful_records": 47,
+      "failed_records": 3,
+      "results": [
+        {
+          "aggregate_id": "5da0903d7a584a97b0520a212a34f56a",
+          "trophy_time": "2026-05-05 18:40:48",
+          "optimizer_compute_ms_estimate": 24332,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 73.97,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.0682
+            },
+            {
+              "rank": 2,
+              "score": 72.92,
+              "archetype": "WBG",
+              "jaccard_similarity": 0.6207
+            },
+            {
+              "rank": 3,
+              "score": 71.53,
+              "archetype": "BG",
+              "jaccard_similarity": 0.6207
+            }
+          ],
+          "player_deck": {
+            "score": 70.41,
+            "archetype": "GBw"
+          }
+        },
+        {
+          "aggregate_id": "28defc06348b462d974f5244bd12822e",
+          "trophy_time": "2026-05-05 18:39:33",
+          "optimizer_compute_ms_estimate": 23385,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 85.35,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0612
+            },
+            {
+              "rank": 2,
+              "score": 83.44,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.4054
+            },
+            {
+              "rank": 3,
+              "score": 79.18,
+              "archetype": "WU",
+              "jaccard_similarity": 0.2381
+            }
+          ],
+          "player_deck": {
+            "score": 74.14,
+            "archetype": "URw"
+          }
+        },
+        {
+          "aggregate_id": "a90921281c544fc4b15dcce3658c3fe4",
+          "trophy_time": "2026-05-05 18:37:46",
+          "optimizer_compute_ms_estimate": 23761,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 82.09,
+              "archetype": "UR",
+              "jaccard_similarity": 0.6429
+            },
+            {
+              "rank": 2,
+              "score": 79.7,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0222
+            },
+            {
+              "rank": 3,
+              "score": 76.65,
+              "archetype": "UG",
+              "jaccard_similarity": 0.2105
+            }
+          ],
+          "player_deck": {
+            "score": 78.96,
+            "archetype": "UR"
+          }
+        },
+        {
+          "aggregate_id": "63efa0bc4dcc4b9daba2d4c6ecac1cc5",
+          "trophy_time": "2026-05-05 18:36:42",
+          "optimizer_compute_ms_estimate": 23179,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 85.27,
+              "archetype": "UR",
+              "jaccard_similarity": 0.5862
+            },
+            {
+              "rank": 2,
+              "score": 84.09,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2432
+            },
+            {
+              "rank": 3,
+              "score": 84.64,
+              "archetype": "URw",
+              "jaccard_similarity": 0.5333
+            }
+          ],
+          "player_deck": {
+            "score": 79.14,
+            "archetype": "UR"
+          }
+        },
+        {
+          "aggregate_id": "02752abe11764fdbb50ece1504c6b117",
+          "trophy_time": "2026-05-04 10:46:53",
+          "optimizer_compute_ms_estimate": 22838,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.22,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.3243
+            },
+            {
+              "rank": 2,
+              "score": 79.05,
+              "archetype": "WUB",
+              "jaccard_similarity": 0.4
+            },
+            {
+              "rank": 3,
+              "score": 78.26,
+              "archetype": "WB",
+              "jaccard_similarity": 0.4412
+            }
+          ],
+          "player_deck": {
+            "score": 66.93,
+            "archetype": "WRB"
+          }
+        },
+        {
+          "aggregate_id": "d21bb2c0406442a1a98e0d0841140e1c",
+          "trophy_time": "2026-05-04 10:16:14",
+          "optimizer_compute_ms_estimate": 23760,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.24,
+              "archetype": "WBr",
+              "jaccard_similarity": 0.0667
+            },
+            {
+              "rank": 2,
+              "score": 82.41,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0435
+            },
+            {
+              "rank": 3,
+              "score": 78.35,
+              "archetype": "WR",
+              "jaccard_similarity": 0.0909
+            }
+          ],
+          "player_deck": {
+            "score": 53.26,
+            "archetype": "UGR"
+          }
+        },
+        {
+          "aggregate_id": "308cd18bad6d4dafabd03b3313fd8d38",
+          "trophy_time": "2026-05-04 09:27:02",
+          "optimizer_compute_ms_estimate": 23037,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 87.15,
+              "archetype": "WR",
+              "jaccard_similarity": 0.8077
+            },
+            {
+              "rank": 2,
+              "score": 86.62,
+              "archetype": "WRu",
+              "jaccard_similarity": 0.6786
+            },
+            {
+              "rank": 3,
+              "score": 86.06,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.5667
+            }
+          ],
+          "player_deck": {
+            "score": 84.96,
+            "archetype": "WR"
+          }
+        },
+        {
+          "aggregate_id": "d71460e34bc443d29613415694f015c3",
+          "trophy_time": "2026-05-04 09:02:05",
+          "optimizer_compute_ms_estimate": 24065,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.08,
+              "archetype": "WB",
+              "jaccard_similarity": 0.1667
+            },
+            {
+              "rank": 2,
+              "score": 80.95,
+              "archetype": "WBr",
+              "jaccard_similarity": 0.1951
+            },
+            {
+              "rank": 3,
+              "score": 78.41,
+              "archetype": "URw",
+              "jaccard_similarity": 0.3611
+            }
+          ],
+          "player_deck": {
+            "score": 73.93,
+            "archetype": "WRu"
+          }
+        },
+        {
+          "aggregate_id": "e40c3ea4bf8843f0b3a616b7a6586cac",
+          "trophy_time": "2026-05-04 09:00:29",
+          "optimizer_compute_ms_estimate": 23588,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 78.94,
+              "archetype": "WB",
+              "jaccard_similarity": 0.1463
+            },
+            {
+              "rank": 2,
+              "score": 72.28,
+              "archetype": "BG",
+              "jaccard_similarity": 0.6786
+            },
+            {
+              "rank": 3,
+              "score": 71.9,
+              "archetype": "UG",
+              "jaccard_similarity": 0.2051
+            }
+          ],
+          "player_deck": {
+            "score": 66.92,
+            "archetype": "BG"
+          }
+        },
+        {
+          "aggregate_id": "91c90527874b4cdab225e0f4197da475",
+          "trophy_time": "2026-05-04 08:59:01",
+          "optimizer_compute_ms_estimate": 23098,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 88.84,
+              "archetype": "UR",
+              "jaccard_similarity": 0.6
+            },
+            {
+              "rank": 2,
+              "score": 87.22,
+              "archetype": "UBR",
+              "jaccard_similarity": 0.6
+            },
+            {
+              "rank": 3,
+              "score": 84.86,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.3333
+            }
+          ],
+          "player_deck": {
+            "score": 84.66,
+            "archetype": "UR"
+          }
+        },
+        {
+          "aggregate_id": "8da4f1cddb804d169381ff74847d3f8e",
+          "trophy_time": "2026-05-04 08:53:16",
+          "optimizer_compute_ms_estimate": 22705,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 80.67,
+              "archetype": "WB",
+              "jaccard_similarity": 0.7308
+            },
+            {
+              "rank": 2,
+              "score": 79.75,
+              "archetype": "WR",
+              "jaccard_similarity": 0.3636
+            },
+            {
+              "rank": 3,
+              "score": 78.4,
+              "archetype": "WU",
+              "jaccard_similarity": 0.3636
+            }
+          ],
+          "player_deck": {
+            "score": 78.48,
+            "archetype": "WB"
+          }
+        },
+        {
+          "aggregate_id": "be2994dfddc9476b815f3af66ecfb957",
+          "trophy_time": "2026-05-04 08:52:56",
+          "optimizer_compute_ms_estimate": 23556,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 85.89,
+              "archetype": "WR",
+              "jaccard_similarity": 0.7037
+            },
+            {
+              "rank": 2,
+              "score": 80.07,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.3143
+            },
+            {
+              "rank": 3,
+              "score": 79.33,
+              "archetype": "UR",
+              "jaccard_similarity": 0.2105
+            }
+          ],
+          "player_deck": {
+            "score": 80.72,
+            "archetype": "RW"
+          }
+        },
+        {
+          "aggregate_id": "3d3b0f7d54c44501866c946fb0632ab3",
+          "trophy_time": "2026-05-04 08:50:57",
+          "optimizer_compute_ms_estimate": 23697,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.29,
+              "archetype": "WB",
+              "jaccard_similarity": 0.84
+            },
+            {
+              "rank": 2,
+              "score": 81.1,
+              "archetype": "UR",
+              "jaccard_similarity": 0.0
+            },
+            {
+              "rank": 3,
+              "score": 76.52,
+              "archetype": "WU",
+              "jaccard_similarity": 0.2778
+            }
+          ],
+          "player_deck": {
+            "score": 82.07,
+            "archetype": "WB"
+          }
+        },
+        {
+          "aggregate_id": "8ff12f2a3c61422ea708b31165d5546e",
+          "trophy_time": "2026-05-04 08:50:38",
+          "optimizer_compute_ms_estimate": 23528,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.1,
+              "archetype": "WB",
+              "jaccard_similarity": 0.6429
+            },
+            {
+              "rank": 2,
+              "score": 78.07,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2432
+            },
+            {
+              "rank": 3,
+              "score": 76.57,
+              "archetype": "WR",
+              "jaccard_similarity": 0.3143
+            }
+          ],
+          "player_deck": {
+            "score": 74.29,
+            "archetype": "WB"
+          }
+        },
+        {
+          "aggregate_id": "2fdb4e6bd0354bf4aec698a08a9142ea",
+          "trophy_time": "2026-05-04 08:40:49",
+          "optimizer_compute_ms_estimate": 24574,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 77.12,
+              "archetype": "URw",
+              "jaccard_similarity": 0.2368
+            },
+            {
+              "rank": 2,
+              "score": 75.54,
+              "archetype": "WB",
+              "jaccard_similarity": 0.3429
+            },
+            {
+              "rank": 3,
+              "score": 75.88,
+              "archetype": "UR",
+              "jaccard_similarity": 0.175
+            }
+          ],
+          "player_deck": {
+            "score": 63.86,
+            "archetype": "RWB"
+          }
+        },
+        {
+          "aggregate_id": "65e22b7906c8441ba6844a2e37def6ec",
+          "trophy_time": "2026-05-04 08:40:03",
+          "optimizer_compute_ms_estimate": 23641,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.63,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0
+            },
+            {
+              "rank": 2,
+              "score": 78.47,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.3056
+            },
+            {
+              "rank": 3,
+              "score": 76.75,
+              "archetype": "UR",
+              "jaccard_similarity": 0.7407
+            }
+          ],
+          "player_deck": {
+            "score": 76.99,
+            "archetype": "UR"
+          }
+        },
+        {
+          "aggregate_id": "a74e6829d46149078c01e9ffc32c1169",
+          "trophy_time": "2026-05-04 08:33:15",
+          "optimizer_compute_ms_estimate": 24698,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.72,
+              "archetype": "UR",
+              "jaccard_similarity": 0.2895
+            },
+            {
+              "rank": 2,
+              "score": 80.77,
+              "archetype": "WU",
+              "jaccard_similarity": 0.225
+            },
+            {
+              "rank": 3,
+              "score": 78.51,
+              "archetype": "UG",
+              "jaccard_similarity": 0.5312
+            }
+          ],
+          "player_deck": {
+            "score": 72.25,
+            "archetype": "UG"
+          }
+        },
+        {
+          "aggregate_id": "eac92a70399249d3a1b93eb36c4419ae",
+          "trophy_time": "2026-05-04 08:16:14",
+          "optimizer_compute_ms_estimate": 25452,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.78,
+              "archetype": "UGr",
+              "jaccard_similarity": 0.3714
+            },
+            {
+              "rank": 2,
+              "score": 78.4,
+              "archetype": "UR",
+              "jaccard_similarity": 0.1707
+            },
+            {
+              "rank": 3,
+              "score": 78.64,
+              "archetype": "UG",
+              "jaccard_similarity": 0.4545
+            }
+          ],
+          "player_deck": {
+            "score": 59.0,
+            "archetype": "GUW"
+          }
+        },
+        {
+          "aggregate_id": "a79d0737ab354ebdb37959bb38128266",
+          "trophy_time": "2026-05-04 08:08:32",
+          "optimizer_compute_ms_estimate": 25476,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.62,
+              "archetype": "UR",
+              "jaccard_similarity": 0.3784
+            },
+            {
+              "rank": 2,
+              "score": 81.25,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0625
+            },
+            {
+              "rank": 3,
+              "score": 81.03,
+              "archetype": "URw",
+              "jaccard_similarity": 0.4571
+            }
+          ],
+          "player_deck": {
+            "score": 74.97,
+            "archetype": "URWg"
+          }
+        },
+        {
+          "aggregate_id": "d585845418264329ab927ba0a70e7d9b",
+          "trophy_time": "2026-05-04 07:52:32",
+          "optimizer_compute_ms_estimate": 25493,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.52,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0435
+            },
+            {
+              "rank": 2,
+              "score": 81.46,
+              "archetype": "UR",
+              "jaccard_similarity": 0.6
+            },
+            {
+              "rank": 3,
+              "score": 81.26,
+              "archetype": "UBR",
+              "jaccard_similarity": 0.4118
+            }
+          ],
+          "player_deck": {
+            "score": 75.68,
+            "archetype": "RU"
+          }
+        },
+        {
+          "aggregate_id": "1ffa4649f0fe49fd81c144909baa9a83",
+          "trophy_time": "2026-05-04 07:42:22",
+          "optimizer_compute_ms_estimate": 25512,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 82.26,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.4167
+            },
+            {
+              "rank": 2,
+              "score": 80.6,
+              "archetype": "WBr",
+              "jaccard_similarity": 0.1087
+            },
+            {
+              "rank": 3,
+              "score": 78.47,
+              "archetype": "UR",
+              "jaccard_similarity": 0.5455
+            }
+          ],
+          "player_deck": {
+            "score": 71.44,
+            "archetype": "UWR"
+          }
+        },
+        {
+          "aggregate_id": "a2e8aa8ebbde499c9aa544510408904a",
+          "trophy_time": "2026-05-04 07:41:11",
+          "optimizer_compute_ms_estimate": 25835,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 80.23,
+              "archetype": "URg",
+              "jaccard_similarity": 0.3889
+            },
+            {
+              "rank": 2,
+              "score": 79.22,
+              "archetype": "UR",
+              "jaccard_similarity": 0.4706
+            },
+            {
+              "rank": 3,
+              "score": 77.08,
+              "archetype": "UG",
+              "jaccard_similarity": 0.2821
+            }
+          ],
+          "player_deck": {
+            "score": 69.01,
+            "archetype": "URg"
+          }
+        },
+        {
+          "aggregate_id": "d29bcef45ef4409a8b198dfa313e9074",
+          "trophy_time": "2026-05-04 07:36:42",
+          "optimizer_compute_ms_estimate": 25660,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 77.05,
+              "archetype": "URG",
+              "jaccard_similarity": 0.0417
+            },
+            {
+              "rank": 2,
+              "score": 77.0,
+              "archetype": "UR",
+              "jaccard_similarity": 0.0204
+            },
+            {
+              "rank": 3,
+              "score": 74.88,
+              "archetype": "WBR",
+              "jaccard_similarity": 0.3889
+            }
+          ],
+          "player_deck": {
+            "score": 63.03,
+            "archetype": "WBg"
+          }
+        },
+        {
+          "aggregate_id": "50cb526edc29432e883318125f73df6d",
+          "trophy_time": "2026-05-04 07:32:23",
+          "optimizer_compute_ms_estimate": 25289,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.72,
+              "archetype": "WR",
+              "jaccard_similarity": 0.15
+            },
+            {
+              "rank": 2,
+              "score": 82.94,
+              "archetype": "WB",
+              "jaccard_similarity": 0.122
+            },
+            {
+              "rank": 3,
+              "score": 79.7,
+              "archetype": "WRu",
+              "jaccard_similarity": 0.1795
+            }
+          ],
+          "player_deck": {
+            "score": 62.42,
+            "archetype": "GUW"
+          }
+        },
+        {
+          "aggregate_id": "65c61e6835fd4563a4c6c83b2011a2e1",
+          "trophy_time": "2026-05-04 07:24:10",
+          "optimizer_compute_ms_estimate": 23247,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.25,
+              "archetype": "WB",
+              "jaccard_similarity": 0.7778
+            },
+            {
+              "rank": 2,
+              "score": 82.32,
+              "archetype": "WRu",
+              "jaccard_similarity": 0.2632
+            },
+            {
+              "rank": 3,
+              "score": 79.96,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2632
+            }
+          ],
+          "player_deck": {
+            "score": 78.82,
+            "archetype": "WB"
+          }
+        },
+        {
+          "aggregate_id": "54bb1efbe3c6472391b4df6bf5bd4eaf",
+          "trophy_time": "2026-05-04 07:21:39",
+          "optimizer_compute_ms_estimate": 24073,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.82,
+              "archetype": "WB",
+              "jaccard_similarity": 0.6552
+            },
+            {
+              "rank": 2,
+              "score": 79.04,
+              "archetype": "WR",
+              "jaccard_similarity": 0.2
+            },
+            {
+              "rank": 3,
+              "score": 78.7,
+              "archetype": "WU",
+              "jaccard_similarity": 0.2308
+            }
+          ],
+          "player_deck": {
+            "score": 71.1,
+            "archetype": "BW"
+          }
+        },
+        {
+          "aggregate_id": "f577c6f9d2b24056b38da035b8012308",
+          "trophy_time": "2026-05-04 07:15:32",
+          "optimizer_compute_ms_estimate": 24065,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 77.03,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.1628
+            },
+            {
+              "rank": 2,
+              "score": 75.93,
+              "archetype": "UR",
+              "jaccard_similarity": 0.0
+            },
+            {
+              "rank": 3,
+              "score": 74.96,
+              "archetype": "WG",
+              "jaccard_similarity": 0.3158
+            }
+          ],
+          "player_deck": {
+            "score": 61.44,
+            "archetype": "BGW"
+          }
+        },
+        {
+          "aggregate_id": "bcef38f910dd4c2bae188f9c5aa48964",
+          "trophy_time": "2026-05-04 07:13:11",
+          "optimizer_compute_ms_estimate": 24188,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.47,
+              "archetype": "URG",
+              "jaccard_similarity": 0.0426
+            },
+            {
+              "rank": 2,
+              "score": 82.56,
+              "archetype": "URw",
+              "jaccard_similarity": 0.0426
+            },
+            {
+              "rank": 3,
+              "score": 81.75,
+              "archetype": "URb",
+              "jaccard_similarity": 0.0652
+            }
+          ],
+          "player_deck": {
+            "score": 67.61,
+            "archetype": "GBW"
+          }
+        },
+        {
+          "aggregate_id": "e6d23bd7aba84a0f86ab001075b32214",
+          "trophy_time": "2026-05-04 07:08:29",
+          "optimizer_compute_ms_estimate": 23394,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.28,
+              "archetype": "WR",
+              "jaccard_similarity": 0.2093
+            },
+            {
+              "rank": 2,
+              "score": 79.38,
+              "archetype": "UR",
+              "jaccard_similarity": 0.3
+            },
+            {
+              "rank": 3,
+              "score": 79.01,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0196
+            }
+          ],
+          "player_deck": {
+            "score": 63.66,
+            "archetype": "RUG"
+          }
+        },
+        {
+          "aggregate_id": "0c408a06b5fe462496bc5f6cb2631c0f",
+          "trophy_time": "2026-05-04 07:00:13",
+          "optimizer_compute_ms_estimate": 22761,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 79.05,
+              "archetype": "BG",
+              "jaccard_similarity": 0.2
+            },
+            {
+              "rank": 2,
+              "score": 76.14,
+              "archetype": "UBG",
+              "jaccard_similarity": 0.1707
+            },
+            {
+              "rank": 3,
+              "score": 75.85,
+              "archetype": "WBR",
+              "jaccard_similarity": 0.6
+            }
+          ],
+          "player_deck": {
+            "score": 69.66,
+            "archetype": "WBR"
+          }
+        },
+        {
+          "aggregate_id": "d66dea36d95c439196ca9a182d945fc7",
+          "trophy_time": "2026-05-04 06:59:12",
+          "optimizer_compute_ms_estimate": 22717,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 79.45,
+              "archetype": "UR",
+              "jaccard_similarity": 0.4412
+            },
+            {
+              "rank": 2,
+              "score": 76.65,
+              "archetype": "WB",
+              "jaccard_similarity": 0.0652
+            },
+            {
+              "rank": 3,
+              "score": 76.94,
+              "archetype": "URG",
+              "jaccard_similarity": 0.5312
+            }
+          ],
+          "player_deck": {
+            "score": 66.23,
+            "archetype": "RUb"
+          }
+        },
+        {
+          "aggregate_id": "e98fc8a7cb0f445fa4b7cc3822db0b5e",
+          "trophy_time": "2026-05-04 06:58:05",
+          "optimizer_compute_ms_estimate": 22436,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 87.8,
+              "archetype": "WR",
+              "jaccard_similarity": 0.5484
+            },
+            {
+              "rank": 2,
+              "score": 86.44,
+              "archetype": "UR",
+              "jaccard_similarity": 0.1429
+            },
+            {
+              "rank": 3,
+              "score": 85.06,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.4118
+            }
+          ],
+          "player_deck": {
+            "score": 74.71,
+            "archetype": "WRB"
+          }
+        },
+        {
+          "aggregate_id": "eda817448d444316a6e7bd9c204355e5",
+          "trophy_time": "2026-05-04 06:56:15",
+          "optimizer_compute_ms_estimate": 65002,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 82.44,
+              "archetype": "WB",
+              "jaccard_similarity": 0.6207
+            },
+            {
+              "rank": 2,
+              "score": 80.31,
+              "archetype": "WU",
+              "jaccard_similarity": 0.2051
+            },
+            {
+              "rank": 3,
+              "score": 78.89,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2368
+            }
+          ],
+          "player_deck": {
+            "score": 68.63,
+            "archetype": "WBR"
+          }
+        },
+        {
+          "aggregate_id": "53b6accef54a43da92286192cb3191fa",
+          "trophy_time": "2026-05-04 06:35:33",
+          "optimizer_compute_ms_estimate": 22875,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 83.23,
+              "archetype": "WR",
+              "jaccard_similarity": 0.4
+            },
+            {
+              "rank": 2,
+              "score": 82.6,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.4848
+            },
+            {
+              "rank": 3,
+              "score": 73.34,
+              "archetype": "UR",
+              "jaccard_similarity": 0.4
+            }
+          ],
+          "player_deck": {
+            "score": 78.37,
+            "archetype": "WRU"
+          }
+        },
+        {
+          "aggregate_id": "c16287acc0534c319ac1c44bc6a5a0df",
+          "trophy_time": "2026-05-04 06:33:04",
+          "optimizer_compute_ms_estimate": 23662,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 84.88,
+              "archetype": "WR",
+              "jaccard_similarity": 0.1395
+            },
+            {
+              "rank": 2,
+              "score": 81.92,
+              "archetype": "WBR",
+              "jaccard_similarity": 0.0652
+            },
+            {
+              "rank": 3,
+              "score": 82.3,
+              "archetype": "WRg",
+              "jaccard_similarity": 0.1951
+            }
+          ],
+          "player_deck": {
+            "score": 73.44,
+            "archetype": "GUw"
+          }
+        },
+        {
+          "aggregate_id": "df161494227547bc935dd20cc96cb900",
+          "trophy_time": "2026-05-04 06:27:30",
+          "optimizer_compute_ms_estimate": 23954,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.45,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2895
+            },
+            {
+              "rank": 2,
+              "score": 80.85,
+              "archetype": "UR",
+              "jaccard_similarity": 0.6333
+            },
+            {
+              "rank": 3,
+              "score": 80.33,
+              "archetype": "URw",
+              "jaccard_similarity": 0.5312
+            }
+          ],
+          "player_deck": {
+            "score": 77.65,
+            "archetype": "UR"
+          }
+        },
+        {
+          "aggregate_id": "ec26da228c0b41ceb4ab3bcb6470c293",
+          "trophy_time": "2026-05-04 06:25:18",
+          "optimizer_compute_ms_estimate": 23585,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 92.04,
+              "archetype": "WR",
+              "jaccard_similarity": 0.6061
+            },
+            {
+              "rank": 2,
+              "score": 89.22,
+              "archetype": "UR",
+              "jaccard_similarity": 0.2619
+            },
+            {
+              "rank": 3,
+              "score": 90.2,
+              "archetype": "WRu",
+              "jaccard_similarity": 0.5588
+            }
+          ],
+          "player_deck": {
+            "score": 83.28,
+            "archetype": "RWB"
+          }
+        },
+        {
+          "aggregate_id": "c2acc219599f401fbf2d4b79cba75cc8",
+          "trophy_time": "2026-05-04 06:24:35",
+          "optimizer_compute_ms_estimate": 23692,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 78.91,
+              "archetype": "UR",
+              "jaccard_similarity": 0.2895
+            },
+            {
+              "rank": 2,
+              "score": 77.62,
+              "archetype": "UG",
+              "jaccard_similarity": 0.0
+            },
+            {
+              "rank": 3,
+              "score": 76.18,
+              "archetype": "WR",
+              "jaccard_similarity": 0.6897
+            }
+          ],
+          "player_deck": {
+            "score": 67.51,
+            "archetype": "WRu"
+          }
+        },
+        {
+          "aggregate_id": "63e9e98abeba4099ab8b97e380b4986e",
+          "trophy_time": "2026-05-04 06:23:27",
+          "optimizer_compute_ms_estimate": 22802,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 79.98,
+              "archetype": "WB",
+              "jaccard_similarity": 0.2973
+            },
+            {
+              "rank": 2,
+              "score": 75.82,
+              "archetype": "URG",
+              "jaccard_similarity": 0.1163
+            },
+            {
+              "rank": 3,
+              "score": 75.79,
+              "archetype": "WUB",
+              "jaccard_similarity": 0.2
+            }
+          ],
+          "player_deck": {
+            "score": 73.48,
+            "archetype": "BG"
+          }
+        },
+        {
+          "aggregate_id": "3bc39f60d36e4bc4b7f81b0d5788b1e7",
+          "trophy_time": "2026-05-04 06:22:06",
+          "optimizer_compute_ms_estimate": 22543,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.69,
+              "archetype": "UR",
+              "jaccard_similarity": 0.0213
+            },
+            {
+              "rank": 2,
+              "score": 79.78,
+              "archetype": "URw",
+              "jaccard_similarity": 0.0
+            },
+            {
+              "rank": 3,
+              "score": 78.4,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.0213
+            }
+          ],
+          "player_deck": {
+            "score": 59.84,
+            "archetype": "BGw"
+          }
+        },
+        {
+          "aggregate_id": "fc4d00d76bad4b1db300ddfbd3e6d47a",
+          "trophy_time": "2026-05-04 06:12:58",
+          "optimizer_compute_ms_estimate": 68606,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.66,
+              "archetype": "WB",
+              "jaccard_similarity": 0.5806
+            },
+            {
+              "rank": 2,
+              "score": 76.58,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.1667
+            },
+            {
+              "rank": 3,
+              "score": 75.47,
+              "archetype": "BG",
+              "jaccard_similarity": 0.2564
+            }
+          ],
+          "player_deck": {
+            "score": 75.21,
+            "archetype": "WB"
+          }
+        },
+        {
+          "aggregate_id": "49feb94720cf4a498f7f78b12a0674b3",
+          "trophy_time": "2026-05-04 05:57:07",
+          "optimizer_compute_ms_estimate": 23019,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 85.12,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2195
+            },
+            {
+              "rank": 2,
+              "score": 84.51,
+              "archetype": "URG",
+              "jaccard_similarity": 0.3514
+            },
+            {
+              "rank": 3,
+              "score": 80.8,
+              "archetype": "WUg",
+              "jaccard_similarity": 0.25
+            }
+          ],
+          "player_deck": {
+            "score": 63.18,
+            "archetype": "GUBr"
+          }
+        },
+        {
+          "aggregate_id": "ce850a8dbccc42339fc25fa76a2aebd1",
+          "trophy_time": "2026-05-04 05:43:37",
+          "optimizer_compute_ms_estimate": 23683,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 89.65,
+              "archetype": "WR",
+              "jaccard_similarity": 0.5862
+            },
+            {
+              "rank": 2,
+              "score": 83.76,
+              "archetype": "UR",
+              "jaccard_similarity": 0.2105
+            },
+            {
+              "rank": 3,
+              "score": 83.48,
+              "archetype": "WBR",
+              "jaccard_similarity": 0.4375
+            }
+          ],
+          "player_deck": {
+            "score": 79.26,
+            "archetype": "RW"
+          }
+        },
+        {
+          "aggregate_id": "e4bc4b3238424ed29d5b276758906d7c",
+          "trophy_time": "2026-05-04 05:41:14",
+          "optimizer_compute_ms_estimate": 23794,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 81.16,
+              "archetype": "WR",
+              "jaccard_similarity": 0.7692
+            },
+            {
+              "rank": 2,
+              "score": 79.24,
+              "archetype": "UR",
+              "jaccard_similarity": 0.15
+            },
+            {
+              "rank": 3,
+              "score": 77.43,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.4839
+            }
+          ],
+          "player_deck": {
+            "score": 82.09,
+            "archetype": "WR"
+          }
+        },
+        {
+          "aggregate_id": "68421270279b4fad88a046b4bbb97249",
+          "trophy_time": "2026-05-04 05:40:43",
+          "optimizer_compute_ms_estimate": 23270,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 87.08,
+              "archetype": "WB",
+              "jaccard_similarity": 0.6552
+            },
+            {
+              "rank": 2,
+              "score": 82.38,
+              "archetype": "WR",
+              "jaccard_similarity": 0.2973
+            },
+            {
+              "rank": 3,
+              "score": 81.5,
+              "archetype": "WBR",
+              "jaccard_similarity": 0.6
+            }
+          ],
+          "player_deck": {
+            "score": 78.57,
+            "archetype": "BWr"
+          }
+        },
+        {
+          "aggregate_id": "fb8bfe763d08462fb006d3f347a55659",
+          "trophy_time": "2026-05-04 05:39:24",
+          "optimizer_compute_ms_estimate": 23658,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 87.74,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.175
+            },
+            {
+              "rank": 2,
+              "score": 84.49,
+              "archetype": "WB",
+              "jaccard_similarity": 0.175
+            },
+            {
+              "rank": 3,
+              "score": 83.03,
+              "archetype": "UR",
+              "jaccard_similarity": 0.175
+            }
+          ],
+          "player_deck": {
+            "score": 71.4,
+            "archetype": "BUG"
+          }
+        },
+        {
+          "aggregate_id": "bc27eeb8f4b549debda8de70acf2bd47",
+          "trophy_time": "2026-05-04 05:38:32",
+          "optimizer_compute_ms_estimate": 24799,
+          "optimizer_builds": [
+            {
+              "rank": 1,
+              "score": 85.1,
+              "archetype": "UR",
+              "jaccard_similarity": 0.3243
+            },
+            {
+              "rank": 2,
+              "score": 81.62,
+              "archetype": "WUR",
+              "jaccard_similarity": 0.2895
+            },
+            {
+              "rank": 3,
+              "score": 80.1,
+              "archetype": "WRu",
+              "jaccard_similarity": 0.1951
+            }
+          ],
+          "player_deck": {
+            "score": 58.11,
+            "archetype": "GURw"
+          }
+        }
+      ],
+      "failures": [
+        {
+          "aggregate_id": "7875c9d82e014157906b6fb1103d71bd",
+          "error": "status failed 546: {\"code\": \"WORKER_RESOURCE_LIMIT\", \"message\": \"Function failed due to not having enough compute resources (please check logs)\"}"
+        },
+        {
+          "aggregate_id": "86be61936cd84a6b99e8b62747ceef2b",
+          "error": "HTTP call failed after retries: HTTPSConnectionPool(host='zwphdbwivzsvnmalybkx.supabase.co', port=443): Max retries exceeded with url: /functions/v1/sealed-optimizer (Caused by NameResolutionError(\"HTTPSConnection(host='zwphdbwivzsvnmalybkx.supabase.co', port=443): Failed to resolve 'zwphdbwivzsvnmalybkx.supabase.co' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "aggregate_id": "c396a80d04fc4b83aeb9cae1aaa37b2d",
+          "error": "HTTP call failed after retries: HTTPSConnectionPool(host='zwphdbwivzsvnmalybkx.supabase.co', port=443): Max retries exceeded with url: /functions/v1/sealed-optimizer (Caused by NameResolutionError(\"HTTPSConnection(host='zwphdbwivzsvnmalybkx.supabase.co', port=443): Failed to resolve 'zwphdbwivzsvnmalybkx.supabase.co' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  ]
+}
