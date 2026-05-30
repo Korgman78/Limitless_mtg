@@ -41,6 +41,11 @@ load_dotenv(dotenv_path=env_path)
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("VITE_SUPABASE_KEY")
 
+# Cookie de session 17lands. Depuis 2026 l'endpoint /api/trophies/ exige
+# une session authentifiee : sans cookie l'API renvoie un wrapper vide au
+# lieu d'un 401, ce qui masquait l'echec de l'ETL silencieusement.
+LANDS17_COOKIE = os.getenv("LANDS17_COOKIE")
+
 # Headers pour 17lands (bonnes pratiques scraping)
 HEADERS_17LANDS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -49,7 +54,11 @@ HEADERS_17LANDS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Cache-Control": "no-cache",
+    "Origin": "https://www.17lands.com",
+    "Referer": "https://www.17lands.com/trophy_decks",
 }
+if LANDS17_COOKIE:
+    HEADERS_17LANDS["Cookie"] = LANDS17_COOKIE
 
 HEADERS_SUPABASE = {
     "apikey": SUPABASE_KEY,
@@ -246,8 +255,12 @@ def fetch_trophies(expansion, format_type, colors=None):
     """
     Récupère la liste des trophies pour un set/format/couleur via POST.
     Utilise le même endpoint que l'interface web de 17lands.
+
+    L'endpoint a migre de /data/trophies/ vers /api/trophies/ courant 2026 et
+    renvoie maintenant un wrapper {copyright, notes, data: [...]} au lieu
+    d'une liste brute.
     """
-    url = "https://www.17lands.com/data/trophies/"
+    url = "https://www.17lands.com/api/trophies/"
 
     payload = {
         "expansion": expansion,
@@ -257,17 +270,35 @@ def fetch_trophies(expansion, format_type, colors=None):
         "deck_colors": [colors] if colors else []
     }
 
-    return fetch_with_retry(
+    response = fetch_with_retry(
         url,
         context_name=f"Trophies {expansion}/{format_type}/{colors or 'ALL'}",
         method="POST",
         payload=payload
     )
 
+    if response is None:
+        return None
+    if isinstance(response, dict):
+        return response.get("data", [])
+    return response
+
 def fetch_deck_details(aggregate_id, deck_index=0):
-    """Récupère les détails d'un deck par son ID"""
-    url = f"https://www.17lands.com/data/deck?draft_id={aggregate_id}&deck_index={deck_index}"
-    return fetch_with_retry(url, f"Deck {aggregate_id}")
+    """Récupère les détails d'un deck par son ID.
+
+    L'endpoint a migre de /data/deck vers /api/deck/draft/ courant 2026 et
+    enveloppe maintenant la reponse dans {copyright, notes, data: {...}}.
+    L'ancien /data/deck repond encore mais renvoie un placeholder (40 Plains)
+    pour les comptes non-proprietaires.
+    """
+    url = f"https://www.17lands.com/api/deck/draft/?draft_id={aggregate_id}&deck_index={deck_index}"
+    response = fetch_with_retry(url, f"Deck {aggregate_id}")
+
+    if response is None:
+        return None
+    if isinstance(response, dict) and "data" in response:
+        return response["data"]
+    return response
 
 def process_deck_to_cardlist(deck_data):
     """
@@ -501,6 +532,13 @@ if __name__ == "__main__":
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ ERREUR: Variables d'environnement SUPABASE manquantes.")
+        exit(1)
+
+    if not LANDS17_COOKIE:
+        print("❌ ERREUR: LANDS17_COOKIE manquant — depuis 2026 /api/trophies/ exige")
+        print("   un cookie de session authentifie (au minimum remember_token=...).")
+        print("   Sans cookie l'API renvoie une liste vide sans erreur, ce qui fige")
+        print("   silencieusement le pipeline. Configurer le secret puis relancer.")
         exit(1)
 
     # Déterminer les sets à traiter

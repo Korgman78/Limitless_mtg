@@ -30,6 +30,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LANDS17_COOKIE: ${{ secrets.LANDS17_COOKIE }}
         run: python backend/etl_script_trophydecks.py
 
       # Étape 2: Calcul des synergies (lift scores)
