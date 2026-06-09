@@ -34,7 +34,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 import umap
-from sklearn.cluster import KMeans
+from sklearn.cluster import HDBSCAN
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import normalize
 
 # ==============================================================================
 # 1. CONFIGURATION
@@ -205,17 +207,54 @@ def process(set_code, fmt):
     )
     coords = reducer.fit_transform(matrix)
 
-    # --- KMeans sur l'embedding 2D (clusters visuellement coherents) ---
-    k = min(choose_k(n), n)
-    km = KMeans(n_clusters=k, random_state=42, n_init=10)
-    clusters = km.fit_predict(coords)
+    # --- VRAI clustering : HDBSCAN sur les vecteurs de cartes (PCA), pas sur la 2D ---
+    # On L2-normalise (euclidien ~ cosine), on reduit en PCA pour debruiter/accelerer,
+    # puis HDBSCAN trouve des sous-familles de densite variable (-1 = bruit/mixte).
+    Xn = normalize(matrix)
+    ncomp = int(min(50, matrix.shape[1], max(2, n - 1)))
+    Xp = PCA(n_components=ncomp, random_state=42).fit_transform(Xn)
+    mcs = int(max(25, round(n * 0.012)))
+    clusters = HDBSCAN(min_cluster_size=mcs, min_samples=10).fit_predict(Xp)
 
-    # Label de cluster = archetype dominant du cluster (pour annotation front)
+    unique_clusters = sorted(set(int(c) for c in clusters))
+    n_real_clusters = len([c for c in unique_clusters if c >= 0])
+    print(f"   🔬 HDBSCAN : {n_real_clusters} sous-familles (min_cluster_size={mcs})")
+
+    # Label de cluster = archetype dominant
     cluster_labels = {}
-    for cid in range(k):
+    for cid in unique_clusters:
         archs = [kept[i].get("archetype") for i in range(n) if clusters[i] == cid]
         archs = [a for a in archs if a]
-        cluster_labels[cid] = Counter(archs).most_common(1)[0][0] if archs else f"Cluster {cid}"
+        cluster_labels[cid] = ("Mixed" if cid < 0 else (Counter(archs).most_common(1)[0][0] if archs else f"Cluster {cid}"))
+
+    # --- Defining cards par cluster (lift = sur-representation vs moyenne globale) ---
+    presence = (matrix > 0)
+    global_freq = presence.mean(axis=0)
+    inv_vocab = {idx: name for name, idx in vocab.items()}
+    cluster_records = []
+    for cid in unique_clusters:
+        if cid < 0:
+            continue
+        idxs = np.where(clusters == cid)[0]
+        if len(idxs) == 0:
+            continue
+        cfreq = presence[idxs].mean(axis=0)
+        scored = []
+        for col in range(matrix.shape[1]):
+            if cfreq[col] < 0.35:  # carte presente dans >=35% du cluster
+                continue
+            lift = float(cfreq[col]) / float(global_freq[col] or 1e-6)
+            scored.append((col, float(cfreq[col]), lift))
+        scored.sort(key=lambda t: t[2] * t[1], reverse=True)
+        top_cards = [{"name": inv_vocab[c], "freq": round(f, 2), "lift": round(l, 1)} for c, f, l in scored[:12]]
+        cluster_records.append({
+            "set_code": set_code,
+            "format": fmt,
+            "cluster": int(cid),
+            "label": cluster_labels[cid],
+            "size": int(len(idxs)),
+            "top_cards": top_cards,
+        })
 
     # --- Construction des enregistrements (decks reels) ---
     records = []
@@ -280,7 +319,19 @@ def process(set_code, fmt):
         except Exception as e:
             print(f"   ❌ Exception insert: {e}")
 
-    print(f"   ✅ {n} decks + {arch_count} archetypaux · {k} clusters · {matrix.shape[1]} cartes au vocabulaire")
+    # --- Defining cards des clusters ---
+    cdel = f"{SUPABASE_URL}/rest/v1/trophy_map_clusters?set_code=eq.{set_code}&format=eq.{fmt}"
+    try:
+        requests.delete(cdel, headers=HEADERS_SUPABASE)
+        if cluster_records:
+            curl = f"{SUPABASE_URL}/rest/v1/trophy_map_clusters?on_conflict=set_code,format,cluster"
+            resp = requests.post(curl, json=cluster_records, headers=HEADERS_SUPABASE)
+            if resp.status_code >= 400:
+                print(f"   ❌ Erreur insert clusters: {resp.text}")
+    except Exception as e:
+        print(f"   ⚠️ Echec ecriture clusters: {e}")
+
+    print(f"   ✅ {n} decks + {arch_count} archetypaux · {n_real_clusters} sous-familles · {matrix.shape[1]} cartes au vocabulaire")
 
 # ==============================================================================
 # MAIN
