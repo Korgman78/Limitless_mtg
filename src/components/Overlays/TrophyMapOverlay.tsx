@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search } from 'lucide-react';
+import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search, List, ChevronUp } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
 import { getCardImage, sortColorsWUBRG } from '../../utils/helpers';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -65,6 +65,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
   const [showArch, setShowArch] = useState(false);
   const [selected, setSelected] = useState<TrophyMapPoint | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [isTransformed, setIsTransformed] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; point: TrophyMapPoint } | null>(null);
   const [cardInput, setCardInput] = useState('');
@@ -335,6 +336,53 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     if (idx >= 0) setSelected(points[idx]);
   };
 
+  // --- Tactile (mobile) : 1 doigt = pan, 2 doigts = pinch-zoom, tap = sélection ---
+  const touchRef = useRef<{ mode: 'none' | 'pan' | 'pinch'; lastX: number; lastY: number; dist: number; moved: boolean }>({ mode: 'none', lastX: 0, lastY: 0, dist: 0, moved: false });
+  const touchDist = (t: React.TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) touchRef.current = { mode: 'pan', lastX: e.touches[0].clientX, lastY: e.touches[0].clientY, dist: 0, moved: false };
+    else if (e.touches.length >= 2) touchRef.current = { mode: 'pinch', lastX: 0, lastY: 0, dist: touchDist(e.touches), moved: true };
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const tr = touchRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    if (tr.mode === 'pan' && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = (t.clientX - tr.lastX) * dpr, dy = (t.clientY - tr.lastY) * dpr;
+      if (Math.abs(t.clientX - tr.lastX) + Math.abs(t.clientY - tr.lastY) > 3) tr.moved = true;
+      panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+      tr.lastX = t.clientX; tr.lastY = t.clientY;
+      if (zoomRef.current > 1) setIsTransformed(true);
+      scheduleRender();
+    } else if (tr.mode === 'pinch' && e.touches.length >= 2) {
+      const canvas = mainRef.current; if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const midX = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) * dpr;
+      const midY = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) * dpr;
+      const nd = touchDist(e.touches);
+      const z = zoomRef.current, pan = panRef.current;
+      const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * (nd / (tr.dist || nd))));
+      const wx = (midX - pan.x) / z, wy = (midY - pan.y) / z;
+      let nx = midX - wx * nz, ny = midY - wy * nz;
+      if (nz === MIN_ZOOM) { nx = 0; ny = 0; }
+      zoomRef.current = nz; panRef.current = { x: nx, y: ny };
+      tr.dist = nd;
+      setIsTransformed(nz !== 1);
+      scheduleRender();
+    }
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const tr = touchRef.current;
+    if (tr.mode === 'pan' && !tr.moved && e.changedTouches.length) {
+      const t = e.changedTouches[0];
+      const idx = hitTest(t.clientX, t.clientY);
+      if (idx >= 0) setSelected(points[idx]);
+    }
+    if (e.touches.length === 0) touchRef.current = { mode: 'none', lastX: 0, lastY: 0, dist: 0, moved: false };
+    else if (e.touches.length === 1) touchRef.current = { mode: 'pan', lastX: e.touches[0].clientX, lastY: e.touches[0].clientY, dist: 0, moved: true };
+  };
+
   const onLegendClick = (key: string) => {
     setCardInput('');
     setActiveColors(prev => (prev === key ? null : key));
@@ -387,7 +435,8 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
         <canvas ref={mainRef} style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
           className={points.length > 0 && !isLoading ? (dragRef.current.active ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'}
-          onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onLeave} onClick={onClick} onDoubleClick={resetView} />
+          onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onLeave} onClick={onClick} onDoubleClick={resetView}
+          onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} />
 
         {/* Recherche de carte */}
         {!isLoading && points.length > 0 && (
@@ -433,34 +482,45 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           </button>
         )}
 
-        {/* Légende cliquable (par archétype) */}
+        {/* Légende cliquable (par archétype) — minimisable, repliée par défaut */}
         {!isLoading && points.length > 0 && (
-          <div className="absolute top-3 right-3 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-xl p-3 max-w-[190px] max-h-[55%] overflow-y-auto no-scrollbar shadow-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Archetypes</p>
-              {activeColors && <button onClick={() => setActiveColors(null)} className="text-[8px] font-black text-indigo-400 uppercase">Clear</button>}
-            </div>
-            <div className="space-y-0.5">
-              {legend.map((l) => {
-                const isActive = activeColors === l.key;
-                return (
-                  <button key={l.key} onClick={() => onLegendClick(l.key)}
-                    className={`w-full flex items-center gap-2 px-1.5 py-1 rounded-md transition-colors ${isActive ? 'bg-indigo-600/30' : 'hover:bg-slate-800/70'}`}>
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
-                    <span className="text-[10px] text-slate-300 font-bold truncate flex-1 text-left">{l.label}</span>
-                    <span className="text-[9px] text-slate-600 font-mono">{l.count}</span>
-                  </button>
-                );
-              })}
-              {showArch && (
-                <div className="flex items-center gap-2 pt-1.5 mt-1 border-t border-slate-800 px-1.5">
-                  <span className="w-2.5 h-2.5 rotate-45 bg-white flex-shrink-0" />
-                  <span className="text-[10px] text-amber-300 font-bold truncate flex-1">◆ Archetypal deck</span>
+          legendOpen ? (
+            <div className="absolute top-3 right-3 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-xl p-3 w-[190px] max-h-[60%] overflow-y-auto no-scrollbar shadow-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Archetypes</p>
+                <div className="flex items-center gap-2">
+                  {activeColors && <button onClick={() => setActiveColors(null)} className="text-[8px] font-black text-indigo-400 uppercase">Clear</button>}
+                  <button onClick={() => setLegendOpen(false)} title="Minimize" className="text-slate-500 hover:text-white"><ChevronUp size={14} /></button>
                 </div>
-              )}
+              </div>
+              <div className="space-y-0.5">
+                {legend.map((l) => {
+                  const isActive = activeColors === l.key;
+                  return (
+                    <button key={l.key} onClick={() => onLegendClick(l.key)}
+                      className={`w-full flex items-center gap-2 px-1.5 py-1 rounded-md transition-colors ${isActive ? 'bg-indigo-600/30' : 'hover:bg-slate-800/70'}`}>
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
+                      <span className="text-[10px] text-slate-300 font-bold truncate flex-1 text-left">{l.label}</span>
+                      <span className="text-[9px] text-slate-600 font-mono">{l.count}</span>
+                    </button>
+                  );
+                })}
+                {showArch && (
+                  <div className="flex items-center gap-2 pt-1.5 mt-1 border-t border-slate-800 px-1.5">
+                    <span className="w-2.5 h-2.5 rotate-45 bg-white flex-shrink-0" />
+                    <span className="text-[10px] text-amber-300 font-bold truncate flex-1">◆ Archetypal deck</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-[8px] text-slate-600 mt-2 leading-tight">Click an archetype to see its signature cards.</p>
             </div>
-            <p className="text-[8px] text-slate-600 mt-2 leading-tight">Click an archetype to see its signature cards.</p>
-          </div>
+          ) : (
+            <button onClick={() => setLegendOpen(true)}
+              className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/85 backdrop-blur-sm border border-slate-800 text-slate-300 hover:text-white text-[10px] font-black uppercase tracking-widest shadow-2xl">
+              <List size={13} /> Legend
+              {activeColors && <span className="w-2 h-2 rounded-full bg-indigo-400" />}
+            </button>
+          )
         )}
 
         {hoverInfo && (

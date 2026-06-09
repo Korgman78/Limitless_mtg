@@ -33,9 +33,9 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
     else { setComparisonType('format'); setCompareMode(v); }
   };
   const VIEW_OPTIONS = [
-    { id: 'archetypes', label: 'Archetypes', shortLabel: 'Archetypes', Icon: PieChartIcon },
-    { id: 'cards', label: 'Cards · Formats', shortLabel: 'Formats', Icon: Zap },
-    { id: 'players', label: 'Cards · Players', shortLabel: 'Players', Icon: Users },
+    { id: 'archetypes', label: 'Archetypes', Icon: PieChartIcon },
+    { id: 'cards', label: 'Cards · Formats', Icon: Zap },
+    { id: 'players', label: 'Cards · Players', Icon: Users },
   ];
 
   // Coach marks for onboarding
@@ -220,20 +220,19 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
           {/* Sélecteur de vue unifié (sujet + dimension de comparaison) */}
           <div className="relative flex bg-slate-950 p-1 rounded-xl border border-slate-800 w-full">
-            {VIEW_OPTIONS.map(({ id, label, shortLabel, Icon }) => {
+            {VIEW_OPTIONS.map(({ id, label, Icon }) => {
               const active = view === id;
               return (
                 <button key={id} onClick={() => setView(id)}
-                  className={`relative flex-1 flex items-center justify-center gap-1.5 px-2 md:px-4 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-colors duration-200 ${active ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                  className={`relative flex-1 flex items-center justify-center gap-1 md:gap-1.5 px-1.5 md:px-4 py-2 md:py-2.5 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-tight md:tracking-wide leading-tight transition-colors duration-200 ${active ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}>
                   {active && (
                     <motion.div layoutId="compare-view-pill"
                       className="absolute inset-0 bg-indigo-600 rounded-lg shadow-[0_4px_14px_rgba(79,70,229,0.45)]"
                       transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
                   )}
-                  <span className="relative z-10 flex items-center gap-1.5">
-                    <Icon size={13} />
-                    <span className="hidden sm:inline">{label}</span>
-                    <span className="sm:hidden">{shortLabel}</span>
+                  <span className="relative z-10 flex items-center gap-1 text-center">
+                    <Icon size={12} className="shrink-0" />
+                    <span>{label}</span>
                   </span>
                 </button>
               );
