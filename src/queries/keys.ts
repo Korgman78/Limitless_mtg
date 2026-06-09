@@ -19,4 +19,8 @@ export const queryKeys = {
     ['cardSynergies', set, format, cardName] as const,
   metagamePulse: (set: string, format: string, window: string) =>
     ['metagamePulse', set, format, window] as const,
+  trophyDeckMap: (set: string, format: string) =>
+    ['trophyDeckMap', set, format] as const,
+  trophyDeck: (aggregateId: string) =>
+    ['trophyDeck', aggregateId] as const,
 }

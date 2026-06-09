@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle } from 'lucide-react';
+import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle, Network } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
 import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
@@ -9,6 +9,7 @@ import { extractColors, getCardImage, sortColorsWUBRG } from '../../utils/helper
 import { CmcStack } from './CmcStack';
 import { InsightCardList } from './InsightCardList';
 import { DeckTestPanel } from './DeckTestPanel/index';
+import { TrophyMapOverlay } from '../Overlays/TrophyMapOverlay';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
 
@@ -63,6 +64,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [showMethodology, setShowMethodology] = useState(false);
     const [importanceSort, setImportanceSort] = useState<'importance' | 'freq' | 'synergy' | 'wr'>('importance');
     const [deckViewFilter, setDeckViewFilter] = useState<DeckViewFilter>('all');
+    const [showMap, setShowMap] = useState(false);
 
     // Aliases pour compatibilité avec le code existant
     const selectedArch = selection.archetype;
@@ -227,17 +229,25 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             <HelpCircle size={14} />
                         </button>
                     </div>
-                    <DeckTestPanel
-                        activeSet={activeSet}
-                        activeFormat={activeFormat}
-                        onFormatChange={onFormatChange}
-                        onMatchedArchetype={(archetypeName, _format, isAlternative) => {
-                            setFilter('all');
-                            setIsAlt(isAlternative);
-                            setSelectedArch(archetypeName);
-                        }}
-                        className="inline-flex items-center gap-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-widest transition-all"
-                    />
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <DeckTestPanel
+                            activeSet={activeSet}
+                            activeFormat={activeFormat}
+                            onFormatChange={onFormatChange}
+                            onMatchedArchetype={(archetypeName, _format, isAlternative) => {
+                                setFilter('all');
+                                setIsAlt(isAlternative);
+                                setSelectedArch(archetypeName);
+                            }}
+                            className="inline-flex items-center gap-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-widest transition-all"
+                        />
+                        <button
+                            onClick={() => { haptics.light(); setShowMap(true); }}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-purple-500/15 border border-purple-400/30 hover:bg-purple-500/25 text-purple-200 text-[10px] font-bold uppercase tracking-widest transition-all"
+                        >
+                            <Network size={13} /> Trophies Map
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
@@ -825,6 +835,13 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                         </div>
                     </motion.div>
                 ) : null}
+            </AnimatePresence>
+
+            {/* Trophies Map (UMAP clustering) */}
+            <AnimatePresence>
+                {showMap && (
+                    <TrophyMapOverlay activeSet={activeSet} activeFormat={activeFormat} onClose={() => setShowMap(false)} />
+                )}
             </AnimatePresence>
 
         </div>
