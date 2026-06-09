@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Network, Palette, Trophy, Loader2, Info } from 'lucide-react';
+import { X, Network, Palette, Trophy, Loader2, Info, Maximize2 } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
 import { getCardImage, sortColorsWUBRG } from '../../utils/helpers';
 import { useTrophyDeckMap, useTrophyDeckCardlist, type TrophyMapPoint } from '../../queries/useTrophyDeckMap';
@@ -19,9 +19,7 @@ const COLOR_RGB: Record<string, [number, number, number]> = {
 
 const GUILD_NAMES: Record<string, string> = (() => {
   const map: Record<string, string> = {};
-  [...PAIRS, ...TRIOS].forEach(p => {
-    map[sortColorsWUBRG(p.code)] = p.name.replace(/\s*\(.*\)$/, '');
-  });
+  [...PAIRS, ...TRIOS].forEach(p => { map[sortColorsWUBRG(p.code)] = p.name.replace(/\s*\(.*\)$/, ''); });
   return map;
 })();
 
@@ -46,11 +44,31 @@ function labelForColors(colors: string | null): string {
   return code;
 }
 
+// Ticks "ronds" pour les axes
+function niceNum(range: number, round: boolean): number {
+  const exp = Math.floor(Math.log10(range || 1));
+  const frac = (range || 1) / Math.pow(10, exp);
+  let nf: number;
+  if (round) nf = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
+  else nf = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return nf * Math.pow(10, exp);
+}
+function niceTicks(min: number, max: number, count: number): number[] {
+  const step = niceNum((max - min) / Math.max(count - 1, 1), true) || 1;
+  const start = Math.ceil(min / step) * step;
+  const ticks: number[] = [];
+  for (let v = start; v <= max + step * 0.001; v += step) ticks.push(Math.round(v * 100) / 100);
+  return ticks;
+}
+
+const MIN_ZOOM = 1, MAX_ZOOM = 14;
+
 export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, activeFormat, onClose }) => {
   const { data: points = [], isLoading } = useTrophyDeckMap(activeSet, activeFormat);
   const [colorMode, setColorMode] = useState<ColorMode>('archetype');
   const [selected, setSelected] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [isTransformed, setIsTransformed] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; point: TrophyMapPoint } | null>(null);
 
   const mainRef = useRef<HTMLCanvasElement | null>(null);
@@ -59,6 +77,12 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
   const pixelsRef = useRef<Array<{ px: number; py: number }>>([]);
   const hoverIdxRef = useRef<number>(-1);
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  // Transform (source de vérité = refs, pour un rendu impératif fluide)
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(0);
+  const dragRef = useRef<{ active: boolean; lastX: number; lastY: number; moved: boolean }>({ active: false, lastX: 0, lastY: 0, moved: false });
 
   const formatLabel = FORMAT_OPTIONS.find(o => o.value === activeFormat)?.label || activeFormat;
 
@@ -99,13 +123,12 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
         color = `rgb(${r},${g},${b})`;
       }
       const g = groups.get(key);
-      if (g) g.count++;
-      else groups.set(key, { label, color, count: 1 });
+      if (g) g.count++; else groups.set(key, { label, color, count: 1 });
     }
     return Array.from(groups.values()).sort((a, b) => b.count - a.count).slice(0, 14);
   }, [points, colorMode, clusterCount]);
 
-  // --- Rendu du nuage dans un buffer offscreen (device pixels = net) ---
+  // --- Rendu du nuage (offscreen, device pixels, axes + transform) ---
   const renderBase = useCallback(() => {
     if (!bounds || dims.w === 0) return;
     const dpr = window.devicePixelRatio || 1;
@@ -116,18 +139,64 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     const ctx = base.getContext('2d');
     if (!ctx) return;
 
-    const pad = 40 * dpr;
+    const showAxes = dims.w >= 768;
+    const mL = (showAxes ? 46 : 10) * dpr, mR = 12 * dpr, mT = 12 * dpr, mB = (showAxes ? 30 : 10) * dpr;
     const spanX = (bounds.maxX - bounds.minX) || 1;
     const spanY = (bounds.maxY - bounds.minY) || 1;
-    const sx = (W - pad * 2) / spanX;
-    const sy = (H - pad * 2) / spanY;
-    const radius = (points.length > 5000 ? 2.2 : points.length > 1500 ? 2.8 : 3.6) * dpr;
+    const sx = (W - mL - mR) / spanX;
+    const sy = (H - mT - mB) / spanY;
+    const zoom = zoomRef.current, pan = panRef.current;
 
+    // data -> écran (fit puis transform)
+    const toX = (vx: number) => (mL + (vx - bounds.minX) * sx) * zoom + pan.x;
+    const toY = (vy: number) => (H - mB - (vy - bounds.minY) * sy) * zoom + pan.y;
+
+    // --- Axes / grille ---
+    if (showAxes) {
+      ctx.lineWidth = 1 * dpr;
+      ctx.font = `${10 * dpr}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.textBaseline = 'middle';
+      const xticks = niceTicks(bounds.minX, bounds.maxX, 8);
+      const yticks = niceTicks(bounds.minY, bounds.maxY, 8);
+      ctx.textAlign = 'center';
+      for (const v of xticks) {
+        const x = toX(v);
+        if (x < mL || x > W - mR) continue;
+        ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+        ctx.beginPath(); ctx.moveTo(x, mT); ctx.lineTo(x, H - mB); ctx.stroke();
+        ctx.fillStyle = 'rgba(148,163,184,0.55)';
+        ctx.fillText(v.toFixed(1), x, H - mB + 14 * dpr);
+      }
+      ctx.textAlign = 'right';
+      for (const v of yticks) {
+        const y = toY(v);
+        if (y < mT || y > H - mB) continue;
+        ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+        ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(W - mR, y); ctx.stroke();
+        ctx.fillStyle = 'rgba(148,163,184,0.55)';
+        ctx.fillText(v.toFixed(1), mL - 6 * dpr, y);
+      }
+      // Cadre
+      ctx.strokeStyle = 'rgba(148,163,184,0.18)';
+      ctx.strokeRect(mL, mT, W - mL - mR, H - mT - mB);
+      // Titres
+      ctx.fillStyle = 'rgba(148,163,184,0.7)';
+      ctx.font = `700 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('UMAP 1', (mL + W - mR) / 2, H - 8 * dpr);
+      ctx.save();
+      ctx.translate(13 * dpr, (mT + H - mB) / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('UMAP 2', 0, 0);
+      ctx.restore();
+    }
+
+    // --- Points ---
+    const radius = (points.length > 5000 ? 2.2 : points.length > 1500 ? 2.8 : 3.6) * dpr;
     const pixels: Array<{ px: number; py: number }> = new Array(points.length);
     ctx.globalAlpha = 0.82;
     points.forEach((p, i) => {
-      const px = pad + (p.x - bounds.minX) * sx;
-      const py = H - (pad + (p.y - bounds.minY) * sy);
+      const px = toX(p.x), py = toY(p.y);
       pixels[i] = { px, py };
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
@@ -138,7 +207,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     pixelsRef.current = pixels;
   }, [points, bounds, dims, colorOf]);
 
-  // --- Composite : base + halos (cheap, appelé au survol) ---
   const composite = useCallback(() => {
     const main = mainRef.current, base = baseRef.current;
     if (!main || !base || dims.w === 0) return;
@@ -166,9 +234,13 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     if (hoverIdxRef.current >= 0 && hoverIdxRef.current !== selIdx) ring(hoverIdxRef.current, 'rgba(255,255,255,0.85)', 3 * dpr, 2);
   }, [points, dims, selected]);
 
+  const scheduleRender = useCallback(() => {
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => { rafRef.current = 0; renderBase(); composite(); });
+  }, [renderBase, composite]);
+
   useEffect(() => { renderBase(); composite(); }, [renderBase, composite]);
 
-  // Mesure initiale + ResizeObserver (conteneur toujours monté → fiable)
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -181,6 +253,37 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Zoom molette (vers le curseur) — listener natif non-passif
+  useEffect(() => {
+    const canvas = mainRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) * dpr, cy = (e.clientY - rect.top) * dpr;
+      const z = zoomRef.current, pan = panRef.current;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor));
+      if (nz === z) return;
+      // garde le point sous le curseur fixe
+      const wx = (cx - pan.x) / z, wy = (cy - pan.y) / z;
+      let nx = cx - wx * nz, ny = cy - wy * nz;
+      if (nz === MIN_ZOOM) { nx = 0; ny = 0; }
+      zoomRef.current = nz; panRef.current = { x: nx, y: ny };
+      setIsTransformed(nz !== 1);
+      scheduleRender();
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [scheduleRender]);
+
+  const resetView = () => {
+    zoomRef.current = 1; panRef.current = { x: 0, y: 0 };
+    setIsTransformed(false);
+    renderBase(); composite();
+  };
 
   const hitTest = (clientX: number, clientY: number): number => {
     const main = mainRef.current;
@@ -198,7 +301,22 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     return best;
   };
 
+  const onDown = (e: React.MouseEvent) => {
+    dragRef.current = { active: true, lastX: e.clientX, lastY: e.clientY, moved: false };
+  };
   const onMove = (e: React.MouseEvent) => {
+    const drag = dragRef.current;
+    if (drag.active) {
+      const dpr = window.devicePixelRatio || 1;
+      const dx = (e.clientX - drag.lastX) * dpr, dy = (e.clientY - drag.lastY) * dpr;
+      if (Math.abs(e.clientX - drag.lastX) + Math.abs(e.clientY - drag.lastY) > 3) drag.moved = true;
+      panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+      drag.lastX = e.clientX; drag.lastY = e.clientY;
+      if (zoomRef.current > 1) setIsTransformed(true);
+      if (hoverInfo) setHoverInfo(null);
+      scheduleRender();
+      return;
+    }
     const idx = hitTest(e.clientX, e.clientY);
     if (idx !== hoverIdxRef.current) { hoverIdxRef.current = idx; composite(); }
     if (idx >= 0 && containerRef.current) {
@@ -206,8 +324,10 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
       setHoverInfo({ x: e.clientX - rect.left, y: e.clientY - rect.top, point: points[idx] });
     } else if (hoverInfo) setHoverInfo(null);
   };
-  const onLeave = () => { hoverIdxRef.current = -1; setHoverInfo(null); composite(); };
+  const onUp = () => { dragRef.current.active = false; };
+  const onLeave = () => { dragRef.current.active = false; hoverIdxRef.current = -1; setHoverInfo(null); composite(); };
   const onClick = (e: React.MouseEvent) => {
+    if (dragRef.current.moved) return; // c'était un pan
     const idx = hitTest(e.clientX, e.clientY);
     if (idx >= 0) setSelected(points[idx].aggregate_id);
   };
@@ -247,17 +367,16 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
         </div>
       </div>
 
-      {/* Body : conteneur canvas TOUJOURS monté (mesure fiable) */}
+      {/* Body */}
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
-        <canvas ref={mainRef} style={{ width: dims.w, height: dims.h }}
-          className={points.length > 0 && !isLoading ? 'cursor-crosshair' : 'pointer-events-none'}
-          onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick} />
+        <canvas ref={mainRef} style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
+          className={points.length > 0 && !isLoading ? (dragRef.current.active ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'}
+          onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onLeave} onClick={onClick} onDoubleClick={resetView} />
 
         {/* Loading */}
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none">
-            <div className="relative">
-              <div className="w-14 h-14 rounded-full border-2 border-indigo-500/20" />
+            <div className="relative w-14 h-14">
               <Loader2 className="animate-spin text-indigo-400 absolute inset-0 m-auto" size={56} strokeWidth={1.2} />
               <Network className="text-indigo-300 absolute inset-0 m-auto" size={20} />
             </div>
@@ -272,6 +391,14 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
             <p className="text-sm font-bold">No map data yet for this format.</p>
             <p className="text-[11px] text-slate-600 max-w-sm">The map is precomputed by the ETL (<code className="text-indigo-400">etl_umap_trophymap.py</code>).</p>
           </div>
+        )}
+
+        {/* Reset view */}
+        {isTransformed && !isLoading && (
+          <button onClick={resetView} title="Reset view (double-click)"
+            className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
+            <Maximize2 size={13} /> Reset
+          </button>
         )}
 
         {/* Légende */}
@@ -310,9 +437,10 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
               </div>
               <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
                 <li>• <strong className="text-slate-200">Each dot</strong> = one real trophy deck (a 7-win run on 17Lands).</li>
-                <li>• <strong className="text-slate-200">Distance</strong> is what matters: nearby decks share many cards, far-apart decks are very different. The X/Y axes themselves have <em>no</em> meaning (it's a UMAP projection of card composition).</li>
+                <li>• <strong className="text-slate-200">Distance</strong> is what matters: nearby decks share many cards, far-apart decks are very different. The UMAP axes themselves have <em>no</em> intrinsic meaning.</li>
                 <li>• <strong className="text-indigo-300">Archetype</strong> mode colors dots by the deck's color identity (its guild).</li>
-                <li>• <strong className="text-indigo-300">Clusters</strong> mode colors dots by groups of similar decks found automatically — useful to spot <em>sub-archetypes</em> (e.g. an aggro vs a midrange build within the same colors).</li>
+                <li>• <strong className="text-indigo-300">Clusters</strong> mode colors dots by groups of similar decks found automatically — to spot <em>sub-archetypes</em> (e.g. aggro vs midrange within the same colors).</li>
+                <li>• <strong className="text-slate-200">Scroll</strong> to zoom, <strong className="text-slate-200">drag</strong> to pan, double-click to reset.</li>
               </ul>
             </motion.div>
           )}
