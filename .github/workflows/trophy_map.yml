@@ -2,8 +2,10 @@ name: Trophy Map (UMAP)
 
 on:
   schedule:
-    # Tous les 3 jours à 06:00 UTC (jours 1,4,7,…,28,31 du mois)
-    - cron: '0 6 */3 * *'
+    # Tous les 3 jours à 18:00 UTC (jours 1,4,7,…,28,31 du mois).
+    # 18:00 = APRÈS la "Daily Trophy Decks Pipeline" (15:46 UTC) afin que
+    # trophy_decks + archetypal_skeletons soient frais du jour.
+    - cron: '0 18 */3 * *'
   # Déclenchement manuel depuis l'onglet Actions
   workflow_dispatch:
 
