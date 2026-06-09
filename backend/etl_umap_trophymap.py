@@ -213,8 +213,23 @@ def process(set_code, fmt):
     Xn = normalize(matrix)
     ncomp = int(min(50, matrix.shape[1], max(2, n - 1)))
     Xp = PCA(n_components=ncomp, random_state=42).fit_transform(Xn)
-    mcs = int(max(25, round(n * 0.012)))
-    clusters = HDBSCAN(min_cluster_size=mcs, min_samples=10).fit_predict(Xp)
+    mcs = int(max(30, round(n * 0.005)))
+    labels = HDBSCAN(min_cluster_size=mcs, min_samples=5,
+                     cluster_selection_method="leaf").fit_predict(Xp)
+
+    # Réaffecte le bruit (-1) au cluster le plus proche (pas de gros blob "Mixed")
+    real = sorted(c for c in set(int(x) for x in labels) if c >= 0)
+    if real:
+        centroids = np.vstack([Xp[labels == c].mean(axis=0) for c in real])
+        noise = np.where(labels == -1)[0]
+        if len(noise):
+            d = ((Xp[noise][:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)
+            nearest = d.argmin(axis=1)
+            for k, ni in enumerate(noise):
+                labels[ni] = real[nearest[k]]
+    else:
+        labels = np.zeros(n, dtype=int)
+    clusters = labels
 
     unique_clusters = sorted(set(int(c) for c in clusters))
     n_real_clusters = len([c for c in unique_clusters if c >= 0])
