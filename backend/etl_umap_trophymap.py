@@ -121,7 +121,7 @@ def extract_colors(archetype):
 def build_vectors(decks):
     """
     Construit la matrice deck x carte (quantites, terrains de base exclus).
-    Retourne (matrix, kept_decks).
+    Retourne (matrix, kept_decks, vocab).
     """
     # Vocabulaire : toutes les cartes non-basiques rencontrees
     vocab = {}
@@ -140,13 +140,40 @@ def build_vectors(decks):
         kept.append(d)
 
     if not kept:
-        return None, []
+        return None, [], {}
 
     matrix = np.zeros((len(kept), len(vocab)), dtype=np.float32)
     for i, d in enumerate(kept):
         for name, qty in d["_spells"].items():
             matrix[i, vocab[name]] = float(qty)
-    return matrix, kept
+    return matrix, kept, vocab
+
+def fetch_archetypal_skeletons(set_code, fmt):
+    """Recupere les squelettes archetypaux (principaux) pour un set/format."""
+    url = (
+        f"{SUPABASE_URL}/rest/v1/archetypal_skeletons"
+        f"?set_code=eq.{set_code}&format=eq.{fmt}"
+        f"&select=archetype_name,deck_list,is_alternative,sample_size"
+    )
+    try:
+        r = requests.get(url, headers=HEADERS_SUPABASE)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        print(f"   ⚠️ Erreur fetch skeletons: {e}")
+    return []
+
+def skeleton_vector(deck_list, vocab):
+    """Vecteur d'un squelette sur le MEME vocabulaire (basics + cartes inconnues exclues)."""
+    vec = np.zeros(len(vocab), dtype=np.float32)
+    total = 0
+    for c in deck_list or []:
+        name = c.get("name") if isinstance(c, dict) else None
+        if not name or name in BASIC_LANDS or name not in vocab:
+            continue
+        vec[vocab[name]] += 1.0
+        total += 1
+    return vec, total
 
 def choose_k(n):
     """Nombre de clusters adaptatif, borne entre 4 et 14."""
@@ -161,7 +188,7 @@ def process(set_code, fmt):
     decks = fetch_trophy_decks(set_code, fmt)
     print(f"   📦 {len(decks)} decks trophees recuperes")
 
-    matrix, kept = build_vectors(decks)
+    matrix, kept, vocab = build_vectors(decks)
     n = len(kept)
     if n < MIN_DECKS:
         print(f"   ⏭️  Trop peu de decks ({n} < {MIN_DECKS}), ignore.")
@@ -190,7 +217,7 @@ def process(set_code, fmt):
         archs = [a for a in archs if a]
         cluster_labels[cid] = Counter(archs).most_common(1)[0][0] if archs else f"Cluster {cid}"
 
-    # --- Construction des enregistrements ---
+    # --- Construction des enregistrements (decks reels) ---
     records = []
     for i, d in enumerate(kept):
         records.append({
@@ -204,7 +231,37 @@ def process(set_code, fmt):
             "y": round(float(coords[i, 1]), 4),
             "cluster": int(clusters[i]),
             "cluster_label": cluster_labels[int(clusters[i])],
+            "is_archetypal": False,
         })
+
+    # --- Projection des squelettes archetypaux dans le MEME espace UMAP ---
+    skels = fetch_archetypal_skeletons(set_code, fmt)
+    skels = [s for s in skels if not s.get("is_alternative") and (s.get("sample_size") or 0) >= 20]
+    arch_vecs, arch_valid = [], []
+    for s in skels:
+        vec, total = skeleton_vector(s.get("deck_list"), vocab)
+        if total > 0:
+            arch_vecs.append(vec)
+            arch_valid.append(s)
+    arch_count = 0
+    if arch_vecs:
+        arch_coords = reducer.transform(np.vstack(arch_vecs))
+        for i, s in enumerate(arch_valid):
+            name = s["archetype_name"]
+            records.append({
+                "aggregate_id": f"arch:{set_code}:{fmt}:{name}",
+                "set_code": set_code,
+                "format": fmt,
+                "archetype": name,
+                "colors": extract_colors(name),
+                "wins": None,
+                "x": round(float(arch_coords[i, 0]), 4),
+                "y": round(float(arch_coords[i, 1]), 4),
+                "cluster": None,
+                "cluster_label": None,
+                "is_archetypal": True,
+            })
+        arch_count = len(arch_valid)
 
     # --- Remplacement complet pour ce set/format (coords coherentes) ---
     del_url = f"{SUPABASE_URL}/rest/v1/trophy_deck_map?set_code=eq.{set_code}&format=eq.{fmt}"
@@ -223,7 +280,7 @@ def process(set_code, fmt):
         except Exception as e:
             print(f"   ❌ Exception insert: {e}")
 
-    print(f"   ✅ {len(records)} points · {k} clusters · {matrix.shape[1]} cartes au vocabulaire")
+    print(f"   ✅ {n} decks + {arch_count} archetypaux · {k} clusters · {matrix.shape[1]} cartes au vocabulaire")
 
 # ==============================================================================
 # MAIN

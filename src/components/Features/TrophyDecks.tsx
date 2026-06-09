@@ -840,7 +840,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
             {/* Trophies Map (UMAP clustering) */}
             <AnimatePresence>
                 {showMap && (
-                    <TrophyMapOverlay activeSet={activeSet} activeFormat={activeFormat} onClose={() => setShowMap(false)} />
+                    <TrophyMapOverlay activeSet={activeSet} activeFormat={activeFormat} skeletons={skeletons} onClose={() => setShowMap(false)} />
                 )}
             </AnimatePresence>
 
