@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Network, Palette, Trophy, Loader2, Info } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
@@ -13,17 +13,14 @@ interface TrophyMapOverlayProps {
 
 type ColorMode = 'archetype' | 'cluster';
 
-// --- Couleurs ---
 const COLOR_RGB: Record<string, [number, number, number]> = {
   W: [245, 240, 210], U: [56, 132, 246], B: [150, 100, 230], R: [239, 68, 68], G: [52, 199, 99],
 };
 
-// Nom de guilde / triome à partir du code couleur (pour la légende)
 const GUILD_NAMES: Record<string, string> = (() => {
   const map: Record<string, string> = {};
   [...PAIRS, ...TRIOS].forEach(p => {
-    const code = sortColorsWUBRG(p.code);
-    map[code] = p.name.replace(/\s*\(.*\)$/, '');
+    map[sortColorsWUBRG(p.code)] = p.name.replace(/\s*\(.*\)$/, '');
   });
   return map;
 })();
@@ -53,17 +50,18 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
   const { data: points = [], isLoading } = useTrophyDeckMap(activeSet, activeFormat);
   const [colorMode, setColorMode] = useState<ColorMode>('archetype');
   const [selected, setSelected] = useState<string | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; point: TrophyMapPoint } | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mainRef = useRef<HTMLCanvasElement | null>(null);
+  const baseRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const pixelsRef = useRef<Array<{ px: number; py: number; i: number }>>([]);
+  const pixelsRef = useRef<Array<{ px: number; py: number }>>([]);
   const hoverIdxRef = useRef<number>(-1);
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   const formatLabel = FORMAT_OPTIONS.find(o => o.value === activeFormat)?.label || activeFormat;
 
-  // Bornes des coordonnées
   const bounds = useMemo(() => {
     if (points.length === 0) return null;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -86,7 +84,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     return `rgb(${r},${g},${b})`;
   }, [colorMode, clusterCount]);
 
-  // Légende
   const legend = useMemo(() => {
     const groups = new Map<string, { label: string; color: string; count: number }>();
     for (const p of points) {
@@ -108,77 +105,94 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     return Array.from(groups.values()).sort((a, b) => b.count - a.count).slice(0, 14);
   }, [points, colorMode, clusterCount]);
 
-  // Dessin du nuage
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !bounds || dims.w === 0) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  // --- Rendu du nuage dans un buffer offscreen (device pixels = net) ---
+  const renderBase = useCallback(() => {
+    if (!bounds || dims.w === 0) return;
     const dpr = window.devicePixelRatio || 1;
-    const { w, h } = dims;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    const W = Math.round(dims.w * dpr), H = Math.round(dims.h * dpr);
+    let base = baseRef.current;
+    if (!base) { base = document.createElement('canvas'); baseRef.current = base; }
+    base.width = W; base.height = H;
+    const ctx = base.getContext('2d');
+    if (!ctx) return;
 
-    const pad = 48;
+    const pad = 40 * dpr;
     const spanX = (bounds.maxX - bounds.minX) || 1;
     const spanY = (bounds.maxY - bounds.minY) || 1;
-    const sx = (w - pad * 2) / spanX;
-    const sy = (h - pad * 2) / spanY;
+    const sx = (W - pad * 2) / spanX;
+    const sy = (H - pad * 2) / spanY;
+    const radius = (points.length > 5000 ? 2.2 : points.length > 1500 ? 2.8 : 3.6) * dpr;
 
-    const pixels: Array<{ px: number; py: number; i: number }> = [];
-    const radius = points.length > 1500 ? 2.6 : points.length > 600 ? 3.2 : 4;
-
+    const pixels: Array<{ px: number; py: number }> = new Array(points.length);
+    ctx.globalAlpha = 0.82;
     points.forEach((p, i) => {
       const px = pad + (p.x - bounds.minX) * sx;
-      const py = h - (pad + (p.y - bounds.minY) * sy); // flip Y
-      pixels.push({ px, py, i });
+      const py = H - (pad + (p.y - bounds.minY) * sy);
+      pixels[i] = { px, py };
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
       ctx.fillStyle = colorOf(p);
-      ctx.globalAlpha = 0.78;
       ctx.fill();
     });
-    pixelsRef.current = pixels;
-
-    // Survol / sélection : halo
     ctx.globalAlpha = 1;
-    const highlight = (idx: number, ring: string, rad: number) => {
-      const px = pad + (points[idx].x - bounds.minX) * sx;
-      const py = h - (pad + (points[idx].y - bounds.minY) * sy);
+    pixelsRef.current = pixels;
+  }, [points, bounds, dims, colorOf]);
+
+  // --- Composite : base + halos (cheap, appelé au survol) ---
+  const composite = useCallback(() => {
+    const main = mainRef.current, base = baseRef.current;
+    if (!main || !base || dims.w === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(dims.w * dpr), H = Math.round(dims.h * dpr);
+    if (main.width !== W) main.width = W;
+    if (main.height !== H) main.height = H;
+    const ctx = main.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(base, 0, 0);
+
+    const radius = (points.length > 5000 ? 2.2 : points.length > 1500 ? 2.8 : 3.6) * dpr;
+    const ring = (idx: number, color: string, extra: number, width: number) => {
+      const px = pixelsRef.current[idx];
+      if (!px) return;
       ctx.beginPath();
-      ctx.arc(px, py, rad, 0, Math.PI * 2);
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = ring;
+      ctx.arc(px.px, px.py, radius + extra, 0, Math.PI * 2);
+      ctx.lineWidth = width * dpr;
+      ctx.strokeStyle = color;
       ctx.stroke();
     };
     const selIdx = selected ? points.findIndex(p => p.aggregate_id === selected) : -1;
-    if (selIdx >= 0) highlight(selIdx, '#ffffff', radius + 4);
-    if (hoverIdxRef.current >= 0 && hoverIdxRef.current !== selIdx) highlight(hoverIdxRef.current, 'rgba(255,255,255,0.7)', radius + 3);
-  }, [points, bounds, dims, colorOf, selected]);
+    if (selIdx >= 0) ring(selIdx, '#ffffff', 4 * dpr, 2.5);
+    if (hoverIdxRef.current >= 0 && hoverIdxRef.current !== selIdx) ring(hoverIdxRef.current, 'rgba(255,255,255,0.85)', 3 * dpr, 2);
+  }, [points, dims, selected]);
 
-  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => { renderBase(); composite(); }, [renderBase, composite]);
 
-  // Resize observer
-  useEffect(() => {
+  // Mesure initiale + ResizeObserver (conteneur toujours monté → fiable)
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      const r = entries[0].contentRect;
-      setDims({ w: r.width, h: r.height });
-    });
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setDims(prev => (Math.abs(prev.w - r.width) > 1 || Math.abs(prev.h - r.height) > 1) ? { w: r.width, h: r.height } : prev);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  const hitTest = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return -1;
-    const rect = canvas.getBoundingClientRect();
-    const mx = clientX - rect.left, my = clientY - rect.top;
-    let best = -1, bestDist = 100;
-    for (const { px, py, i } of pixelsRef.current) {
-      const d = (px - mx) ** 2 + (py - my) ** 2;
+  const hitTest = (clientX: number, clientY: number): number => {
+    const main = mainRef.current;
+    if (!main) return -1;
+    const rect = main.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const mx = (clientX - rect.left) * dpr, my = (clientY - rect.top) * dpr;
+    const thr = (9 * dpr) ** 2;
+    let best = -1, bestDist = thr;
+    const px = pixelsRef.current;
+    for (let i = 0; i < px.length; i++) {
+      const d = (px[i].px - mx) ** 2 + (px[i].py - my) ** 2;
       if (d < bestDist) { bestDist = d; best = i; }
     }
     return best;
@@ -186,23 +200,18 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
 
   const onMove = (e: React.MouseEvent) => {
     const idx = hitTest(e.clientX, e.clientY);
-    if (idx !== hoverIdxRef.current) {
-      hoverIdxRef.current = idx;
-      draw();
-    }
-    if (idx >= 0) {
-      const rect = containerRef.current!.getBoundingClientRect();
+    if (idx !== hoverIdxRef.current) { hoverIdxRef.current = idx; composite(); }
+    if (idx >= 0 && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
       setHoverInfo({ x: e.clientX - rect.left, y: e.clientY - rect.top, point: points[idx] });
-    } else setHoverInfo(null);
+    } else if (hoverInfo) setHoverInfo(null);
   };
-
-  const onLeave = () => { hoverIdxRef.current = -1; setHoverInfo(null); draw(); };
+  const onLeave = () => { hoverIdxRef.current = -1; setHoverInfo(null); composite(); };
   const onClick = (e: React.MouseEvent) => {
     const idx = hitTest(e.clientX, e.clientY);
     if (idx >= 0) setSelected(points[idx].aggregate_id);
   };
 
-  // Esc pour fermer
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (selected) setSelected(null); else onClose(); } };
     window.addEventListener('keydown', h);
@@ -222,6 +231,10 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3">
+          <button onClick={() => setShowInfo(s => !s)} title="How to read this map"
+            className={`p-2 rounded-lg border transition-colors ${showInfo ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}>
+            <Info size={16} />
+          </button>
           <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
             <button onClick={() => setColorMode('archetype')} className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wide transition-all ${colorMode === 'archetype' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>
               <Palette size={12} /> Archetype
@@ -234,53 +247,76 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
         </div>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 relative overflow-hidden">
-        {isLoading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-500">
-            <Loader2 className="animate-spin text-indigo-400" size={32} />
-            <p className="text-xs font-bold uppercase tracking-widest">Loading map…</p>
+      {/* Body : conteneur canvas TOUJOURS monté (mesure fiable) */}
+      <div ref={containerRef} className="flex-1 relative overflow-hidden">
+        <canvas ref={mainRef} style={{ width: dims.w, height: dims.h }}
+          className={points.length > 0 && !isLoading ? 'cursor-crosshair' : 'pointer-events-none'}
+          onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick} />
+
+        {/* Loading */}
+        {isLoading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none">
+            <div className="relative">
+              <div className="w-14 h-14 rounded-full border-2 border-indigo-500/20" />
+              <Loader2 className="animate-spin text-indigo-400 absolute inset-0 m-auto" size={56} strokeWidth={1.2} />
+              <Network className="text-indigo-300 absolute inset-0 m-auto" size={20} />
+            </div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Projecting decks…</p>
           </div>
-        ) : points.length === 0 ? (
+        )}
+
+        {/* Empty */}
+        {!isLoading && points.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-500 px-6 text-center">
             <Trophy size={40} className="text-slate-800" />
             <p className="text-sm font-bold">No map data yet for this format.</p>
-            <p className="text-[11px] text-slate-600 max-w-sm">The map is precomputed by the ETL. Run <code className="text-indigo-400">etl_umap_trophymap.py</code> once trophy decks are scraped.</p>
-          </div>
-        ) : (
-          <div ref={containerRef} className="absolute inset-0 cursor-crosshair">
-            <canvas ref={canvasRef} style={{ width: dims.w, height: dims.h }} onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick} />
-
-            {/* Légende */}
-            <div className="absolute top-3 right-3 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-xl p-3 max-w-[180px] max-h-[60%] overflow-y-auto no-scrollbar shadow-2xl">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{colorMode === 'cluster' ? 'Clusters' : 'Archetypes'}</p>
-              <div className="space-y-1">
-                {legend.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
-                    <span className="text-[10px] text-slate-300 font-bold truncate flex-1">{l.label}</span>
-                    <span className="text-[9px] text-slate-600 font-mono">{l.count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Aide axes */}
-            <div className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] text-slate-600 bg-slate-900/70 backdrop-blur-sm border border-slate-800 rounded-lg px-2.5 py-1.5 max-w-[60%]">
-              <Info size={11} className="flex-shrink-0" />
-              <span className="leading-snug">Proximity = similar card composition. Axes have no meaning.</span>
-            </div>
-
-            {/* Tooltip survol */}
-            {hoverInfo && (
-              <div className="absolute pointer-events-none z-10 bg-slate-900 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 shadow-xl"
-                style={{ left: Math.min(hoverInfo.x + 14, dims.w - 150), top: Math.max(hoverInfo.y - 10, 8) }}>
-                <p className="text-[11px] font-black text-white truncate max-w-[140px]">{hoverInfo.point.archetype || 'Unknown'}</p>
-                <p className="text-[9px] text-slate-400 font-bold">{colorMode === 'cluster' ? (hoverInfo.point.cluster_label || `Cluster ${hoverInfo.point.cluster}`) : labelForColors(hoverInfo.point.colors)} · click to view</p>
-              </div>
-            )}
+            <p className="text-[11px] text-slate-600 max-w-sm">The map is precomputed by the ETL (<code className="text-indigo-400">etl_umap_trophymap.py</code>).</p>
           </div>
         )}
+
+        {/* Légende */}
+        {!isLoading && points.length > 0 && (
+          <div className="absolute top-3 right-3 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-xl p-3 max-w-[180px] max-h-[55%] overflow-y-auto no-scrollbar shadow-2xl">
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{colorMode === 'cluster' ? 'Clusters' : 'Archetypes'}</p>
+            <div className="space-y-1">
+              {legend.map((l, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
+                  <span className="text-[10px] text-slate-300 font-bold truncate flex-1">{l.label}</span>
+                  <span className="text-[9px] text-slate-600 font-mono">{l.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tooltip survol */}
+        {hoverInfo && (
+          <div className="absolute pointer-events-none z-10 bg-slate-900 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 shadow-xl"
+            style={{ left: Math.min(hoverInfo.x + 14, dims.w - 160), top: Math.max(hoverInfo.y - 10, 8) }}>
+            <p className="text-[11px] font-black text-white truncate max-w-[150px]">{labelForColors(hoverInfo.point.colors)}</p>
+            <p className="text-[9px] text-slate-400 font-bold">{colorMode === 'cluster' ? (hoverInfo.point.cluster_label || `Cluster ${hoverInfo.point.cluster}`) : `${hoverInfo.point.wins ?? 7}-win trophy deck`} · click to open</p>
+          </div>
+        )}
+
+        {/* Panneau méthodologie */}
+        <AnimatePresence>
+          {showInfo && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+              className="absolute bottom-3 left-3 right-3 md:right-auto md:max-w-md bg-slate-900/95 backdrop-blur-sm border border-indigo-500/30 rounded-xl p-4 shadow-2xl z-10">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <h3 className="text-[11px] font-black text-indigo-300 uppercase tracking-widest">How to read this map</h3>
+                <button onClick={() => setShowInfo(false)} className="text-slate-500 hover:text-white"><X size={14} /></button>
+              </div>
+              <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
+                <li>• <strong className="text-slate-200">Each dot</strong> = one real trophy deck (a 7-win run on 17Lands).</li>
+                <li>• <strong className="text-slate-200">Distance</strong> is what matters: nearby decks share many cards, far-apart decks are very different. The X/Y axes themselves have <em>no</em> meaning (it's a UMAP projection of card composition).</li>
+                <li>• <strong className="text-indigo-300">Archetype</strong> mode colors dots by the deck's color identity (its guild).</li>
+                <li>• <strong className="text-indigo-300">Clusters</strong> mode colors dots by groups of similar decks found automatically — useful to spot <em>sub-archetypes</em> (e.g. an aggro vs a midrange build within the same colors).</li>
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Panneau decklist */}
         <AnimatePresence>
@@ -292,32 +328,35 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
 };
 
 // ------------------------------------------------------------------
-// Panneau latéral : decklist du deck sélectionné
-// ------------------------------------------------------------------
 const DeckListPanel: React.FC<{ aggregateId: string; point: TrophyMapPoint | null; onClose: () => void }> = ({ aggregateId, point, onClose }) => {
   const { data: cardlist = {}, isLoading } = useTrophyDeckCardlist(aggregateId);
   const cards = useMemo(() => Object.entries(cardlist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])), [cardlist]);
+  const total = cards.reduce((a, [, q]) => a + q, 0);
+  const guild = labelForColors(point?.colors || null);
 
   return (
     <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-      className="absolute top-0 right-0 bottom-0 w-full sm:w-[360px] bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col z-20">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+      className="absolute top-0 right-0 bottom-0 w-full sm:w-[380px] bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col z-20">
+      <div className="flex items-start justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
         <div className="min-w-0">
-          <p className="text-sm font-black text-white truncate">{point?.archetype || 'Trophy deck'}</p>
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{point?.wins ?? 7} wins · {cards.reduce((a, [, q]) => a + q, 0)} cards</p>
+          <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-0.5">🏆 Trophy decklist</p>
+          <p className="text-base font-black text-white truncate leading-tight">{guild}</p>
+          <p className="text-[10px] text-slate-500 font-bold">{point?.wins ?? 7}-win run · {total} cards{point?.archetype && point.archetype !== guild ? ` · ${point.archetype}` : ''}</p>
         </div>
-        <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg"><X size={16} /></button>
+        <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg flex-shrink-0 ml-2"><X size={16} /></button>
       </div>
+      <p className="px-4 py-2 text-[10px] text-slate-500 leading-snug border-b border-slate-800/60">
+        A real deck a player went <span className="text-amber-300 font-bold">7 wins</span> with. Cards below are its exact maindeck.
+      </p>
       <div className="flex-1 overflow-y-auto p-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-indigo-400" size={24} /></div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {cards.map(([name, qty]) => (
-              <div key={name} className="relative rounded-lg overflow-hidden border border-slate-800 bg-black">
+              <div key={name} className="relative rounded-md overflow-hidden border border-slate-800 bg-black">
                 <img src={getCardImage(name)} alt={name} loading="lazy" className="w-full aspect-[63/88] object-cover" />
-                {qty > 1 && <span className="absolute top-1 right-1 bg-slate-950/90 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md border border-white/20">×{qty}</span>}
-                <span className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent text-white text-[8px] font-bold px-1 pb-1 pt-3 truncate leading-none">{name}</span>
+                {qty > 1 && <span className="absolute top-0.5 right-0.5 bg-slate-950/90 text-white text-[9px] font-black px-1 py-0.5 rounded border border-white/20">×{qty}</span>}
               </div>
             ))}
           </div>

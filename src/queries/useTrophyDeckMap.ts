@@ -17,33 +17,48 @@ const PAGE = 1000
 
 /**
  * Charge les coordonnées 2D précalculées (UMAP) des decks trophées pour un
- * set/format depuis la table `trophy_deck_map`. Pagine au-delà de 1000 lignes
- * (limite par défaut de PostgREST).
+ * set/format depuis `trophy_deck_map`. Récupère d'abord le total puis fetch
+ * toutes les pages EN PARALLÈLE (au lieu de séquentiel) pour rester réactif
+ * même avec 15k+ points.
  */
 export function useTrophyDeckMap(activeSet: string, activeFormat: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.trophyDeckMap(activeSet, activeFormat),
     queryFn: async (): Promise<TrophyMapPoint[]> => {
       if (!activeSet) return []
-      const all: TrophyMapPoint[] = []
-      let from = 0
-      while (true) {
-        const { data, error } = await supabase
+
+      const { count, error: countErr } = await supabase
+        .from('trophy_deck_map')
+        .select('aggregate_id', { count: 'exact', head: true })
+        .eq('set_code', activeSet)
+        .eq('format', activeFormat)
+      if (countErr) throw countErr
+
+      const total = count || 0
+      if (total === 0) return []
+
+      const pages = Math.ceil(total / PAGE)
+      const requests = Array.from({ length: pages }, (_, i) =>
+        supabase
           .from('trophy_deck_map')
           .select('aggregate_id,archetype,colors,wins,x,y,cluster,cluster_label')
           .eq('set_code', activeSet)
           .eq('format', activeFormat)
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        const batch = (data || []) as TrophyMapPoint[]
-        all.push(...batch)
-        if (batch.length < PAGE) break
-        from += PAGE
+          .order('aggregate_id', { ascending: true })
+          .range(i * PAGE, i * PAGE + PAGE - 1)
+      )
+
+      const results = await Promise.all(requests)
+      const all: TrophyMapPoint[] = []
+      for (const r of results) {
+        if (r.error) throw r.error
+        all.push(...((r.data || []) as TrophyMapPoint[]))
       }
       return all
     },
     enabled: enabled && !!activeSet,
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
   })
 }
 
