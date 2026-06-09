@@ -1,6 +1,9 @@
 name: Trophy Map (UMAP)
 
 on:
+  schedule:
+    # Tous les 3 jours à 06:00 UTC (jours 1,4,7,…,28,31 du mois)
+    - cron: '0 6 */3 * *'
   # Déclenchement manuel depuis l'onglet Actions
   workflow_dispatch:
 

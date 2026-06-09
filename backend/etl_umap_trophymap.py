@@ -38,7 +38,7 @@ import umap
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = ["SOS"]  # [] = tous les sets actifs
+TARGET_SET_CODES = []  # [] = tous les sets actifs (suivis via la table `sets`)
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
 # En dessous de ce nombre de decks, l'UMAP n'a pas de sens (on saute).
