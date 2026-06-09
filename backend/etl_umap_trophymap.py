@@ -18,9 +18,17 @@ pas besoin de cookie de session).
 
 import os
 import re
+import sys
 import math
 import requests
 import numpy as np
+
+# Console Windows (cp1252) : forcer l'UTF-8 pour ne pas crasher sur les emojis.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 from collections import Counter
 from dotenv import load_dotenv
 from pathlib import Path
