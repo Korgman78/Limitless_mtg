@@ -229,38 +229,38 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                             <HelpCircle size={14} />
                         </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <DeckTestPanel
-                            activeSet={activeSet}
-                            activeFormat={activeFormat}
-                            onFormatChange={onFormatChange}
-                            onMatchedArchetype={(archetypeName, _format, isAlternative) => {
-                                setFilter('all');
-                                setIsAlt(isAlternative);
-                                setSelectedArch(archetypeName);
-                            }}
-                            className="inline-flex items-center gap-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-widest transition-all"
-                        />
-                        <button
-                            onClick={() => { haptics.light(); setShowMap(true); }}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-purple-500/15 border border-purple-400/30 hover:bg-purple-500/25 text-purple-200 text-[10px] font-bold uppercase tracking-widest transition-all"
-                        >
-                            <Network size={13} /> Trophies Map
-                        </button>
-                    </div>
+                    <DeckTestPanel
+                        activeSet={activeSet}
+                        activeFormat={activeFormat}
+                        onFormatChange={onFormatChange}
+                        onMatchedArchetype={(archetypeName, _format, isAlternative) => {
+                            setFilter('all');
+                            setIsAlt(isAlternative);
+                            setSelectedArch(archetypeName);
+                        }}
+                        className="inline-flex items-center gap-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-widest transition-all"
+                    />
                 </div>
 
-                <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
-                    {(['all', 'mono', '2 colors', '3 colors', '4+ colors'] as ArchFilter[]).map((f) => (
-                        <button
-                            key={f}
-                            onClick={() => { haptics.selection(); setFilter(f); }}
-                            className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                        >
-                            {f}
-                        </button>
-                    ))}
+                <div className="flex flex-col gap-2 w-full md:w-auto md:items-end">
+                    <button
+                        onClick={() => { haptics.light(); setShowMap(true); }}
+                        className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border border-purple-400/30 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-purple-900/30 transition-all"
+                    >
+                        <Network size={15} /> Trophies Map
+                    </button>
+                    <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
+                        {(['all', 'mono', '2 colors', '3 colors', '4+ colors'] as ArchFilter[]).map((f) => (
+                            <button
+                                key={f}
+                                onClick={() => { haptics.selection(); setFilter(f); }}
+                                className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                                    }`}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
