@@ -25,6 +25,19 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
   // En mode player on compare toujours des cartes ; on réutilise formatA comme format sélectionné.
   const cardLike = isPlayer || compareMode === 'cards';
 
+  // Vue unifiée : un seul sélecteur pilote les deux dimensions (type + sujet).
+  // 'archetypes' / 'cards' = comparaison par format ; 'players' = comparaison par niveau de joueur.
+  const view = isPlayer ? 'players' : compareMode;
+  const setView = (v: string): void => {
+    if (v === 'players') { setComparisonType('player'); }
+    else { setComparisonType('format'); setCompareMode(v); }
+  };
+  const VIEW_OPTIONS = [
+    { id: 'archetypes', label: 'Archetypes', shortLabel: 'Archetypes', Icon: PieChartIcon },
+    { id: 'cards', label: 'Cards · Formats', shortLabel: 'Formats', Icon: Zap },
+    { id: 'players', label: 'Cards · Players', shortLabel: 'Players', Icon: Users },
+  ];
+
   // Coach marks for onboarding
   const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
 
@@ -205,59 +218,76 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
       <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
-          {/* Sélecteur du type de comparaison */}
-          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full">
-            <button onClick={() => setComparisonType('format')} className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-[10px] font-black transition-all ${!isPlayer ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
-              <Repeat size={12} /> BY FORMAT
-            </button>
-            <button onClick={() => setComparisonType('player')} className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-[10px] font-black transition-all ${isPlayer ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
-              <Users size={12} /> BY PLAYER LEVEL
-            </button>
+          {/* Sélecteur de vue unifié (sujet + dimension de comparaison) */}
+          <div className="relative flex bg-slate-950 p-1 rounded-xl border border-slate-800 w-full">
+            {VIEW_OPTIONS.map(({ id, label, shortLabel, Icon }) => {
+              const active = view === id;
+              return (
+                <button key={id} onClick={() => setView(id)}
+                  className={`relative flex-1 flex items-center justify-center gap-1.5 px-2 md:px-4 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-colors duration-200 ${active ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                  {active && (
+                    <motion.div layoutId="compare-view-pill"
+                      className="absolute inset-0 bg-indigo-600 rounded-lg shadow-[0_4px_14px_rgba(79,70,229,0.45)]"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    <Icon size={13} />
+                    <span className="hidden sm:inline">{label}</span>
+                    <span className="sm:hidden">{shortLabel}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            {!isPlayer && (
-              <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto order-last md:order-first">
-                <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
-                  <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
-                  <button onClick={() => setCompareMode('cards')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'cards' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>CARDS</button>
-                </div>
-              </div>
-            )}
+          {/* Ligne de configuration contextuelle */}
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
             {isPlayer && (
-              <div className="flex items-center w-full md:w-auto order-last md:order-first">
-                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="w-full md:w-auto bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+              <div className="flex flex-col gap-1 sm:w-44 flex-shrink-0">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest pl-1">Format</span>
+                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
                   {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
             )}
-            <div className="flex flex-col items-center relative w-full md:w-auto order-first md:order-last">
-              <div className="flex items-center gap-2 w-full relative z-10">
-                {isPlayer ? (
-                  <>
-                    <select value={levelA} onChange={(e) => setLevelA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                      {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
-                    <select value={levelB} onChange={(e) => setLevelB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                      {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </>
-                ) : (
-                  <>
-                    <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                      {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
-                    <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                      {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </>
-                )}
+            <div className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">
+                {isPlayer ? 'Player levels' : 'Formats'}
+              </span>
+              <div className="relative flex items-center">
+                <div className="flex items-center gap-2 w-full relative z-10">
+                  {isPlayer ? (
+                    <>
+                      <select value={levelA} onChange={(e) => setLevelA(e.target.value)} className="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
+                        {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <span className="text-slate-600 font-black text-[10px] flex-shrink-0">VS</span>
+                      <select value={levelB} onChange={(e) => setLevelB(e.target.value)} className="flex-1 min-w-0 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
+                        {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
+                        {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <span className="text-slate-600 font-black text-[10px] flex-shrink-0">VS</span>
+                      <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 min-w-0 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
+                        {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </>
+                  )}
+                </div>
+                <Zap size={13} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 -bottom-2 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
               </div>
-              <Zap size={14} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 bottom-0 mb-1 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
             </div>
           </div>
+
+          {isPlayer && (
+            <p className="text-[10px] text-slate-500 leading-snug -mt-1">
+              Raw win rate by player skill group · a positive shift means the card <span className="text-emerald-400/80 font-bold">rewards skill</span>.
+            </p>
+          )}
 
           <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
             <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
