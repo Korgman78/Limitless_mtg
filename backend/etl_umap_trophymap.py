@@ -19,7 +19,6 @@ pas besoin de cookie de session).
 import os
 import re
 import sys
-import math
 import requests
 import numpy as np
 
@@ -34,9 +33,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 import umap
-from sklearn.cluster import HDBSCAN
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import normalize
 
 # ==============================================================================
 # 1. CONFIGURATION
@@ -177,10 +173,6 @@ def skeleton_vector(deck_list, vocab):
         total += 1
     return vec, total
 
-def choose_k(n):
-    """Nombre de clusters adaptatif, borne entre 4 et 14."""
-    return int(max(4, min(14, round(math.sqrt(n / 2.0)))))
-
 # ==============================================================================
 # 3. TRAITEMENT D'UN SET / FORMAT
 # ==============================================================================
@@ -207,66 +199,37 @@ def process(set_code, fmt):
     )
     coords = reducer.fit_transform(matrix)
 
-    # --- VRAI clustering : HDBSCAN sur les vecteurs de cartes (PCA), pas sur la 2D ---
-    # On L2-normalise (euclidien ~ cosine), on reduit en PCA pour debruiter/accelerer,
-    # puis HDBSCAN trouve des sous-familles de densite variable (-1 = bruit/mixte).
-    Xn = normalize(matrix)
-    ncomp = int(min(50, matrix.shape[1], max(2, n - 1)))
-    Xp = PCA(n_components=ncomp, random_state=42).fit_transform(Xn)
-    mcs = int(max(30, round(n * 0.005)))
-    labels = HDBSCAN(min_cluster_size=mcs, min_samples=5,
-                     cluster_selection_method="leaf").fit_predict(Xp)
-
-    # Réaffecte le bruit (-1) au cluster le plus proche (pas de gros blob "Mixed")
-    real = sorted(c for c in set(int(x) for x in labels) if c >= 0)
-    if real:
-        centroids = np.vstack([Xp[labels == c].mean(axis=0) for c in real])
-        noise = np.where(labels == -1)[0]
-        if len(noise):
-            d = ((Xp[noise][:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)
-            nearest = d.argmin(axis=1)
-            for k, ni in enumerate(noise):
-                labels[ni] = real[nearest[k]]
-    else:
-        labels = np.zeros(n, dtype=int)
-    clusters = labels
-
-    unique_clusters = sorted(set(int(c) for c in clusters))
-    n_real_clusters = len([c for c in unique_clusters if c >= 0])
-    print(f"   🔬 HDBSCAN : {n_real_clusters} sous-familles (min_cluster_size={mcs})")
-
-    # Label de cluster = archetype dominant
-    cluster_labels = {}
-    for cid in unique_clusters:
-        archs = [kept[i].get("archetype") for i in range(n) if clusters[i] == cid]
-        archs = [a for a in archs if a]
-        cluster_labels[cid] = ("Mixed" if cid < 0 else (Counter(archs).most_common(1)[0][0] if archs else f"Cluster {cid}"))
-
-    # --- Defining cards par cluster (lift = sur-representation vs moyenne globale) ---
+    # --- Cartes signature par archetype (identite couleur) ---
+    # lift = presence dans l'archetype / presence globale. Pas de clustering.
     presence = (matrix > 0)
     global_freq = presence.mean(axis=0)
     inv_vocab = {idx: name for name, idx in vocab.items()}
-    cluster_records = []
-    for cid in unique_clusters:
-        if cid < 0:
-            continue
-        idxs = np.where(clusters == cid)[0]
-        if len(idxs) == 0:
+
+    by_colors = {}
+    for i, d in enumerate(kept):
+        c = extract_colors(d.get("archetype"))
+        by_colors.setdefault(c, []).append(i)
+
+    arch_card_records = []
+    for colors, idxs in by_colors.items():
+        if len(idxs) < 15:
             continue
         cfreq = presence[idxs].mean(axis=0)
+        archs = [kept[i].get("archetype") for i in idxs if kept[i].get("archetype")]
+        label = Counter(archs).most_common(1)[0][0] if archs else colors
         scored = []
         for col in range(matrix.shape[1]):
-            if cfreq[col] < 0.35:  # carte presente dans >=35% du cluster
+            if cfreq[col] < 0.35:  # carte presente dans >=35% des decks de l'archetype
                 continue
             lift = float(cfreq[col]) / float(global_freq[col] or 1e-6)
             scored.append((col, float(cfreq[col]), lift))
         scored.sort(key=lambda t: t[2] * t[1], reverse=True)
         top_cards = [{"name": inv_vocab[c], "freq": round(f, 2), "lift": round(l, 1)} for c, f, l in scored[:12]]
-        cluster_records.append({
+        arch_card_records.append({
             "set_code": set_code,
             "format": fmt,
-            "cluster": int(cid),
-            "label": cluster_labels[cid],
+            "colors": colors,
+            "label": label,
             "size": int(len(idxs)),
             "top_cards": top_cards,
         })
@@ -283,8 +246,6 @@ def process(set_code, fmt):
             "wins": d.get("wins"),
             "x": round(float(coords[i, 0]), 4),
             "y": round(float(coords[i, 1]), 4),
-            "cluster": int(clusters[i]),
-            "cluster_label": cluster_labels[int(clusters[i])],
             "is_archetypal": False,
         })
 
@@ -311,8 +272,6 @@ def process(set_code, fmt):
                 "wins": None,
                 "x": round(float(arch_coords[i, 0]), 4),
                 "y": round(float(arch_coords[i, 1]), 4),
-                "cluster": None,
-                "cluster_label": None,
                 "is_archetypal": True,
             })
         arch_count = len(arch_valid)
@@ -334,19 +293,19 @@ def process(set_code, fmt):
         except Exception as e:
             print(f"   ❌ Exception insert: {e}")
 
-    # --- Defining cards des clusters ---
-    cdel = f"{SUPABASE_URL}/rest/v1/trophy_map_clusters?set_code=eq.{set_code}&format=eq.{fmt}"
+    # --- Cartes signature par archetype ---
+    adel = f"{SUPABASE_URL}/rest/v1/trophy_map_archetype_cards?set_code=eq.{set_code}&format=eq.{fmt}"
     try:
-        requests.delete(cdel, headers=HEADERS_SUPABASE)
-        if cluster_records:
-            curl = f"{SUPABASE_URL}/rest/v1/trophy_map_clusters?on_conflict=set_code,format,cluster"
-            resp = requests.post(curl, json=cluster_records, headers=HEADERS_SUPABASE)
+        requests.delete(adel, headers=HEADERS_SUPABASE)
+        if arch_card_records:
+            aurl = f"{SUPABASE_URL}/rest/v1/trophy_map_archetype_cards?on_conflict=set_code,format,colors"
+            resp = requests.post(aurl, json=arch_card_records, headers=HEADERS_SUPABASE)
             if resp.status_code >= 400:
-                print(f"   ❌ Erreur insert clusters: {resp.text}")
+                print(f"   ❌ Erreur insert archetype cards: {resp.text}")
     except Exception as e:
-        print(f"   ⚠️ Echec ecriture clusters: {e}")
+        print(f"   ⚠️ Echec ecriture archetype cards: {e}")
 
-    print(f"   ✅ {n} decks + {arch_count} archetypaux · {n_real_clusters} sous-familles · {matrix.shape[1]} cartes au vocabulaire")
+    print(f"   ✅ {n} decks + {arch_count} archetypaux · {len(arch_card_records)} archetypes (cartes signature) · {matrix.shape[1]} cartes au vocabulaire")
 
 # ==============================================================================
 # MAIN

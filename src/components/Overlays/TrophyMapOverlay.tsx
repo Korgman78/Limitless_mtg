@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Network, Palette, Trophy, Loader2, Info, Maximize2, Sparkles, Search } from 'lucide-react';
+import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
 import { getCardImage, sortColorsWUBRG } from '../../utils/helpers';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useTrophyDeckMap, useTrophyDeckCardlist, type TrophyMapPoint } from '../../queries/useTrophyDeckMap';
-import { useTrophyClusters, useDecksWithCard, useSetCardNames } from '../../queries/useTrophyClusters';
+import { useTrophyArchetypeCards, useDecksWithCard, useSetCardNames } from '../../queries/useTrophyClusters';
 import type { ArchetypalSkeleton } from '../../queries/useSkeletons';
 
 interface TrophyMapOverlayProps {
@@ -14,9 +14,6 @@ interface TrophyMapOverlayProps {
   skeletons: ArchetypalSkeleton[];
   onClose: () => void;
 }
-
-type ColorMode = 'archetype' | 'cluster';
-type ActiveGroup = { type: 'cluster' | 'colors'; key: string | number } | null;
 
 const COLOR_RGB: Record<string, [number, number, number]> = {
   W: [245, 240, 210], U: [56, 132, 246], B: [150, 100, 230], R: [239, 68, 68], G: [52, 199, 99],
@@ -34,11 +31,6 @@ function archetypeRgb(colors: string | null): [number, number, number] {
   const sum: [number, number, number] = [0, 0, 0];
   letters.forEach(l => { const c = COLOR_RGB[l]; sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; });
   return [Math.round(sum[0] / letters.length), Math.round(sum[1] / letters.length), Math.round(sum[2] / letters.length)];
-}
-function clusterCss(id: number, total: number): string {
-  if (id < 0) return 'hsl(215, 15%, 55%)';
-  const hue = Math.round((id * 360) / Math.max(total, 1)) % 360;
-  return `hsl(${hue}, 68%, 62%)`;
 }
 function labelForColors(colors: string | null): string {
   const code = sortColorsWUBRG(colors || '');
@@ -67,17 +59,16 @@ const MIN_ZOOM = 1, MAX_ZOOM = 14;
 
 export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, activeFormat, skeletons, onClose }) => {
   const { data: points = [], isLoading } = useTrophyDeckMap(activeSet, activeFormat);
-  const { data: clusters = {} } = useTrophyClusters(activeSet, activeFormat);
+  const { data: archCards = {} } = useTrophyArchetypeCards(activeSet, activeFormat);
   const { data: cardNames = [] } = useSetCardNames(activeSet);
 
-  const [colorMode, setColorMode] = useState<ColorMode>('archetype');
   const [showArch, setShowArch] = useState(false);
   const [selected, setSelected] = useState<TrophyMapPoint | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [isTransformed, setIsTransformed] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; point: TrophyMapPoint } | null>(null);
   const [cardInput, setCardInput] = useState('');
-  const [activeGroup, setActiveGroup] = useState<ActiveGroup>(null);
+  const [activeColors, setActiveColors] = useState<string | null>(null);
 
   const namesSet = useMemo(() => new Set(cardNames), [cardNames]);
   const debouncedCard = useDebounce(cardInput, 250);
@@ -111,59 +102,34 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     return { minX, maxX, minY, maxY };
   }, [points]);
 
-  const clusterCount = useMemo(() => {
-    let max = 0;
-    for (const p of realPoints) if ((p.cluster ?? 0) > max) max = p.cluster ?? 0;
-    return max + 1;
-  }, [realPoints]);
-
   const colorOf = useCallback((p: TrophyMapPoint): string => {
-    if (colorMode === 'cluster' && !p.is_archetypal) return clusterCss(p.cluster ?? -1, clusterCount);
     const [r, g, b] = archetypeRgb(p.colors);
     return `rgb(${r},${g},${b})`;
-  }, [colorMode, clusterCount]);
+  }, []);
 
   const legend = useMemo(() => {
-    const groups = new Map<string, { key: string | number; label: string; color: string; count: number }>();
+    const groups = new Map<string, { key: string; label: string; color: string; count: number }>();
     for (const p of realPoints) {
-      let key: string | number, label: string, color: string;
-      if (colorMode === 'cluster') {
-        const cid = p.cluster ?? -1;
-        key = cid;
-        label = cid < 0 ? 'Mixed / other' : (p.cluster_label || `Cluster ${cid}`);
-        color = clusterCss(cid, clusterCount);
-      } else {
-        key = sortColorsWUBRG(p.colors || '') || '∅';
-        label = labelForColors(p.colors);
-        const [r, g, b] = archetypeRgb(p.colors);
-        color = `rgb(${r},${g},${b})`;
-      }
-      const g = groups.get(String(key));
-      if (g) g.count++; else groups.set(String(key), { key, label, color, count: 1 });
+      const key = sortColorsWUBRG(p.colors || '') || '∅';
+      const [r, g, b] = archetypeRgb(p.colors);
+      const g2 = groups.get(key);
+      if (g2) g2.count++; else groups.set(key, { key, label: labelForColors(p.colors), color: `rgb(${r},${g},${b})`, count: 1 });
     }
     return Array.from(groups.values()).sort((a, b) => b.count - a.count).slice(0, 16);
-  }, [realPoints, colorMode, clusterCount]);
+  }, [realPoints]);
 
-  // Ensemble des decks à surligner (recherche carte > sélection légende)
   const highlightIds = useMemo<Set<string> | null>(() => {
     if (searchCard) return cardDecks ?? null;
-    if (activeGroup) {
+    if (activeColors) {
       const s = new Set<string>();
-      for (const p of realPoints) {
-        if (activeGroup.type === 'cluster' && (p.cluster ?? -1) === activeGroup.key) s.add(p.aggregate_id);
-        else if (activeGroup.type === 'colors' && (sortColorsWUBRG(p.colors || '') || '∅') === activeGroup.key) s.add(p.aggregate_id);
-      }
+      for (const p of realPoints) if ((sortColorsWUBRG(p.colors || '') || '∅') === activeColors) s.add(p.aggregate_id);
       return s;
     }
     return null;
-  }, [searchCard, cardDecks, activeGroup, realPoints]);
+  }, [searchCard, cardDecks, activeColors, realPoints]);
 
-  const activeClusterCards = useMemo(() => {
-    if (activeGroup?.type === 'cluster' && typeof activeGroup.key === 'number') return clusters[activeGroup.key] || null;
-    return null;
-  }, [activeGroup, clusters]);
+  const activeArchCards = useMemo(() => (activeColors ? archCards[activeColors] || null : null), [activeColors, archCards]);
 
-  // --- Rendu (offscreen, device pixels) ---
   const renderBase = useCallback(() => {
     if (!bounds || dims.w === 0) return;
     const dpr = window.devicePixelRatio || 1;
@@ -369,26 +335,24 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     if (idx >= 0) setSelected(points[idx]);
   };
 
-  const clearSearch = () => { setCardInput(''); };
-  const onLegendClick = (key: string | number) => {
-    clearSearch();
-    setActiveGroup(prev => (prev && prev.key === key && prev.type === (colorMode === 'cluster' ? 'cluster' : 'colors')) ? null : { type: colorMode === 'cluster' ? 'cluster' : 'colors', key });
+  const onLegendClick = (key: string) => {
+    setCardInput('');
+    setActiveColors(prev => (prev === key ? null : key));
   };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (selected) setSelected(null);
-      else if (activeGroup) setActiveGroup(null);
+      else if (activeColors) setActiveColors(null);
       else if (cardInput) setCardInput('');
       else onClose();
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [selected, activeGroup, cardInput, onClose]);
+  }, [selected, activeColors, cardInput, onClose]);
 
-  // Quand on tape une carte, on annule la sélection de légende
-  useEffect(() => { if (cardInput) setActiveGroup(null); }, [cardInput]);
+  useEffect(() => { if (cardInput) setActiveColors(null); }, [cardInput]);
 
   const archCta = hasArch && (
     <button onClick={() => setShowArch(s => !s)} title="Overlay our archetypal skeletons"
@@ -415,14 +379,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
             className={`p-2 rounded-lg border transition-colors ${showInfo ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}>
             <Info size={16} />
           </button>
-          <div className="hidden sm:flex bg-slate-900 p-1 rounded-lg border border-slate-800">
-            <button onClick={() => setColorMode('archetype')} className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wide transition-all ${colorMode === 'archetype' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>
-              <Palette size={12} /> Archetype
-            </button>
-            <button onClick={() => setColorMode('cluster')} className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wide transition-all ${colorMode === 'cluster' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>
-              <Network size={12} /> Clusters
-            </button>
-          </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors"><X size={18} /></button>
         </div>
       </div>
@@ -441,7 +397,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
               <input list="trophy-map-cards" value={cardInput} onChange={e => setCardInput(e.target.value)}
                 placeholder="Highlight a card…"
                 className="w-full bg-slate-900/90 border border-slate-700 text-slate-200 py-2 pl-8 pr-7 rounded-lg text-[11px] font-bold focus:border-indigo-500 focus:outline-none shadow-lg" />
-              {cardInput && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X size={13} /></button>}
+              {cardInput && <button onClick={() => setCardInput('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X size={13} /></button>}
               <datalist id="trophy-map-cards">{cardNames.map(n => <option key={n} value={n} />)}</datalist>
             </div>
             {searchCard && (
@@ -470,14 +426,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           </div>
         )}
 
-        {/* Color mode (mobile) */}
-        {!isLoading && points.length > 0 && (
-          <div className="sm:hidden absolute bottom-3 left-3 flex bg-slate-900/90 p-1 rounded-lg border border-slate-800 z-10">
-            <button onClick={() => setColorMode('archetype')} className={`px-2.5 py-1.5 rounded-md text-[9px] font-black uppercase ${colorMode === 'archetype' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Arch.</button>
-            <button onClick={() => setColorMode('cluster')} className={`px-2.5 py-1.5 rounded-md text-[9px] font-black uppercase ${colorMode === 'cluster' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Clust.</button>
-          </div>
-        )}
-
         {isTransformed && !isLoading && (
           <button onClick={resetView} title="Reset view (double-click)"
             className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
@@ -485,18 +433,18 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           </button>
         )}
 
-        {/* Légende (cliquable) */}
+        {/* Légende cliquable (par archétype) */}
         {!isLoading && points.length > 0 && (
           <div className="absolute top-3 right-3 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-xl p-3 max-w-[190px] max-h-[55%] overflow-y-auto no-scrollbar shadow-2xl">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{colorMode === 'cluster' ? 'Sub-archetypes' : 'Archetypes'}</p>
-              {activeGroup && <button onClick={() => setActiveGroup(null)} className="text-[8px] font-black text-indigo-400 uppercase">Clear</button>}
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Archetypes</p>
+              {activeColors && <button onClick={() => setActiveColors(null)} className="text-[8px] font-black text-indigo-400 uppercase">Clear</button>}
             </div>
             <div className="space-y-0.5">
               {legend.map((l) => {
-                const isActive = activeGroup && activeGroup.key === l.key && activeGroup.type === (colorMode === 'cluster' ? 'cluster' : 'colors');
+                const isActive = activeColors === l.key;
                 return (
-                  <button key={String(l.key)} onClick={() => onLegendClick(l.key)}
+                  <button key={l.key} onClick={() => onLegendClick(l.key)}
                     className={`w-full flex items-center gap-2 px-1.5 py-1 rounded-md transition-colors ${isActive ? 'bg-indigo-600/30' : 'hover:bg-slate-800/70'}`}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
                     <span className="text-[10px] text-slate-300 font-bold truncate flex-1 text-left">{l.label}</span>
@@ -511,7 +459,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
                 </div>
               )}
             </div>
-            {colorMode === 'cluster' && <p className="text-[8px] text-slate-600 mt-2 leading-tight">Click a sub-archetype to see its defining cards.</p>}
+            <p className="text-[8px] text-slate-600 mt-2 leading-tight">Click an archetype to see its signature cards.</p>
           </div>
         )}
 
@@ -519,28 +467,29 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           <div className="absolute pointer-events-none z-10 bg-slate-900 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 shadow-xl"
             style={{ left: Math.min(hoverInfo.x + 14, dims.w - 170), top: Math.max(hoverInfo.y - 10, 8) }}>
             <p className="text-[11px] font-black text-white truncate max-w-[160px]">{hoverInfo.point.is_archetypal ? '◆ ' : ''}{labelForColors(hoverInfo.point.colors)}</p>
-            <p className="text-[9px] text-slate-400 font-bold">{hoverInfo.point.is_archetypal ? 'Archetypal skeleton' : (colorMode === 'cluster' ? ((hoverInfo.point.cluster ?? -1) < 0 ? 'Mixed / other' : (hoverInfo.point.cluster_label || `Cluster ${hoverInfo.point.cluster}`)) : `${hoverInfo.point.wins ?? 7}-win trophy deck`)} · click to open</p>
+            <p className="text-[9px] text-slate-400 font-bold">{hoverInfo.point.is_archetypal ? 'Archetypal skeleton' : `${hoverInfo.point.wins ?? 7}-win trophy deck`} · click to open</p>
           </div>
         )}
 
-        {/* Panneau defining cards d'un cluster */}
+        {/* Panneau cartes signature d'un archétype */}
         <AnimatePresence>
-          {activeClusterCards && (
+          {activeArchCards && (
             <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }}
               className="absolute top-0 left-0 bottom-0 w-full sm:w-[320px] bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col z-20">
               <div className="flex items-start justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
                 <div className="min-w-0">
-                  <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">Sub-archetype</p>
-                  <p className="text-base font-black text-white truncate leading-tight">{activeClusterCards.label || 'Cluster'}</p>
-                  <p className="text-[10px] text-slate-500 font-bold">{activeClusterCards.size} decks · defining cards</p>
+                  <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">Signature cards</p>
+                  <p className="text-base font-black text-white truncate leading-tight">{labelForColors(activeColors)}</p>
+                  <p className="text-[10px] text-slate-500 font-bold">{activeArchCards.size} trophy decks</p>
                 </div>
-                <button onClick={() => setActiveGroup(null)} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg flex-shrink-0 ml-2"><X size={16} /></button>
+                <button onClick={() => setActiveColors(null)} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg flex-shrink-0 ml-2"><X size={16} /></button>
               </div>
               <p className="px-4 py-2 text-[10px] text-slate-500 leading-snug border-b border-slate-800/60">
-                Cards most <span className="text-indigo-300 font-bold">over-represented</span> here vs the format average (lift × presence).
+                Cards most <span className="text-indigo-300 font-bold">over-represented</span> in this archetype vs the format average.
               </p>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {activeClusterCards.top_cards.map((c) => (
+                {activeArchCards.top_cards.length === 0 && <p className="text-center text-slate-600 text-xs py-8">No signature cards.</p>}
+                {activeArchCards.top_cards.map((c) => (
                   <div key={c.name} className="flex items-center gap-2.5">
                     <img src={getCardImage(c.name)} alt={c.name} loading="lazy" className="w-9 h-[50px] rounded object-cover border border-slate-800 bg-black flex-shrink-0" />
                     <div className="min-w-0 flex-1">
@@ -564,7 +513,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
               </div>
               <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
                 <li>• <strong className="text-slate-200">Each dot</strong> = one real 7-win trophy deck. <strong className="text-slate-200">Distance</strong> = card similarity (UMAP axes are meaningless).</li>
-                <li>• <strong className="text-indigo-300">Clusters</strong> = sub-archetypes found from card composition (HDBSCAN). Click one in the legend to see its <strong className="text-indigo-300">defining cards</strong>.</li>
+                <li>• <strong className="text-slate-200">Color</strong> = the deck's color identity. Click an archetype in the legend to highlight it and see its <strong className="text-indigo-300">signature cards</strong>.</li>
                 <li>• <strong className="text-indigo-300">Search a card</strong> (top-left) to highlight every deck that plays it.</li>
                 <li>• <strong className="text-amber-300">◆ See archetypal</strong> overlays our skeletons. <strong className="text-slate-200">Scroll</strong> zoom · <strong className="text-slate-200">drag</strong> pan · double-click reset.</li>
               </ul>

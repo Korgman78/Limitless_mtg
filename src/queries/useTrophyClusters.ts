@@ -2,27 +2,27 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../supabase'
 
 export interface ClusterCard { name: string; freq: number; lift: number }
-export interface TrophyCluster {
-  cluster: number
+export interface ArchetypeCards {
+  colors: string
   label: string | null
   size: number | null
   top_cards: ClusterCard[]
 }
 
-/** Defining cards par cluster (table trophy_map_clusters). */
-export function useTrophyClusters(activeSet: string, activeFormat: string, enabled = true) {
+/** Cartes signature par archétype (identité couleur) — table trophy_map_archetype_cards. */
+export function useTrophyArchetypeCards(activeSet: string, activeFormat: string, enabled = true) {
   return useQuery({
-    queryKey: ['trophyClusters', activeSet, activeFormat],
-    queryFn: async (): Promise<Record<number, TrophyCluster>> => {
+    queryKey: ['trophyArchetypeCards', activeSet, activeFormat],
+    queryFn: async (): Promise<Record<string, ArchetypeCards>> => {
       if (!activeSet) return {}
       const { data, error } = await supabase
-        .from('trophy_map_clusters')
-        .select('cluster,label,size,top_cards')
+        .from('trophy_map_archetype_cards')
+        .select('colors,label,size,top_cards')
         .eq('set_code', activeSet)
         .eq('format', activeFormat)
       if (error) throw error
-      const map: Record<number, TrophyCluster> = {}
-      for (const row of (data || []) as TrophyCluster[]) map[row.cluster] = row
+      const map: Record<string, ArchetypeCards> = {}
+      for (const row of (data || []) as ArchetypeCards[]) map[row.colors] = row
       return map
     },
     enabled: enabled && !!activeSet,

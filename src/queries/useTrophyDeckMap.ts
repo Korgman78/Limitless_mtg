@@ -9,8 +9,6 @@ export interface TrophyMapPoint {
   wins: number | null
   x: number
   y: number
-  cluster: number | null
-  cluster_label: string | null
   is_archetypal: boolean
 }
 
@@ -42,7 +40,7 @@ export function useTrophyDeckMap(activeSet: string, activeFormat: string, enable
       const requests = Array.from({ length: pages }, (_, i) =>
         supabase
           .from('trophy_deck_map')
-          .select('aggregate_id,archetype,colors,wins,x,y,cluster,cluster_label,is_archetypal')
+          .select('aggregate_id,archetype,colors,wins,x,y,is_archetypal')
           .eq('set_code', activeSet)
           .eq('format', activeFormat)
           .order('aggregate_id', { ascending: true })
