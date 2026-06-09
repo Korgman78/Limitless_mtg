@@ -60,7 +60,7 @@ const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }
         <Zap size={20} strokeWidth={2.5} /> <span>Cards Ratings</span>
       </button>
       <button onMouseEnter={() => onPrefetch('compare')} onClick={() => onTabChange('compare')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'compare' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
-        <Repeat size={20} strokeWidth={2.5} /> <span>Format Comparison</span>
+        <Repeat size={20} strokeWidth={2.5} /> <span>Compare</span>
       </button>
       <button onMouseEnter={() => onPrefetch('trophies')} onClick={() => onTabChange('trophies')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${activeTab === 'trophies' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/50 font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>
         <Trophy size={20} strokeWidth={2.5} /> <span>Trophy Decks</span>

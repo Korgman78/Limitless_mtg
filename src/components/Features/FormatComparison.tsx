@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, ArrowUpDown, AlertTriangle, PieChart as PieChartIcon, Repeat, HelpCircle, Trophy, X } from 'lucide-react';
+import { Search, Zap, ArrowUpDown, AlertTriangle, PieChart as PieChartIcon, Repeat, HelpCircle, Trophy, X, Users } from 'lucide-react';
 import type { FormatComparisonProps, FormatOption } from '../../types';
-import { FORMAT_OPTIONS, RARITY_STYLES } from '../../constants';
+import { FORMAT_OPTIONS, PLAYER_LEVEL_OPTIONS, RARITY_STYLES } from '../../constants';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { extractColors, normalizeRarity, getCardImage, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
@@ -10,16 +10,29 @@ import { ManaIcons } from '../Common/ManaIcons';
 import { ComparisonRowSkeleton } from '../Common/Skeleton';
 import { CoachMarkWrapper } from '../Common/CoachMark';
 import { useFormatComparison } from '../../queries/useFormatComparison';
+import { usePlayerLevelComparison } from '../../queries/usePlayerLevelComparison';
 
 export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet }) => {
   const [formatA, setFormatA] = useState<string>('PremierDraft');
   const [formatB, setFormatB] = useState<string>('ArenaDirect_Sealed');
   const [compareMode, setCompareMode] = useState<string>('archetypes');
 
+  // Type de comparaison : 'format' (par format) ou 'player' (par niveau de joueur)
+  const [comparisonType, setComparisonType] = useState<string>('format');
+  const [levelA, setLevelA] = useState<string>('top');
+  const [levelB, setLevelB] = useState<string>('bottom');
+  const isPlayer = comparisonType === 'player';
+  // En mode player on compare toujours des cartes ; on réutilise formatA comme format sélectionné.
+  const cardLike = isPlayer || compareMode === 'cards';
+
   // Coach marks for onboarding
   const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
 
-  const { data = [], isLoading: loading, error } = useFormatComparison(activeSet, compareMode);
+  const formatQuery = useFormatComparison(activeSet, compareMode, !isPlayer);
+  const playerQuery = usePlayerLevelComparison(activeSet, formatA, isPlayer);
+  const data = isPlayer ? (playerQuery.data ?? []) : (formatQuery.data ?? []);
+  const loading = isPlayer ? playerQuery.isLoading : formatQuery.isLoading;
+  const error = isPlayer ? playerQuery.error : formatQuery.error;
   const fetchError = error ? 'Failed to load comparison data' : null;
   const [metricMode, setMetricMode] = useState<string>('winrate');
   const [mobileShowFormatB, setMobileShowFormatB] = useState<boolean>(false);
@@ -39,6 +52,16 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
   const getFormatLabel = (val: string): string => FORMAT_OPTIONS.find((o: FormatOption) => o.value === val)?.label || val;
   const getFormatShort = (val: string): string => FORMAT_OPTIONS.find((o: FormatOption) => o.value === val)?.short || val.substring(0, 3).toUpperCase();
+
+  // Sélecteurs actifs selon le type de comparaison (format A/B ou niveau A/B)
+  const selA = isPlayer ? levelA : formatA;
+  const selB = isPlayer ? levelB : formatB;
+  const getLabel = (val: string): string => isPlayer
+    ? (PLAYER_LEVEL_OPTIONS.find((o: FormatOption) => o.value === val)?.label || val)
+    : getFormatLabel(val);
+  const getShort = (val: string): string => isPlayer
+    ? (PLAYER_LEVEL_OPTIONS.find((o: FormatOption) => o.value === val)?.short || val)
+    : getFormatShort(val);
 
   useEffect(() => {
     if (mobileTooltip) {
@@ -63,15 +86,16 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
   const processedData = useMemo(() => {
     const fMap: Record<string, string> = { 'PremierDraft': 'premier', 'TradDraft': 'trad', 'Sealed': 'sealed', 'ArenaDirect_Sealed': 'direct' };
-    const sA = fMap[formatA] || 'premier';
-    const sB = fMap[formatB] || 'direct';
+    // En mode player, les colonnes du pivot sont suffixées par le niveau (top/middle/bottom).
+    const sA = isPlayer ? levelA : (fMap[formatA] || 'premier');
+    const sB = isPlayer ? levelB : (fMap[formatB] || 'direct');
 
     return data
       .filter((item: any) => {
-        if (compareMode === 'cards' && debouncedSearchTerm) {
+        if (cardLike && debouncedSearchTerm) {
           if (!item.card_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) return false;
         }
-        if (compareMode === 'cards') {
+        if (cardLike) {
           if (rarityFilter.length > 0) {
             const r = normalizeRarity(item.rarity);
             if (!rarityFilter.includes(r)) return false;
@@ -87,7 +111,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
             }
           }
         }
-        if (compareMode === 'archetypes' && archTypeFilter) {
+        if (!cardLike && archTypeFilter) {
           const rawContext = item.filter_context || "";
           const colorsOnly = rawContext.replace(' + Splash', '').replace(/[^WUBRG]/g, '');
           const isSplash = rawContext.toLowerCase().includes('splash');
@@ -100,7 +124,14 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
       })
       .map((item: any) => {
         let valA: number, valB: number, rawA: number | null, rawB: number | null, diff: number | null;
-        if (compareMode === 'cards') {
+        if (isPlayer) {
+          // Comparaison entre niveaux de joueur sur un même format : WR BRUT, pas de normalisation.
+          // L'écart (ex. top - global) identifie les cartes qui bénéficient du skill.
+          valA = parseFloat(item[`card_wr_${sA}`]);
+          valB = parseFloat(item[`card_wr_${sB}`]);
+          rawA = null; rawB = null;
+          diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
+        } else if (cardLike) {
           valA = parseFloat(item[`card_delta_${sA}`]);
           valB = parseFloat(item[`card_delta_${sB}`]);
           rawA = parseFloat(item[`card_wr_${sA}`]);
@@ -129,7 +160,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
         const diffB = b.diff !== null ? b.diff : -99999;
         return sortDir === 'desc' ? (diffB - diffA) : (diffA - diffB);
       });
-  }, [data, compareMode, formatA, formatB, rarityFilter, colorFilters, archTypeFilter, sortDir, metricMode, debouncedSearchTerm]);
+  }, [data, compareMode, cardLike, isPlayer, comparisonType, levelA, levelB, formatA, formatB, rarityFilter, colorFilters, archTypeFilter, sortDir, metricMode, debouncedSearchTerm]);
 
   const visibleData = processedData.slice(0, visibleCount);
   const SortButtonContent = () => <>{sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}</>;
@@ -174,22 +205,55 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
       <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
         <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
+          {/* Sélecteur du type de comparaison */}
+          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full">
+            <button onClick={() => setComparisonType('format')} className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-[10px] font-black transition-all ${!isPlayer ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+              <Repeat size={12} /> BY FORMAT
+            </button>
+            <button onClick={() => setComparisonType('player')} className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-[10px] font-black transition-all ${isPlayer ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+              <Users size={12} /> BY PLAYER LEVEL
+            </button>
+          </div>
+
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto order-last md:order-first">
-              <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
-                <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
-                <button onClick={() => setCompareMode('cards')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'cards' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>CARDS</button>
+            {!isPlayer && (
+              <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto order-last md:order-first">
+                <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 w-full md:w-auto">
+                  <button onClick={() => setCompareMode('archetypes')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'archetypes' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>ARCHETYPES</button>
+                  <button onClick={() => setCompareMode('cards')} className={`flex-1 px-6 py-2 rounded-md text-[10px] font-black transition-all ${compareMode === 'cards' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>CARDS</button>
+                </div>
               </div>
-            </div>
+            )}
+            {isPlayer && (
+              <div className="flex items-center w-full md:w-auto order-last md:order-first">
+                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="w-full md:w-auto bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+                  {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
             <div className="flex flex-col items-center relative w-full md:w-auto order-first md:order-last">
               <div className="flex items-center gap-2 w-full relative z-10">
-                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                  {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
-                <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
-                  {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                {isPlayer ? (
+                  <>
+                    <select value={levelA} onChange={(e) => setLevelA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+                      {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
+                    <select value={levelB} onChange={(e) => setLevelB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+                      {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+                      {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <span className="text-slate-600 font-black text-[10px] pb-3">VS</span>
+                    <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer">
+                      {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </>
+                )}
               </div>
               <Zap size={14} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 bottom-0 mb-1 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
             </div>
@@ -197,7 +261,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
 
           <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
             <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
-              {compareMode === 'cards' ? (
+              {cardLike ? (
                 <div className="flex flex-col md:flex-row gap-2 w-full md:items-center justify-between">
                   <div className="flex gap-2 w-full md:w-auto md:order-2 md:ml-auto">
                     <div className="relative flex-1 md:w-48 md:flex-none">
@@ -266,7 +330,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                 </div>
               )}
             </div>
-            {compareMode === 'archetypes' && (
+            {!cardLike && (
               <CoachMarkWrapper
                 id="format-sort-direction"
                 message={getMessage('format-sort-direction')}
@@ -313,14 +377,16 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
         ) : (
           <>
             {visibleData.map((item: any, idx: number) => {
-              const getStatsTooltip = (formatName: string, val: number): string => {
-                if (compareMode === 'cards') return `In ${formatName}, this card win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
-                if (metricMode === 'winrate') return `In ${formatName}, this archetype win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
-                return `In ${formatName}, this archetype represents ${val.toFixed(1)}% of the Meta`;
+              const getStatsTooltip = (label: string, val: number): string => {
+                if (isPlayer) return `${label} players: this card has a ${val.toFixed(1)}% win rate (games drawn)`;
+                if (compareMode === 'cards') return `In ${label}, this card win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
+                if (metricMode === 'winrate') return `In ${label}, this archetype win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
+                return `In ${label}, this archetype represents ${val.toFixed(1)}% of the Meta`;
               };
               const getShiftTooltip = (val: number): string => {
                 const absVal = Math.abs(val).toFixed(1);
-                const fA = getFormatLabel(formatA); const fB = getFormatLabel(formatB);
+                const fA = getLabel(selA); const fB = getLabel(selB);
+                if (isPlayer) return `This card's win rate is ${absVal}% ${val >= 0 ? 'higher' : 'lower'} for ${fA} vs ${fB} players`;
                 if (compareMode === 'cards') return `This card ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
                 if (metricMode === 'winrate') return `This archetype ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
                 return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} by ${absVal} points`;
@@ -333,10 +399,10 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
               return (
                 <motion.div key={`${item.card_name || item.filter_context}-${idx}`}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => compareMode === 'cards' && setZoomedCard(item.card_name)}
-                  className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left ${compareMode === 'cards' ? 'cursor-zoom-in' : ''}`}>
+                  onClick={() => cardLike && setZoomedCard(item.card_name)}
+                  className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left ${cardLike ? 'cursor-zoom-in' : ''}`}>
                   <div className="flex items-center gap-4 min-w-0 flex-1">
-                    {compareMode === 'cards' ? (
+                    {cardLike ? (
                       <div className="relative shrink-0">
                         <img src={getCardImage(item.card_name)} className="w-12 h-16 md:w-14 md:h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" loading="lazy" alt={item.card_name} />
                       </div>
@@ -349,7 +415,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                         </span>
                       </div>
                     )}
-                    {compareMode === 'cards' && (
+                    {cardLike && (
                       <div className="flex flex-col justify-center h-full flex-1 min-w-0">
                         <span className="font-black text-xs md:text-sm text-slate-100 text-left leading-tight line-clamp-2 md:truncate w-full block">{item.card_name}</span>
                       </div>
@@ -379,20 +445,20 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                     )}
                     <div className="flex flex-row gap-8 items-center">
                       <div className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
-                        title={getStatsTooltip(getFormatLabel(formatA), item.valA)} onClick={(e) => handleStatClick(e, getStatsTooltip(getFormatLabel(formatA), item.valA))}>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatA)}</span>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatA)}</span>
-                        <span className={`text-xs font-mono font-bold ${item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                          {item.valA !== null ? (metricMode === 'winrate' && item.valA > 0 ? '+' : '') + item.valA.toFixed(1) + '%' : '--'}
+                        title={getStatsTooltip(getLabel(selA), item.valA)} onClick={(e) => handleStatClick(e, getStatsTooltip(getLabel(selA), item.valA))}>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getShort(selA)}</span>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getLabel(selA)}</span>
+                        <span className={`text-xs font-mono font-bold ${isPlayer ? 'text-slate-200' : (item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400')}`}>
+                          {item.valA !== null ? (isPlayer ? '' : (metricMode === 'winrate' && item.valA > 0 ? '+' : '')) + item.valA.toFixed(1) + '%' : '--'}
                         </span>
                         {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawA.toFixed(1)}%</span>}
                       </div>
                       <div className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
-                        title={getStatsTooltip(getFormatLabel(formatB), item.valB)} onClick={(e) => handleStatClick(e, getStatsTooltip(getFormatLabel(formatB), item.valB))}>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getFormatShort(formatB)}</span>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getFormatLabel(formatB)}</span>
-                        <span className={`text-xs font-mono font-bold ${item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                          {item.valB !== null ? (metricMode === 'winrate' && item.valB > 0 ? '+' : '') + item.valB.toFixed(1) + '%' : '--'}
+                        title={getStatsTooltip(getLabel(selB), item.valB)} onClick={(e) => handleStatClick(e, getStatsTooltip(getLabel(selB), item.valB))}>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getShort(selB)}</span>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getLabel(selB)}</span>
+                        <span className={`text-xs font-mono font-bold ${isPlayer ? 'text-slate-200' : (item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400')}`}>
+                          {item.valB !== null ? (isPlayer ? '' : (metricMode === 'winrate' && item.valB > 0 ? '+' : '')) + item.valB.toFixed(1) + '%' : '--'}
                         </span>
                         {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawB.toFixed(1)}%</span>}
                       </div>

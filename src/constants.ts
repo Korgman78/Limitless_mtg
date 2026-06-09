@@ -33,6 +33,13 @@ export const TRIOS: ColorPair[] = [
   { code: 'BRG', name: 'Jund (BRG)' }
 ];
 
+export const PLAYER_LEVEL_OPTIONS: FormatOption[] = [
+  { label: 'Global', value: 'global', short: 'GLO' },
+  { label: 'Top', value: 'top', short: 'TOP' },
+  { label: 'Middle', value: 'middle', short: 'MID' },
+  { label: 'Bottom', value: 'bottom', short: 'BOT' },
+];
+
 export const SEALED_FORMAT_OPTIONS = FORMAT_OPTIONS.filter(
   (opt) => opt.value === 'Sealed' || opt.value === 'ArenaDirect_Sealed',
 );

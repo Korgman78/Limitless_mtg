@@ -319,6 +319,83 @@ def ingest_cards(set_code, start_date):
                 print(f"      ✅ {context.ljust(6)} : {len(batch)} cartes traitées")
 
 # ==============================================================================
+# 5bis. INGESTION DES CARTES PAR NIVEAU DE JOUEUR (Global uniquement)
+# ==============================================================================
+
+# Paliers 17Lands : top / middle / bottom (param user_group de l'API card_ratings)
+PLAYER_LEVELS = ["top", "middle", "bottom"]
+
+def ingest_cards_player_level(set_code, start_date):
+    """
+    Récupère les stats GLOBALES des cartes (pas de détail par archétype) pour
+    chaque format ET chaque niveau de joueur (top / middle / bottom).
+    Alimente la table `card_player_level_stats` utilisée par l'onglet Compare
+    en mode "Player Level". Pas d'historique pour rester léger.
+    """
+    print(f"\n🚀 [CARTES / PLAYER LEVEL] Traitement du set : {set_code} (Start: {start_date})")
+
+    for fmt in ALL_FORMATS:
+        print(f"\n 📂 Format: {fmt}")
+
+        is_sealed = "Sealed" in fmt
+        splash_param = "true" if is_sealed else "false"
+
+        for level in PLAYER_LEVELS:
+            url = (
+                f"https://www.17lands.com/card_ratings/data?expansion={set_code}"
+                f"&event_type={fmt}&start_date={start_date}&end_date={END_DATE}"
+                f"&combine_splash={splash_param}&user_group={level}"
+            )
+
+            data = fetch_data_safe(url, f"Cartes {level}")
+            random_sleep(2.0, 3.5)
+
+            if not data: continue
+
+            target_list = data if isinstance(data, list) else []
+            if isinstance(data, dict):
+                for v in data.values():
+                    if isinstance(v, list): target_list = v; break
+
+            if not target_list: continue
+            unique_batch = {}
+
+            for row in target_list:
+                try:
+                    name = row.get('name')
+                    if not name: continue
+
+                    gih = get_gih_strict(row)
+                    alsa = safe_float(row.get('avg_seen'))
+                    img_count = row.get('game_count') or 0
+
+                    record = {
+                        "set_code": set_code,
+                        "card_name": name,
+                        "rarity": row.get('rarity', 'common'),
+                        "colors": row.get('color', ''),
+                        "format": fmt,
+                        "player_level": level,
+                        "gih_wr": round(gih, 2) if gih is not None else None,
+                        "alsa": round(alsa, 2) if alsa is not None else None,
+                        "img_count": img_count,
+                    }
+                    unique_batch[f"{fmt}_{name}_{level}"] = record
+                except Exception: continue
+
+            batch = list(unique_batch.values())
+            if batch:
+                for i in range(0, len(batch), 500):
+                    chunk = batch[i:i + 500]
+                    api_url = f"{SUPABASE_URL}/rest/v1/card_player_level_stats?on_conflict=set_code,card_name,format,player_level"
+                    try:
+                        resp = requests.post(api_url, json=chunk, headers=HEADERS_SUPABASE)
+                        if resp.status_code >= 400: print(f"      ❌ Erreur Batch {i}: {resp.text}")
+                    except Exception as e: print(f"      ❌ Exception POST: {e}")
+
+                print(f"      ✅ {level.ljust(6)} : {len(batch)} cartes traitées")
+
+# ==============================================================================
 # MAIN LOOP
 # ==============================================================================
 
@@ -358,5 +435,8 @@ if __name__ == "__main__":
             
             if INGESTION_MODE in ["ALL", "CARDS"]:
                 ingest_cards(set_code, start_date)
-    
+
+            if INGESTION_MODE in ["ALL", "CARDS", "PLAYER"]:
+                ingest_cards_player_level(set_code, start_date)
+
     print("\n✨ Import Terminé.")

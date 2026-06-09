@@ -9,6 +9,8 @@ export const queryKeys = {
     ['cardCrossPerf', set, format, cardName] as const,
   formatComparison: (set: string, mode: string) =>
     ['formatComparison', set, mode] as const,
+  playerLevelComparison: (set: string, format: string) =>
+    ['playerLevelComparison', set, format] as const,
   articles: (setFilter: string) => ['articles', setFilter] as const,
   article: (id: string | number) => ['article', id] as const,
   formatBalance: (set: string) => ['formatBalance', set] as const,

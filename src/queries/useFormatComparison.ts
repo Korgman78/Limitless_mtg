@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../supabase'
 import { queryKeys } from './keys'
 
-export function useFormatComparison(activeSet: string, compareMode: string) {
+export function useFormatComparison(activeSet: string, compareMode: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.formatComparison(activeSet, compareMode),
     queryFn: async () => {
@@ -16,6 +16,7 @@ export function useFormatComparison(activeSet: string, compareMode: string) {
       if (error) throw error
       return data || []
     },
+    enabled,
     staleTime: 5 * 60_000,
   })
 }
