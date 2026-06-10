@@ -4,29 +4,40 @@ import { queryKeys } from './keys'
 import { normalizeRarity } from '../utils/helpers'
 
 /**
- * "Pivot cards" of a format = commons/uncommons that perform consistently well
- * whatever the archetype. A card is eligible when:
- *   1. it is a Common or Uncommon,
- *   2. its global GIH win rate is at least the format baseline (All Decks WR),
- *   3. it has WR data in at least MIN_ARCHETYPES archetypes,
- *   4. the archetypes it is played in cover at least MIN_META_COVERAGE of the
- *      metagame (so a low-variance niche card can't masquerade as a pivot).
- * Among eligible cards, the bottom 15% by standard deviation of GIH win rate
- * across archetypes (the flattest = the most reliable) are flagged as pivots.
+ * "Pivot cards" of a format = commons/uncommons that contribute consistently
+ * whatever the archetype.
  *
- * Rather than picking an arbitrary stddev threshold, the cut-off is relative:
- * the 15% most consistent eligible cards are flagged.
+ * The consistency metric is the standard deviation NOT of the card's raw GIH
+ * win rate across archetypes, but of its DELTA vs each host archetype's win
+ * rate (cardWR_in_archetype − archetypeWR). Raw WR is confounded by archetype
+ * strength — a card in a weak archetype scores low there even when it pulls its
+ * weight — so the delta isolates the card's own, archetype-independent value.
+ *
+ * A card is eligible when:
+ *   1. it is a Common or Uncommon,
+ *   2. its global GIH win rate is at least the format baseline (All Decks WR)
+ *      — it is genuinely good in absolute terms,
+ *   3. it has a delta in at least MIN_ARCHETYPES archetypes,
+ *   4. those archetypes cover at least MIN_META_COVERAGE of the metagame
+ *      (so a low-variance niche card can't masquerade as a pivot),
+ *   5. its mean delta is at least MIN_MEAN_DELTA (it performs ~at archetype
+ *      level on average — it doesn't consistently drag the deck down).
+ * Among eligible cards, the bottom 15% by stddev of delta (the flattest =
+ * the most reliable) are flagged as pivots — a relative, not arbitrary, cut.
  */
 
-// Share of the eligible pool flagged as pivots (lowest stddev first).
+// Share of the eligible pool flagged as pivots (lowest delta-stddev first).
 const PIVOT_PERCENTILE = 0.15
-// A card needs WR data in at least this many archetypes for its stddev to be
+// A card needs a delta in at least this many archetypes for its stddev to be
 // statistically meaningful (avoids 1-2 point "flat" noise dominating the cut).
 const MIN_ARCHETYPES = 3
 // The archetypes a pivot is played in must represent at least this % of the
 // metagame (sum of meta share, splash variants of the same colours included).
 // Calibrated on 5 sets: legitimate pivots all sit ≥25%, niche gold cards below.
 const MIN_META_COVERAGE = 25
+// Minimum mean delta: a pivot must perform roughly at its host archetypes'
+// level on average (within ~1%), so a consistent under-performer can't qualify.
+const MIN_MEAN_DELTA = -1
 
 // Sorted colour identity of an archetype code/colours string, e.g. "RU" -> "RU".
 const colorKey = (s: string | null | undefined) =>
@@ -83,15 +94,18 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
       if (archResult.error) throw archResult.error
       const archRows = (archResult.data ?? []) as any[]
       const globalMeanWR = archRows.find(a => a.archetype_name === 'All Decks')?.win_rate ?? 55.0
-
-      // Meta share (%) per colour identity, summing splash variants of the same
-      // colours together (e.g. "Izzet (UR)" + "Izzet (UR) + Splash" -> key "RU").
       const individualDecks = archRows.filter(a => !AGGREGATE_NAMES.has(a.archetype_name))
       const totalGames = individualDecks.reduce((s, d) => s + (d.games_count || 0), 0) || 1
+
+      // Per colour identity: meta share (%) summing splash variants together,
+      // and the win rate of the pure (non-splash) archetype — the baseline we
+      // subtract from the card's WR to get its delta. (Keys e.g. "RU".)
       const metaShareByColors: Record<string, number> = {}
+      const archetypeWRByColors: Record<string, number> = {}
       for (const d of individualDecks) {
         const k = colorKey(d.colors)
         metaShareByColors[k] = (metaShareByColors[k] || 0) + (d.games_count || 0) / totalGames * 100
+        if (!String(d.colors).includes('Splash') && d.win_rate != null) archetypeWRByColors[k] = d.win_rate
       }
 
       if (firstPage.error) throw firstPage.error
@@ -110,8 +124,8 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
 
       const minGames = activeFormat.toLowerCase().includes('sealed') ? 10 : 500
 
-      // Group rows by card (keep the archetype context alongside its WR so we
-      // can score both consistency and metagame coverage).
+      // Group rows by card: global WR (absolute quality) + the per-archetype
+      // context/WR pairs (used for delta consistency and metagame coverage).
       interface Agg { rarity: string; globalWr: number | null; archStats: { ctx: string; wr: number }[] }
       const byCard = new Map<string, Agg>()
       for (const row of rows as any[]) {
@@ -131,14 +145,20 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
         }
       }
 
-      // Keep eligible cards and compute their cross-archetype stddev.
+      // Keep eligible cards and score them by the stddev of their deltas.
       const eligible: { name: string; std: number }[] = []
       const stdDevByName: Record<string, number> = {}
       for (const [name, agg] of byCard) {
         const r = normalizeRarity(agg.rarity)
         if (r !== 'C' && r !== 'U') continue
         if (agg.globalWr == null || agg.globalWr < globalMeanWR) continue
-        if (agg.archStats.length < MIN_ARCHETYPES) continue
+
+        // Delta per archetype = card WR − pure archetype WR. Skip contexts whose
+        // pure archetype WR is unknown (only a splash variant of those colours).
+        const deltas = agg.archStats
+          .filter(a => archetypeWRByColors[colorKey(a.ctx)] != null)
+          .map(a => a.wr - archetypeWRByColors[colorKey(a.ctx)])
+        if (deltas.length < MIN_ARCHETYPES) continue
 
         // Metagame coverage: distinct colour identities (so a card seen in both
         // a context and its splash sibling isn't double-counted).
@@ -147,15 +167,16 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
         for (const k of coveredKeys) coverage += metaShareByColors[k] || 0
         if (coverage < MIN_META_COVERAGE) continue
 
-        const wrs = agg.archStats.map(a => a.wr)
-        const mean = wrs.reduce((a, b) => a + b, 0) / wrs.length
-        const variance = wrs.reduce((s, v) => s + (v - mean) ** 2, 0) / wrs.length
+        const meanDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length
+        if (meanDelta < MIN_MEAN_DELTA) continue
+
+        const variance = deltas.reduce((s, v) => s + (v - meanDelta) ** 2, 0) / deltas.length
         const std = Math.sqrt(variance)
         eligible.push({ name, std })
         stdDevByName[name] = std
       }
 
-      // Bottom 15% by stddev = the flattest performers = pivots.
+      // Bottom 15% by delta-stddev = the most consistent contributors = pivots.
       eligible.sort((a, b) => a.std - b.std)
       const cut = eligible.length > 0 ? Math.max(1, Math.round(eligible.length * PIVOT_PERCENTILE)) : 0
       const pivotNames = new Set(eligible.slice(0, cut).map(e => e.name))
