@@ -1,12 +1,29 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Grid3X3, Search, Palette, Diamond } from 'lucide-react';
+import { X, Grid3X3, Search, Palette, Diamond, Network, HelpCircle } from 'lucide-react';
 import type { Card } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, extractColors, getCardImage } from '../../utils/helpers';
 import { Tooltip } from '../Common/Tooltip';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useCardMap } from '../../queries/useCardMap';
+
+type ViewMode = 'wralsa' | 'umap' | 'community';
+
+// Palette des communautés Louvain (couleurs distinctes, cyclique). -1 = isolée.
+const COMMUNITY_COLORS = [
+  '#6366f1', '#ec4899', '#22c55e', '#f59e0b', '#06b6d4',
+  '#a855f7', '#ef4444', '#14b8a6', '#eab308', '#3b82f6',
+  '#f97316', '#84cc16',
+];
+const communityColor = (c: number): string =>
+  c < 0 ? '#64748b' : COMMUNITY_COLORS[c % COMMUNITY_COLORS.length];
+
+const MODES: { id: ViewMode; label: string; Icon: typeof Grid3X3 }[] = [
+  { id: 'wralsa', label: 'WR / ALSA', Icon: Grid3X3 },
+  { id: 'umap', label: 'Card Map', Icon: Network },
+];
 
 interface Deck {
   id: string | number;
@@ -21,6 +38,7 @@ interface Deck {
 interface MatrixViewOverlayProps {
   cards: Card[];
   decks: Deck[];
+  activeSet: string;
   activeFormat: string;
   archetypeFilter: string;
   globalMeanWR: number;
@@ -60,18 +78,31 @@ const getRarityColor = (rarity: string): string => {
 const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   cards,
   decks,
+  activeSet,
   activeFormat,
   archetypeFilter,
   globalMeanWR,
   onClose,
   onCardSelect,
 }) => {
+  // View mode: WR/ALSA scatter (default), card UMAP map, or synergy communities
+  const [viewMode, setViewMode] = useState<ViewMode>('wralsa');
+  const graphMode = viewMode !== 'wralsa';
+  const [activeCommunity, setActiveCommunity] = useState<number | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Card map (UMAP coords + Louvain community) — lazy: only fetched in graph modes
+  const { data: cardMap, isLoading: cardMapLoading } = useCardMap(activeSet, activeFormat, graphMode);
+
   // Filters state
   const [rarityFilter, setRarityFilter] = useState<string[]>([]);
   const [colorFilters, setColorFilters] = useState<string[]>([]);
 
   // Color mode: 'mana' or 'rarity'
   const [colorMode, setColorMode] = useState<'mana' | 'rarity'>('mana');
+
+  // Reset community highlight when leaving community mode
+  React.useEffect(() => { if (viewMode !== 'community') setActiveCommunity(null); }, [viewMode]);
 
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -186,15 +217,57 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   const displayMinWR = isDraft ? formatStats.minWR - 1 : formatStats.avgWR - 8;
   const displayMaxWR = isDraft ? formatStats.maxWR + 1 : formatStats.avgWR + 12;
 
+  // Bounds des coords UMAP (modes graphe) sur les cartes filtrées qui ont une entrée card_map
+  const graphBounds = useMemo(() => {
+    if (!cardMap) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, n = 0;
+    for (const c of filteredCards) {
+      const m = cardMap.get(c.name);
+      if (!m) continue;
+      n++;
+      if (m.x < minX) minX = m.x; if (m.x > maxX) maxX = m.x;
+      if (m.y < minY) minY = m.y; if (m.y > maxY) maxY = m.y;
+    }
+    return n > 0 ? { minX, maxX, minY, maxY } : null;
+  }, [cardMap, filteredCards]);
+
   // Compute dot positions
   const cardDots = useMemo(() => {
+    const searchLower = debouncedSearch.toLowerCase().trim();
+
+    // --- Modes graphe (UMAP des cartes) : position depuis card_map ---
+    if (graphMode) {
+      if (!cardMap || !graphBounds) return [];
+      const spanX = (graphBounds.maxX - graphBounds.minX) || 1;
+      const spanY = (graphBounds.maxY - graphBounds.minY) || 1;
+      const out: Array<{ card: Card; name: string; wr: number; alsa: number | null; x: number; y: number; colorClass: string; dotColor: string | null; community: number; rarity: string; isMatch: boolean }> = [];
+      for (const c of filteredCards) {
+        const m = cardMap.get(c.name);
+        if (!m) continue;
+        const dotColor = viewMode === 'community' ? communityColor(m.community) : null;
+        out.push({
+          card: c,
+          name: c.name,
+          wr: c.gih_wr!,
+          alsa: c.alsa ?? null,
+          x: 4 + ((m.x - graphBounds.minX) / spanX) * 92,
+          y: 4 + ((m.y - graphBounds.minY) / spanY) * 92,
+          colorClass: dotColor ? '' : (colorMode === 'mana' ? getManaColor(c.colors) : getRarityColor(c.rarity)),
+          dotColor,
+          community: m.community,
+          rarity: normalizeRarity(c.rarity),
+          isMatch: searchLower ? c.name.toLowerCase().includes(searchLower) : false,
+        });
+      }
+      return out;
+    }
+
+    // --- Mode WR/ALSA (défaut, inchangé) ---
     const getYPosition = (wr: number) => {
       const clampedWR = Math.max(displayMinWR, Math.min(displayMaxWR, wr));
       const y = 100 - ((clampedWR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
       return Math.max(2, Math.min(98, y));
     };
-
-    const searchLower = debouncedSearch.toLowerCase().trim();
 
     return filteredCards.map(c => ({
       card: c,
@@ -206,10 +279,23 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
         : 10 + Math.random() * 80, // Spread horizontally for Sealed
       y: getYPosition(c.gih_wr!),
       colorClass: colorMode === 'mana' ? getManaColor(c.colors) : getRarityColor(c.rarity),
+      dotColor: null as string | null,
+      community: -1,
       rarity: normalizeRarity(c.rarity),
       isMatch: searchLower ? c.name.toLowerCase().includes(searchLower) : false,
     }));
-  }, [filteredCards, isDraft, displayMinWR, displayMaxWR, minALSA, maxALSA, colorMode, debouncedSearch]);
+  }, [filteredCards, isDraft, displayMinWR, displayMaxWR, minALSA, maxALSA, colorMode, debouncedSearch, graphMode, cardMap, graphBounds, viewMode]);
+
+  // Légende des communautés (mode community) : groupes triés par taille
+  const communityLegend = useMemo(() => {
+    if (viewMode !== 'community') return [] as Array<{ community: number; count: number; color: string }>;
+    const groups = new Map<number, number>();
+    for (const d of cardDots) groups.set(d.community, (groups.get(d.community) || 0) + 1);
+    return Array.from(groups.entries())
+      .filter(([c]) => c >= 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([community, count]) => ({ community, count, color: communityColor(community) }));
+  }, [viewMode, cardDots]);
 
   // Count search matches
   const matchCount = useMemo(() => {
@@ -312,6 +398,32 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
     setPosition({ x: 0, y: 0 });
   }, []);
 
+  // Aide contextuelle : explique l'intérêt du mode actif (variante Sealed sans ALSA)
+  const help = useMemo<{ title: string; body: string }>(() => {
+    if (viewMode === 'umap') {
+      return {
+        title: 'Card Map — similarity',
+        body: 'Each dot is a card. Distance = how often two cards share the same 7-win trophy decks: neighbours are cards that win together, so cards naturally cluster into archetype packages. The axes themselves mean nothing — only closeness matters. Use it to spot a card’s package and its interchangeable alternatives.',
+      };
+    }
+    if (viewMode === 'community') {
+      return {
+        title: 'Communities — synergy packages',
+        body: 'Same map, but cards are auto-grouped into packages (colours) by clustering the co-play graph. Each colour ≈ the core of an archetype. A card sitting between two colours is a flexible bridge that fits both. Click a group in the legend to isolate it.',
+      };
+    }
+    // wralsa
+    return isDraft
+      ? {
+          title: 'WR / ALSA — value scatter',
+          body: 'Each dot is a card. Vertical = win rate (higher is better); horizontal = average pick position (ALSA): left = taken early, right = taken late. The sweet spot is top-right — cards that win a lot yet go late, i.e. your most undervalued picks.',
+        }
+      : {
+          title: 'Win rate distribution',
+          body: 'Each dot is a card, placed vertically by win rate (higher = better). Horizontal position is only spread to avoid overlap — Sealed has no pick-order (ALSA) data. The coloured bands rank cards from BOMB down to CHAFF versus the pool average.',
+        };
+  }, [viewMode, isDraft]);
+
   const yAvg = 100 - ((formatStats.avgWR - displayMinWR) / (displayMaxWR - displayMinWR)) * 100;
   const xAvg = ((formatStats.avgALSA - minALSA) / (maxALSA - minALSA)) * 100;
 
@@ -344,17 +456,39 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[1000] bg-slate-950/95 backdrop-blur-sm flex flex-col"
     >
+      {/* Mobile mode selector — compact, above the title */}
+      <div className="md:hidden flex items-center gap-1 p-1.5 border-b border-slate-800 bg-slate-900/70">
+        {MODES.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => setViewMode(id)}
+            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-bold border transition-all ${viewMode === id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400'}`}
+          >
+            <Icon size={12} /> {label}
+          </button>
+        ))}
+      </div>
+
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-800">
-        <div className="flex items-center gap-3">
-          <Grid3X3 className="text-indigo-400" size={24} />
-          <div>
-            <h2 className="text-lg font-black text-white">Matrix View</h2>
+      <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-800">
+        <div className="flex items-center gap-3 min-w-0">
+          <Network className="text-indigo-400 shrink-0" size={24} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-lg font-black text-white">Card Graphs</h2>
+              <button
+                onClick={() => setShowHelp(s => !s)}
+                title="What is this view?"
+                className={`p-1 rounded-md transition-colors ${showHelp ? 'text-indigo-300 bg-indigo-500/20' : 'text-slate-500 hover:text-indigo-300'}`}
+              >
+                <HelpCircle size={16} />
+              </button>
+            </div>
             <div className="flex items-center gap-2">
-              <p className="text-xs text-slate-500">
-                {activeFormat} • {archetypeFilter === 'Global' ? 'Global' : archetypeFilter} • {filteredCards.length} cards
+              <p className="text-xs text-slate-500 truncate">
+                {activeFormat} • {archetypeFilter === 'Global' ? 'Global' : archetypeFilter} • {graphMode ? `${cardDots.length} / ${filteredCards.length} mapped` : `${filteredCards.length} cards`}
               </p>
-              {correlation !== null && (
+              {viewMode === 'wralsa' && correlation !== null && (
                 <Tooltip content={
                   <div className="text-center max-w-[220px]">
                     <div className="text-[10px] font-bold text-white mb-1">WR / ALSA Correlation</div>
@@ -383,13 +517,48 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Desktop mode selector — centré entre le titre et la fermeture */}
+        <div className="hidden md:flex items-center gap-1 mx-auto bg-slate-900/70 border border-slate-800 rounded-xl p-1">
+          {MODES.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setViewMode(id)}
+              className={`flex items-center gap-1.5 px-5 py-2 rounded-lg text-xs font-black transition-all ${viewMode === id ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={onClose}
-          className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
         >
           <X size={20} />
         </button>
       </div>
+
+      {/* Help popover — explains the active view (pédagogie) */}
+      <AnimatePresence>
+        {showHelp && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden border-b border-indigo-500/30 bg-indigo-950/40"
+          >
+            <div className="flex items-start gap-2.5 px-4 py-3">
+              <HelpCircle size={16} className="text-indigo-300 mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-black text-indigo-300 uppercase tracking-wide mb-0.5">{help.title}</p>
+                <p className="text-[11px] md:text-xs text-slate-300 leading-relaxed max-w-3xl">{help.body}</p>
+              </div>
+              <button onClick={() => setShowHelp(false)} className="text-slate-500 hover:text-white shrink-0"><X size={14} /></button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 p-3 border-b border-slate-800 bg-slate-900/50">
@@ -464,23 +633,25 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
 
           <div className="hidden md:block w-[1px] h-6 bg-slate-700" />
 
-          {/* Color mode toggle - desktop inline */}
-          <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
-            <div className="hidden md:flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
-              <button
-                onClick={() => setColorMode('mana')}
-                className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Palette size={14} />
-              </button>
-              <button
-                onClick={() => setColorMode('rarity')}
-                className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Diamond size={14} />
-              </button>
-            </div>
-          </Tooltip>
+          {/* Color mode toggle - desktop inline (masqué en mode Communities) */}
+          {viewMode !== 'community' && (
+            <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
+              <div className="hidden md:flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+                <button
+                  onClick={() => setColorMode('mana')}
+                  className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Palette size={14} />
+                </button>
+                <button
+                  onClick={() => setColorMode('rarity')}
+                  className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Diamond size={14} />
+                </button>
+              </div>
+            </Tooltip>
+          )}
 
           <div className="hidden md:block w-[1px] h-6 bg-slate-700" />
 
@@ -539,23 +710,25 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
             )}
           </div>
 
-          {/* Color mode toggle */}
-          <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
-            <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
-              <button
-                onClick={() => setColorMode('mana')}
-                className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Palette size={14} />
-              </button>
-              <button
-                onClick={() => setColorMode('rarity')}
-                className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Diamond size={14} />
-              </button>
-            </div>
-          </Tooltip>
+          {/* Color mode toggle (masqué en mode Communities) */}
+          {viewMode !== 'community' && (
+            <Tooltip content={<span className="text-[10px] text-slate-200">{colorMode === 'mana' ? 'Colored by mana' : 'Colored by rarity'}</span>}>
+              <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+                <button
+                  onClick={() => setColorMode('mana')}
+                  className={`p-1.5 rounded transition-all ${colorMode === 'mana' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Palette size={14} />
+                </button>
+                <button
+                  onClick={() => setColorMode('rarity')}
+                  className={`p-1.5 rounded transition-all ${colorMode === 'rarity' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Diamond size={14} />
+                </button>
+              </div>
+            </Tooltip>
+          )}
 
           {/* Reset zoom */}
           {scale > 1 && (
@@ -588,6 +761,8 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
             className="absolute inset-0 origin-center transition-transform duration-100"
             style={{ transform: `translate(${position.x}%, ${position.y}%) scale(${scale})` }}
           >
+            {/* Décor WR/ALSA uniquement (lignes moyennes, quadrants, tiers Sealed) */}
+            {viewMode === 'wralsa' && (<>
             {/* Average lines */}
             <div className="absolute left-0 right-0 border-t border-dashed border-slate-600/50" style={{ top: `${yAvg}%` }} />
             {isDraft && (
@@ -638,11 +813,13 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                 <div className="absolute right-3 text-[9px] md:text-[10px] text-red-400/90 font-black" style={{ top: `${(sealedTiers.yM5 + 100) / 2}%`, transform: 'translateY(-50%)' }}>CHAFF</div>
               </>
             )}
+            </>)}
 
             {/* Card dots */}
             {cardDots.map((dot, idx) => {
               const hasSearch = debouncedSearch.trim().length > 0;
-              const isDimmed = hasSearch && !dot.isMatch;
+              const commDimmed = activeCommunity != null && dot.community !== activeCommunity;
+              const isDimmed = (hasSearch && !dot.isMatch) || commDimmed;
               const isHighlighted = hasSearch && dot.isMatch;
 
               // Mobile: custom touch handlers for long press = tooltip, tap = navigate
@@ -699,7 +876,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                         }
                       }}
                       className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
-                      style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                      style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
                     />
                   </Tooltip>
                 );
@@ -725,24 +902,73 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                   onMouseEnter={() => setHoveredCard({ card: dot.card, x: dot.x, y: dot.y })}
                   onMouseLeave={() => setHoveredCard(null)}
                   className={`absolute w-2.5 h-2.5 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20 hover:brightness-125 hover:scale-150 hover:z-20'}`}
-                  style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                  style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
                 />
               );
             })}
           </div>
 
           {/* Axis labels */}
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-            {isDraft ? 'Pick Order (ALSA)' : 'Performance Distribution'}
-          </div>
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">
-            Win Rate
-          </div>
+          {viewMode === 'wralsa' ? (
+            <>
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                {isDraft ? 'Pick Order (ALSA)' : 'Performance Distribution'}
+              </div>
+              <div className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">
+                Win Rate
+              </div>
+              {/* Average WR tooltip zone */}
+              <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">{archetypeFilter && archetypeFilter !== 'Global' ? 'Archetype' : 'Format'} Average WR</div><div className="text-sm font-black text-white">{formatStats.avgWR.toFixed(1)}%</div></div>}>
+                <div className="absolute left-0 right-0 h-4 cursor-help" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }} />
+              </Tooltip>
+            </>
+          ) : (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] md:text-[10px] text-slate-500/80 font-bold uppercase tracking-wider text-center px-4">
+              Distance = card similarity · axes have no meaning
+            </div>
+          )}
 
-          {/* Average WR tooltip zone */}
-          <Tooltip content={<div className="text-center"><div className="text-[10px] text-slate-400">{archetypeFilter && archetypeFilter !== 'Global' ? 'Archetype' : 'Format'} Average WR</div><div className="text-sm font-black text-white">{formatStats.avgWR.toFixed(1)}%</div></div>}>
-            <div className="absolute left-0 right-0 h-4 cursor-help" style={{ top: `${yAvg}%`, transform: 'translateY(-50%)' }} />
-          </Tooltip>
+          {/* Community legend (mode Communities) — cliquable pour surligner un groupe */}
+          {viewMode === 'community' && communityLegend.length > 0 && (
+            <div className="absolute top-2 left-2 z-20 bg-slate-900/85 backdrop-blur-sm border border-slate-800 rounded-lg p-2 max-w-[150px] max-h-[55%] overflow-y-auto no-scrollbar shadow-xl">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Communities</p>
+                {activeCommunity != null && (
+                  <button onClick={() => setActiveCommunity(null)} className="text-[8px] font-black text-indigo-400 uppercase">Clear</button>
+                )}
+              </div>
+              <div className="space-y-0.5">
+                {communityLegend.map((g) => {
+                  const isActive = activeCommunity === g.community;
+                  return (
+                    <button
+                      key={g.community}
+                      onClick={() => setActiveCommunity(prev => prev === g.community ? null : g.community)}
+                      className={`w-full flex items-center gap-1.5 px-1 py-0.5 rounded transition-colors ${isActive ? 'bg-indigo-600/30' : 'hover:bg-slate-800/70'}`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: g.color }} />
+                      <span className="text-[10px] text-slate-300 font-bold flex-1 text-left">Group {g.community + 1}</span>
+                      <span className="text-[9px] text-slate-600 font-mono">{g.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Graph loading / empty states */}
+          {graphMode && cardMapLoading && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Projecting cards…</p>
+            </div>
+          )}
+          {graphMode && !cardMapLoading && cardDots.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500 px-6 text-center pointer-events-none">
+              <Network size={32} className="text-slate-700" />
+              <p className="text-xs font-bold">No graph data yet for this format.</p>
+              <p className="text-[10px] text-slate-600 max-w-xs">Precomputed by the ETL (etl_umap_cardmap.py).</p>
+            </div>
+          )}
 
           {/* Zoom indicator */}
           {scale > 1 && (

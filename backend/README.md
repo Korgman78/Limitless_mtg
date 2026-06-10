@@ -12,6 +12,7 @@ Tous lisent `.env` a la racine du projet (`SUPABASE_URL` / `SUPABASE_KEY` ou var
 | `etl_script_synergy.py` | Calcul des synergies inter-cartes (lift scoring) | Configure `TARGET_SET_CODES`, `TARGET_FORMATS` |
 | `calculate_archetypal_decks.py` | Clustering des trophy decks en skeletons d'archetypes | Configure `TARGET_SET_CODES`, `TARGET_FORMATS` |
 | `etl_umap_trophymap.py` | Projection UMAP des trophy decks (Trophies Map) : coords 2D + ancres archetypales + cartes signature par archetype + index recherche carte | Lit `trophy_decks`/`archetypal_skeletons` en base (pas de scrape 17Lands). `TARGET_SET_CODES=[]` = tous sets actifs. Cron tous les 3 jours (`trophy_map.yml`). Alimente `trophy_deck_map` + `trophy_map_archetype_cards`. Deps : `numpy`, `scikit-learn`, `umap-learn` |
+| `etl_umap_cardmap.py` | Projection UMAP des **cartes** (Card Graphs, modes Map/Communities) : matrice carte×deck → coords 2D (cosine) + communautes Louvain depuis `synergy_scores`. Lit `trophy_decks` (matrice) + `synergy_scores` (graphe). `TARGET_SET_CODES=[]` = tous sets actifs. Cron tous les 3 jours (`card_map.yml`, 18:30 après la Trophy Map). Alimente `card_map`. Deps : `numpy`, `umap-learn`, `networkx` |
 
 ## Enrichissement cartes (`enrichment/`)
 

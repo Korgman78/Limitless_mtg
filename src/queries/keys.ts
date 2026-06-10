@@ -25,4 +25,6 @@ export const queryKeys = {
     ['trophyDeckMap', set, format] as const,
   trophyDeck: (aggregateId: string) =>
     ['trophyDeck', aggregateId] as const,
+  cardMap: (set: string, format: string) =>
+    ['cardMap', set, format] as const,
 }

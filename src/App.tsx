@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity, BookOpen, Anchor
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Network, Trophy, Activity, BookOpen, Anchor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -586,7 +586,7 @@ export default function MTGLimitedApp(): React.ReactElement {
       <AnimatePresence>
         {error && <ErrorBanner key="error-banner" message={error} onDismiss={handleCloseError} />}
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={handleCloseDeck} onCardClick={handleCardSelect} />}
-        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
+        {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeSet={activeSet} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
         {showGuide && (
           <GuideOverlay
@@ -925,13 +925,13 @@ export default function MTGLimitedApp(): React.ReactElement {
                         {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="p-0.5 md:p-1 text-slate-500 hover:text-white transition-colors"><X size={12} /></button>}
                       </div>
 
-                      {/* Matrix button - Mobile only (pushed to right) */}
+                      {/* Card Graphs button - Mobile only (pushed to right) */}
                       <button
                         onClick={() => { haptics.light(); setShowMatrixView(true); }}
                         className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white border border-indigo-400/30 shadow-lg shadow-indigo-500/20"
                       >
-                        <Grid3X3 size={10} />
-                        MATRIX
+                        <Network size={10} />
+                        GRAPHS
                       </button>
                     </div>
 
@@ -980,14 +980,14 @@ export default function MTGLimitedApp(): React.ReactElement {
                         PIVOT
                       </button>
 
-                      {/* Séparateur + Matrix View button - Desktop only */}
+                      {/* Séparateur + Card Graphs button - Desktop only */}
                       <div className="hidden md:block w-[1px] h-6 bg-slate-700 mx-1"></div>
                       <button
                         onClick={() => { haptics.light(); setShowMatrixView(true); }}
                         className="hidden md:flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border border-white/10 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-105 transition-all"
                       >
-                        <Grid3X3 size={12} />
-                        MATRIX VIEW
+                        <Network size={12} />
+                        CARD GRAPHS
                       </button>
                     </div>
                   </div>
