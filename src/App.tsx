@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity, BookOpen
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity, BookOpen, Anchor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 import { useSets } from './queries/useSets';
 import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
+import { useFormatPivots } from './queries/useFormatPivots';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
 
@@ -236,6 +237,19 @@ export default function MTGLimitedApp(): React.ReactElement {
 
   const [rarityFilter, setRarityFilter] = useState<string[]>([]);
   const [colorFilters, setColorFilters] = useState<string[]>([]);
+
+  // --- Pivot cards filter (Cards tab) ---
+  // Lazy: the cross-archetype query only runs after the first activation.
+  const [pivotActive, setPivotActive] = useState<boolean>(false);
+  const [pivotQueryEnabled, setPivotQueryEnabled] = useState<boolean>(false);
+  const { data: pivotData, isLoading: pivotLoading } = useFormatPivots(activeSet, activeFormat, pivotQueryEnabled);
+  const pivotNames = pivotData?.pivotNames;
+
+  const togglePivot = useCallback(() => {
+    haptics.light();
+    setPivotQueryEnabled(true);
+    setPivotActive(prev => !prev);
+  }, []);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
@@ -366,6 +380,11 @@ export default function MTGLimitedApp(): React.ReactElement {
 
     if (debouncedSearchTerm) res = res.filter((c: Card) => c.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
 
+    if (pivotActive) {
+      if (!pivotNames) return [];   // cross-archetype data still loading — avoid flashing all cards
+      res = res.filter((c: Card) => pivotNames.has(c.name));
+    }
+
     if (rarityFilter.length > 0) {
       res = res.filter((c: Card) => rarityFilter.includes(normalizeRarity(c.rarity)));
     }
@@ -411,12 +430,12 @@ export default function MTGLimitedApp(): React.ReactElement {
       return sortConfig.dir === 'asc' ? valA - valB : valB - valA;
     });
     return res;
-  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig]);
+  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, pivotActive, pivotNames]);
 
   // Reset lazy load when filters change
   useEffect(() => {
     setVisibleCardsCount(40);
-  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat]);
+  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat, pivotActive, pivotNames]);
 
 
   // Scroll to top FAB visibility
@@ -919,8 +938,8 @@ export default function MTGLimitedApp(): React.ReactElement {
                     <div className="hidden md:block w-[1px] h-6 bg-slate-800 mx-2"></div>
 
                     {/* STATS FILTERS (Row 3 on Mobile) */}
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                    <div className="flex gap-1.5 md:gap-2 w-full md:w-auto">
+                      <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         GIH
                         {sortConfig.key === 'gih_wr' ? (
                           <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
@@ -929,7 +948,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                       </button>
 
-                      <button onClick={() => handleSort('alsa')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <button onClick={() => handleSort('alsa')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         ALSA
                         {sortConfig.key === 'alsa' ? (
                           <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
@@ -938,13 +957,27 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                       </button>
 
-                      <button onClick={() => handleSort('trend')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'trend' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <button onClick={() => handleSort('trend')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'trend' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         TREND
                         {sortConfig.key === 'trend' ? (
                           sortConfig.dir === 'asc' ? <TrendingDown size={10} /> : <TrendingUp size={10} />
                         ) : (
                           <TrendingUp size={10} />
                         )}
+                      </button>
+
+                      {/* PIVOT — format pivot cards (consistent across archetypes) */}
+                      <button
+                        onClick={togglePivot}
+                        title="Format pivot cards — commons & uncommons with above-average win rate and the most consistent performance across archetypes"
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pivotActive ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/60 hover:text-amber-300'}`}
+                      >
+                        {pivotActive && pivotLoading ? (
+                          <RefreshCw size={10} className="animate-spin" />
+                        ) : (
+                          <Anchor size={10} className={pivotActive ? '' : 'text-amber-400/80'} />
+                        )}
+                        PIVOT
                       </button>
 
                       {/* Séparateur + Matrix View button - Desktop only */}
@@ -959,6 +992,24 @@ export default function MTGLimitedApp(): React.ReactElement {
                     </div>
                   </div>
                 </div>
+
+                {/* Pivot cards info bar */}
+                {pivotActive && (
+                  <div className="px-2 md:px-0 pt-3">
+                    <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-[11px] text-amber-200/90">
+                      <Anchor size={13} className="text-amber-400 flex-shrink-0" />
+                      {pivotLoading || !pivotNames ? (
+                        <span>Finding the format&rsquo;s pivot cards&hellip;</span>
+                      ) : filteredCards.length === 0 ? (
+                        <span>No pivot cards match the current filters.</span>
+                      ) : (
+                        <span>
+                          <strong className="font-bold text-amber-300">Format pivots</strong> &mdash; commons &amp; uncommons with above-average win rate that perform the most consistently across archetypes.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
                   {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (

@@ -3,6 +3,8 @@ export const queryKeys = {
   decks: (set: string, format: string) => ['decks', set, format] as const,
   cards: (set: string, format: string, archetype: string) =>
     ['cards', set, format, archetype] as const,
+  formatPivots: (set: string, format: string) =>
+    ['formatPivots', set, format] as const,
   archetypeCards: (set: string, format: string, colors: string) =>
     ['archetypeCards', set, format, colors] as const,
   cardCrossPerf: (set: string, format: string, cardName: string) =>
