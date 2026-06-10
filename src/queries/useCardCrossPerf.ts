@@ -76,7 +76,15 @@ export function useCardCrossPerf(
           .map((d: any) => {
             if (!d.gih_wr || d.img_count < minGames) return null
 
+            // card_stats archetype contexts are always pure colour codes (no
+            // splash). extractColors() strips " + Splash", so a pure context
+            // like "UR" also matches an "Izzet (UR) + Splash" deck — and since
+            // decks are ordered by WR, find() often returned that splash variant
+            // (type 'Two colors + splash' / 'More than 3 colors'), which the
+            // check below then dropped. Exclude splash decks so we match the
+            // pure archetype.
             const deck = decks.find((dk: Deck) =>
+              !String(dk.colors).includes('Splash') &&
               areColorsEqual(extractColors(dk.colors), d.filter_context)
             )
 
