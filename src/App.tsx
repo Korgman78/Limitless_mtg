@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Grid3X3, Trophy, Activity, BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -34,7 +34,7 @@ import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardI
 import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
-import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, SwipeableOverlay } from './components/Overlays';
+import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, SwipeableOverlay, GuideOverlay } from './components/Overlays';
 import { FormatComparison, PressReview, FormatBlueprint, TrophyDecks } from './components/Features';
 import { MetagamePulsePopup } from './components/Features/MetagamePulse/MetagamePulsePopup';
 import { SearchAutocomplete } from './components/Common';
@@ -44,9 +44,10 @@ interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   onPrefetch: (tab: string) => void;
+  onOpenGuide: () => void;
 }
 
-const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }) => (
+const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch, onOpenGuide }) => (
   <nav className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
     <div className="mb-8 px-2">
       <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">LIMITLESS</h1>
@@ -69,8 +70,18 @@ const Sidebar = React.memo<SidebarProps>(({ activeTab, onTabChange, onPrefetch }
         <Newspaper size={20} strokeWidth={2.5} /> <span>Press Review</span>
       </button>
     </div>
-    <div className="mt-auto pt-6 border-t border-slate-800 space-y-4">
-      <div className="text-[10px] text-slate-500 leading-relaxed px-2">
+    <div className="mt-auto pt-6 space-y-4">
+      {/* App guide — opens the feature walkthrough popup */}
+      <button
+        onClick={onOpenGuide}
+        className="group flex w-full items-center gap-2.5 rounded-xl border border-slate-700/70 bg-slate-800/40 px-3 py-2.5 text-slate-300 transition-all hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-300"
+      >
+        <BookOpen size={18} strokeWidth={2.5} className="text-indigo-400 transition-transform group-hover:scale-110" />
+        <span className="text-sm font-bold">Guide</span>
+        <span className="ml-auto text-[10px] font-medium text-slate-500 group-hover:text-indigo-400/70">How it works</span>
+      </button>
+
+      <div className="border-t border-slate-800 pt-4 text-[10px] text-slate-500 leading-relaxed px-2">
         <p className="mb-2">
           <span className="font-bold text-slate-400 uppercase">Credits:</span> Data sourced from <a href="https://www.17lands.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">17lands.com</a>. Don't forget to play with <a href="https://www.17lands.com/getting_started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">their tracker</a> on!
         </p>
@@ -229,6 +240,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
   const [showPulse, setShowPulse] = useState<boolean>(false);
+  const [showGuide, setShowGuide] = useState<boolean>(false);
   const [pendingCardView, setPendingCardView] = useState<{ cardName: string; format: string } | null>(null);
 
   // --- Error State ---
@@ -557,6 +569,13 @@ export default function MTGLimitedApp(): React.ReactElement {
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={handleCloseDeck} onCardClick={handleCardSelect} />}
         {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
+        {showGuide && (
+          <GuideOverlay
+            key="guide-overlay"
+            onClose={() => setShowGuide(false)}
+            onNavigate={handleTabChange}
+          />
+        )}
         {showPulse && (
           <SwipeableOverlay key="pulse-overlay" onClose={() => setShowPulse(false)} zIndex={900}>
             <MetagamePulsePopup
@@ -574,7 +593,7 @@ export default function MTGLimitedApp(): React.ReactElement {
         )}
       </AnimatePresence>
 
-      <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onPrefetch={prefetchTabData} />
+      <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onPrefetch={prefetchTabData} onOpenGuide={() => { haptics.light(); setShowGuide(true); }} />
 
       <div className="flex-1 flex flex-col h-full min-w-0 bg-slate-950 md:bg-[#0B0F19]">
         <header className="px-4 py-3 bg-slate-900 md:bg-slate-950/80 md:backdrop-blur-md sticky top-0 z-30 border-b border-slate-800 flex justify-between items-center shadow-md">
