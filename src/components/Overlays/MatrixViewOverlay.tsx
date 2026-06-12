@@ -122,20 +122,16 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
   const isDragging = useRef(false);
 
-  // Long press detection for mobile dots
-  const longPressTimerRef = useRef<number | null>(null);
-  const isLongPressRef = useRef(false);
   // Suivi du geste tactile en cours sur un point (déplacement / multi-touch) pour
-  // distinguer un vrai tap d'un pan/pinch et ne pas naviguer par accident.
+  // distinguer un vrai tap d'un pan/pinch et ne réagir que sur un tap franc.
   const touchInfoRef = useRef<{ x: number; y: number; moved: boolean; multi: boolean } | null>(null);
   // Tooltip mobile UNIQUE (un seul à la fois -> jamais d'empilement). Affiché au
-  // long press, positionné aux coordonnées du doigt, auto-masqué au relâchement.
+  // tap sur un point, positionné aux coordonnées du doigt, auto-masqué ensuite.
   const [mobileTip, setMobileTip] = useState<{ name: string; wr: number; alsa: number | null; clientX: number; clientY: number } | null>(null);
   const tipHideTimerRef = useRef<number | null>(null);
 
-  // Nettoyage des timers tactiles au démontage.
+  // Nettoyage du timer du tooltip au démontage.
   React.useEffect(() => () => {
-    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
   }, []);
 
@@ -856,9 +852,10 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
               const isDimmed = (hasSearch && !dot.isMatch) || commDimmed;
               const isHighlighted = hasSearch && dot.isMatch;
 
-              // Mobile : long press = tooltip (nom + stats), tap franc = navigation.
-              // Un seul tooltip partagé (state) -> pas d'empilement ; gardes
-              // moved/multi/pinch -> pas de navigation pendant un pan ou un pinch.
+              // Mobile : un tap franc sur un point affiche son tooltip (nom + stats).
+              // Pas de navigation ni de reset de zoom. Un seul tooltip partagé
+              // (state) -> jamais d'empilement ; gardes moved/multi/pinch -> un
+              // pan ou un pinch ne déclenche rien.
               if (isMobile) {
                 return (
                   <motion.div
@@ -875,48 +872,24 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                     onTouchStart={(e) => {
                       const t = e.touches[0];
                       touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false, multi: e.touches.length > 1 };
-                      isLongPressRef.current = false;
-                      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-                      if (tipHideTimerRef.current) { clearTimeout(tipHideTimerRef.current); tipHideTimerRef.current = null; }
-                      longPressTimerRef.current = window.setTimeout(() => {
-                        const info = touchInfoRef.current;
-                        if (!info || info.moved || info.multi || pinchRef.current) return;
-                        isLongPressRef.current = true;
-                        const margin = 90;
-                        const cx = Math.max(margin, Math.min(window.innerWidth - margin, info.x));
-                        setMobileTip({ name: dot.name, wr: dot.wr, alsa: dot.alsa, clientX: cx, clientY: info.y });
-                      }, 300);
                     }}
                     onTouchMove={(e) => {
                       const info = touchInfoRef.current;
-                      if (info) {
-                        if (e.touches.length > 1) info.multi = true;
-                        const t = e.touches[0];
-                        if (t && (Math.abs(t.clientX - info.x) > 8 || Math.abs(t.clientY - info.y) > 8)) info.moved = true;
-                      }
-                      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+                      if (!info) return;
+                      if (e.touches.length > 1) info.multi = true;
+                      const t = e.touches[0];
+                      if (t && (Math.abs(t.clientX - info.x) > 8 || Math.abs(t.clientY - info.y) > 8)) info.moved = true;
                     }}
-                    onTouchEnd={(e) => {
-                      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+                    onTouchEnd={() => {
                       const info = touchInfoRef.current;
-                      const wasLong = isLongPressRef.current;
                       touchInfoRef.current = null;
-                      isLongPressRef.current = false;
-                      if (wasLong) {
-                        // Le tooltip était affiché : on le masque peu après le relâchement.
-                        if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
-                        tipHideTimerRef.current = window.setTimeout(() => setMobileTip(null), 1300);
-                        return;
-                      }
                       // Tap franc uniquement : 1 doigt, immobile, hors pinch.
-                      if (info && !info.moved && !info.multi && !pinchRef.current) {
-                        e.stopPropagation();
-                        if (scale > 1) {
-                          setScale(1);
-                          setPosition({ x: 0, y: 0 });
-                        }
-                        onCardSelect?.(dot.card);
-                      }
+                      if (!info || info.moved || info.multi || pinchRef.current) return;
+                      const margin = 90;
+                      const cx = Math.max(margin, Math.min(window.innerWidth - margin, info.x));
+                      setMobileTip({ name: dot.name, wr: dot.wr, alsa: dot.alsa, clientX: cx, clientY: info.y });
+                      if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
+                      tipHideTimerRef.current = window.setTimeout(() => setMobileTip(null), 1800);
                     }}
                     className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
                     style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
