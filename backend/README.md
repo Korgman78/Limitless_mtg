@@ -3,6 +3,8 @@
 Scripts Python d'ETL, enrichissement et outils pour Limitless MTG.
 Tous lisent `.env` a la racine du projet (`SUPABASE_URL` / `SUPABASE_KEY` ou variantes `VITE_*`).
 
+> **Ajouter un nouveau set ?** Suivre le runbook [`SET_ONBOARDING.md`](SET_ONBOARDING.md) (phases 0/1/2, requête SQL, checklist).
+
 ## ETL (orchestre par GitHub Actions)
 
 | Script | Description | Usage |
