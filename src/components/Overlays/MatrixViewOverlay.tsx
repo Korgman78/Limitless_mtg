@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Grid3X3, Search, Palette, Diamond, Network, HelpCircle } from 'lucide-react';
+import { X, Grid3X3, Search, Palette, Diamond, Network, HelpCircle, Maximize2 } from 'lucide-react';
 import type { Card } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, extractColors, getCardImage } from '../../utils/helpers';
@@ -127,7 +127,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   const touchInfoRef = useRef<{ x: number; y: number; moved: boolean; multi: boolean } | null>(null);
   // Tooltip mobile UNIQUE (un seul à la fois -> jamais d'empilement). Affiché au
   // tap sur un point, positionné aux coordonnées du doigt, auto-masqué ensuite.
-  const [mobileTip, setMobileTip] = useState<{ name: string; wr: number; alsa: number | null; clientX: number; clientY: number } | null>(null);
+  const [mobileTip, setMobileTip] = useState<{ card: Card; name: string; wr: number; alsa: number | null; clientX: number; clientY: number } | null>(null);
   const tipHideTimerRef = useRef<number | null>(null);
 
   // Nettoyage du timer du tooltip au démontage.
@@ -533,7 +533,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                     <div className="text-[8px] text-slate-500 mt-1">Calibrated on {filteredCards.filter(c => c.alsa != null).length} cards</div>
                   </div>
                 }>
-                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded cursor-help ${
+                  <span className={`text-[9px] font-mono font-bold whitespace-nowrap shrink-0 px-1.5 py-0.5 rounded cursor-help ${
                     correlation < -0.67 ? 'bg-emerald-500/20 text-emerald-400'
                     : correlation < -0.63 ? 'bg-indigo-500/20 text-indigo-400'
                     : correlation < -0.58 ? 'bg-yellow-500/20 text-yellow-400'
@@ -887,9 +887,9 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                       if (!info || info.moved || info.multi || pinchRef.current) return;
                       const margin = 90;
                       const cx = Math.max(margin, Math.min(window.innerWidth - margin, info.x));
-                      setMobileTip({ name: dot.name, wr: dot.wr, alsa: dot.alsa, clientX: cx, clientY: info.y });
+                      setMobileTip({ card: dot.card, name: dot.name, wr: dot.wr, alsa: dot.alsa, clientX: cx, clientY: info.y });
                       if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
-                      tipHideTimerRef.current = window.setTimeout(() => setMobileTip(null), 1800);
+                      tipHideTimerRef.current = window.setTimeout(() => setMobileTip(null), 4000);
                     }}
                     className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
                     style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
@@ -1055,7 +1055,8 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Tooltip mobile unique (long press sur un point) — un seul à la fois */}
+      {/* Tooltip mobile unique (tap sur un point) — un seul à la fois.
+          Bouton discret pour ouvrir l'analyse détaillée de la carte. */}
       <AnimatePresence>
         {isMobile && mobileTip && (
           <motion.div
@@ -1066,12 +1067,24 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
             className="fixed z-[9999] pointer-events-none -translate-x-1/2 -translate-y-full"
             style={{ left: mobileTip.clientX, top: mobileTip.clientY - 14 }}
           >
-            <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-center whitespace-nowrap">
+            <div className="pointer-events-auto bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-center whitespace-nowrap">
               <div className="text-[10px] font-bold text-white mb-1">{mobileTip.name}</div>
-              <div className="flex gap-3 text-[9px] justify-center">
+              <div className="flex gap-3 text-[9px] justify-center mb-1.5">
                 <span className="text-slate-400">WR: <span className={getDeltaStyle(mobileTip.wr, formatStats.avgWR)}>{mobileTip.wr.toFixed(1)}%</span></span>
                 {mobileTip.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{mobileTip.alsa.toFixed(2)}</span></span>}
               </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const card = mobileTip.card;
+                  if (tipHideTimerRef.current) { clearTimeout(tipHideTimerRef.current); tipHideTimerRef.current = null; }
+                  setMobileTip(null);
+                  onCardSelect?.(card);
+                }}
+                className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded-md bg-indigo-600/90 hover:bg-indigo-500 active:bg-indigo-500 text-white text-[9px] font-bold uppercase tracking-wide transition-colors"
+              >
+                <Maximize2 size={10} /> Card analysis
+              </button>
             </div>
           </motion.div>
         )}
