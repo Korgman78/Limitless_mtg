@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle, TrendingUp } from 'lucide-react';
+import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle, TrendingUp, Anchor } from 'lucide-react';
 import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
@@ -12,6 +12,7 @@ import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 import { useCardSynergies, type CardSynergy } from '../../queries/useCardSynergies';
+import { useFormatPivots } from '../../queries/useFormatPivots';
 
 // --- BLOC D'ÉVALUATION ---
 interface CardEvaluationBlockProps {
@@ -766,6 +767,15 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const topConfidence = synergyData?.topConfidence || [];
   const topSynergy = synergyData?.topSynergy || [];
 
+  // Pivot status — same cached query as the Cards-tab PIVOT filter
+  const { data: pivotData } = useFormatPivots(activeSet, activeFormat, true);
+  const pivotInfo = useMemo(() => {
+    if (!pivotData || !pivotData.pivotNames.has(card.name)) return null;
+    const std = pivotData.stdDevByName[card.name];
+    const rank = Object.values(pivotData.stdDevByName).filter(s => s < std).length + 1;
+    return { std, rank, eligible: pivotData.eligibleCount };
+  }, [pivotData, card.name]);
+
   const fetchError = error ? 'Failed to load card data' : null;
 
   const sortedPerf = useMemo(() => {
@@ -821,6 +831,24 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       {rCode}
                     </span>
                     <ManaIcons colors={card.colors} size="sm" />
+                    {pivotInfo && (
+                      <Tooltip content={
+                        <div className="text-center max-w-[220px]">
+                          <div className="text-[10px] font-bold text-amber-300 mb-1">Format pivot</div>
+                          <div className="text-[9px] text-slate-300 leading-relaxed">
+                            Above-average win rate and the most consistent performance across the archetypes it is played in (weighted by meta share).
+                          </div>
+                          <div className="text-[8px] text-slate-500 mt-1">
+                            Consistency rank #{pivotInfo.rank} of {pivotInfo.eligible} eligible C/U
+                          </div>
+                        </div>
+                      }>
+                        <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border font-black tracking-wide text-amber-300 border-amber-500/40 bg-amber-500/10 cursor-help">
+                          <Anchor size={9} className="text-amber-400" />
+                          PIVOT
+                        </span>
+                      </Tooltip>
+                    )}
                   </div>
                 </div>
 
