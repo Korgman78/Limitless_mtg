@@ -244,6 +244,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [pivotQueryEnabled, setPivotQueryEnabled] = useState<boolean>(false);
   const { data: pivotData, isLoading: pivotLoading } = useFormatPivots(activeSet, activeFormat, pivotQueryEnabled);
   const pivotNames = pivotData?.pivotNames;
+  const pivotStdDevs = pivotData?.stdDevByName;
 
   const togglePivot = useCallback(() => {
     haptics.light();
@@ -404,6 +405,18 @@ export default function MTGLimitedApp(): React.ReactElement {
       });
     }
 
+    // Filtre PIVOT actif : tri fixe du meilleur pivot (stddev pondéré le plus
+    // bas = le plus consistant) au moins bon, indépendamment du tri de colonne.
+    if (pivotActive && pivotStdDevs) {
+      res.sort((a: Card, b: Card) => {
+        const sa = pivotStdDevs[a.name] ?? Infinity;
+        const sb = pivotStdDevs[b.name] ?? Infinity;
+        if (sa !== sb) return sa - sb;
+        return (b.gih_wr ?? 0) - (a.gih_wr ?? 0);
+      });
+      return res;
+    }
+
     res.sort((a: Card, b: Card) => {
       // TRI PAR NOM
       if (sortConfig.key === 'name') return sortConfig.dir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -430,7 +443,7 @@ export default function MTGLimitedApp(): React.ReactElement {
       return sortConfig.dir === 'asc' ? valA - valB : valB - valA;
     });
     return res;
-  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, pivotActive, pivotNames]);
+  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, pivotActive, pivotNames, pivotStdDevs]);
 
   // Reset lazy load when filters change
   useEffect(() => {

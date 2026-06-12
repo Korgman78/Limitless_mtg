@@ -13,6 +13,12 @@ import { normalizeRarity } from '../utils/helpers'
  * strength — a card in a weak archetype scores low there even when it pulls its
  * weight — so the delta isolates the card's own, archetype-independent value.
  *
+ * Mean and stddev are WEIGHTED by each archetype's meta share, normalised over
+ * the archetypes where the card has a valued WR. A big delta in a 1%-of-meta
+ * archetype thus barely moves the score, while the same delta in a 15% pillar
+ * counts fully — a card close to archetype level everywhere it actually gets
+ * played isn't disqualified by one fringe outlier.
+ *
  * A card is eligible when:
  *   1. it is a Common or Uncommon,
  *   2. its global GIH win rate is at least the format baseline (All Decks WR)
@@ -27,7 +33,7 @@ import { normalizeRarity } from '../utils/helpers'
  */
 
 // Share of the eligible pool flagged as pivots (lowest delta-stddev first).
-const PIVOT_PERCENTILE = 0.15
+const PIVOT_PERCENTILE = 0.20
 // A card needs a delta in at least this many archetypes for its stddev to be
 // statistically meaningful (avoids 1-2 point "flat" noise dominating the cut).
 const MIN_ARCHETYPES = 3
@@ -36,8 +42,8 @@ const MIN_ARCHETYPES = 3
 // Calibrated on 5 sets: legitimate pivots all sit ≥25%, niche gold cards below.
 const MIN_META_COVERAGE = 25
 // Minimum mean delta: a pivot must perform roughly at its host archetypes'
-// level on average (within ~1%), so a consistent under-performer can't qualify.
-const MIN_MEAN_DELTA = -1
+// level on average (within ~1.25%), so a consistent under-performer can't qualify.
+const MIN_MEAN_DELTA = -1.25
 
 // Sorted colour identity of an archetype code/colours string, e.g. "RU" -> "RU".
 const colorKey = (s: string | null | undefined) =>
@@ -155,10 +161,10 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
 
         // Delta per archetype = card WR − pure archetype WR. Skip contexts whose
         // pure archetype WR is unknown (only a splash variant of those colours).
-        const deltas = agg.archStats
+        const entries = agg.archStats
           .filter(a => archetypeWRByColors[colorKey(a.ctx)] != null)
-          .map(a => a.wr - archetypeWRByColors[colorKey(a.ctx)])
-        if (deltas.length < MIN_ARCHETYPES) continue
+          .map(a => ({ key: colorKey(a.ctx), delta: a.wr - archetypeWRByColors[colorKey(a.ctx)] }))
+        if (entries.length < MIN_ARCHETYPES) continue
 
         // Metagame coverage: distinct colour identities (so a card seen in both
         // a context and its splash sibling isn't double-counted).
@@ -167,10 +173,24 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
         for (const k of coveredKeys) coverage += metaShareByColors[k] || 0
         if (coverage < MIN_META_COVERAGE) continue
 
-        const meanDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length
+        // Each delta is weighted by its archetype's meta share, normalised over
+        // the card's own archetypes. A pure context and its splash sibling map
+        // to the same colour identity and split its share, so an identity never
+        // weighs more just because the card has two rows for it. Falls back to
+        // equal weights if no share data is available.
+        const keyCount: Record<string, number> = {}
+        for (const e of entries) keyCount[e.key] = (keyCount[e.key] || 0) + 1
+        let weights = entries.map(e => (metaShareByColors[e.key] || 0) / keyCount[e.key])
+        let totalWeight = weights.reduce((a, b) => a + b, 0)
+        if (totalWeight <= 0) {
+          weights = entries.map(() => 1)
+          totalWeight = entries.length
+        }
+
+        const meanDelta = entries.reduce((s, e, i) => s + weights[i] * e.delta, 0) / totalWeight
         if (meanDelta < MIN_MEAN_DELTA) continue
 
-        const variance = deltas.reduce((s, v) => s + (v - meanDelta) ** 2, 0) / deltas.length
+        const variance = entries.reduce((s, e, i) => s + weights[i] * (e.delta - meanDelta) ** 2, 0) / totalWeight
         const std = Math.sqrt(variance)
         eligible.push({ name, std })
         stdDevByName[name] = std
