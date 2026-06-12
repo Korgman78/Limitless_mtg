@@ -182,8 +182,16 @@ const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Section title="Top 5 Commons" icon={Star} cards={commons} colorClass="text-slate-300" />
               <Section title="Top 5 Uncommons" icon={Star} cards={uncommons} colorClass="text-blue-300" />
-              <Section title="Top 5 Hidden Gems" icon={Gem} cards={gems} colorClass="text-emerald-400" />
-              <Section title="Top 5 Traps" icon={AlertTriangle} cards={traps} colorClass="text-red-400" />
+              {/* Hidden Gems / Traps : pertinents seulement en Draft (basés sur l'ALSA =
+                  ordre de pick). En Sealed il n'y a pas de pick order, et l'img_count est
+                  biaisé par la rareté (cartes rares moins ouvertes) + faussé par les bonus
+                  sheets — aucun proxy fiable, on masque donc ces deux sections. */}
+              {!isSealed && (
+                <>
+                  <Section title="Top 5 Hidden Gems" icon={Gem} cards={gems} colorClass="text-emerald-400" />
+                  <Section title="Top 5 Traps" icon={AlertTriangle} cards={traps} colorClass="text-red-400" />
+                </>
+              )}
             </div>
           </div>
         </div>
