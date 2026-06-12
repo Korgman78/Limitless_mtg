@@ -117,6 +117,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   // Zoom & pan state
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const pinchRef = useRef<{ initialDistance: number; initialScale: number } | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
   const isDragging = useRef(false);
@@ -136,6 +137,25 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   React.useEffect(() => () => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
+  }, []);
+
+  // Empêche le zoom natif de la PAGE pendant un pinch sur le graphe. `touch-action:
+  // none` (CSS) suffit pour le pan, mais sur iOS Safari le pinch est piloté par les
+  // évènements `gesture*` et un `touchmove` multi-doigts — qu'il faut preventDefault
+  // via des listeners NON passifs (impossible avec les handlers React, passifs).
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onTouchMove = (e: TouchEvent) => { if (e.touches.length >= 2) e.preventDefault(); };
+    const onGesture = (e: Event) => e.preventDefault();
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('gesturestart', onGesture as EventListener, { passive: false });
+    el.addEventListener('gesturechange', onGesture as EventListener, { passive: false });
+    return () => {
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('gesturestart', onGesture as EventListener);
+      el.removeEventListener('gesturechange', onGesture as EventListener);
+    };
   }, []);
 
   // Detect if format has ALSA (Draft vs Sealed)
@@ -758,6 +778,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
       {/* Matrix - Portrait by default on mobile, full screen on desktop or landscape */}
       <div className="flex-1 p-4 pb-20 md:pb-4 overflow-hidden flex items-center justify-center">
         <div
+          ref={containerRef}
           className={`relative touch-none bg-slate-900 rounded-xl border border-slate-800 overflow-hidden ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'} md:w-full md:h-full portrait:max-md:aspect-[3/4] portrait:max-md:h-full portrait:max-md:w-auto landscape:w-full landscape:h-full`}
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
