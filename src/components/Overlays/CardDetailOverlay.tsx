@@ -832,7 +832,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                     </span>
                     <ManaIcons colors={card.colors} size="sm" />
                     {pivotInfo && (
-                      <Tooltip content={
+                      <Tooltip position="bottom" content={
                         <div className="text-center max-w-[220px]">
                           <div className="text-[10px] font-bold text-amber-300 mb-1">Format pivot</div>
                           <div className="text-[9px] text-slate-300 leading-relaxed">

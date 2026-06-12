@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface TooltipProps {
   children: ReactNode;
   content: ReactNode;
-  position?: 'top' | 'left'; // Position relative to trigger
+  position?: 'top' | 'left' | 'bottom'; // Position relative to trigger
   enabled?: boolean; // If false, renders children without tooltip
 }
 
@@ -41,7 +41,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
         });
       } else {
         const spaceAbove = rect.top;
-        const newPlacement = spaceAbove < tooltipHeight + padding ? 'bottom' : 'top';
+        const newPlacement = positionProp === 'bottom' || spaceAbove < tooltipHeight + padding ? 'bottom' : 'top';
         setPlacement(newPlacement);
 
         const centerX = rect.left + rect.width / 2;
