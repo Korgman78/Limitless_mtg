@@ -2,7 +2,7 @@
 
 Runbook pour ajouter une extension à Limitless MTG. Reconstitué depuis les
 configs réelles — à suivre dans l'ordre. Exemple courant : **MSH — Marvel Super
-Heroes**, sortie Arena le 2026-06-16.
+Heroes**, sortie Arena le 2026-06-23.
 
 ## Comment l'app gère les sets (à savoir avant de commencer)
 - L'app liste les sets de la table Supabase **`sets`** où `active=true`, **moins**
@@ -37,7 +37,7 @@ Heroes**, sortie Arena le 2026-06-16.
 ### Requête SQL — créer le set (exemple MSH)
 ```sql
 insert into sets (code, name, active, start_date)
-values ('MSH', 'Marvel Super Heroes', true, '2026-06-16')
+values ('MSH', 'Marvel Super Heroes', true, '2026-06-23')
 on conflict (code) do update
   set name = excluded.name,
       active = excluded.active,
