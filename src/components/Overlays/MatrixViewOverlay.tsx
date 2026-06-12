@@ -124,6 +124,19 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
   // Long press detection for mobile dots
   const longPressTimerRef = useRef<number | null>(null);
   const isLongPressRef = useRef(false);
+  // Suivi du geste tactile en cours sur un point (déplacement / multi-touch) pour
+  // distinguer un vrai tap d'un pan/pinch et ne pas naviguer par accident.
+  const touchInfoRef = useRef<{ x: number; y: number; moved: boolean; multi: boolean } | null>(null);
+  // Tooltip mobile UNIQUE (un seul à la fois -> jamais d'empilement). Affiché au
+  // long press, positionné aux coordonnées du doigt, auto-masqué au relâchement.
+  const [mobileTip, setMobileTip] = useState<{ name: string; wr: number; alsa: number | null; clientX: number; clientY: number } | null>(null);
+  const tipHideTimerRef = useRef<number | null>(null);
+
+  // Nettoyage des timers tactiles au démontage.
+  React.useEffect(() => () => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
+  }, []);
 
   // Detect if format has ALSA (Draft vs Sealed)
   const isDraft = !activeFormat.toLowerCase().includes('sealed');
@@ -745,7 +758,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
       {/* Matrix - Portrait by default on mobile, full screen on desktop or landscape */}
       <div className="flex-1 p-4 pb-20 md:pb-4 overflow-hidden flex items-center justify-center">
         <div
-          className={`relative bg-slate-900 rounded-xl border border-slate-800 overflow-hidden ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'} md:w-full md:h-full portrait:max-md:aspect-[3/4] portrait:max-md:h-full portrait:max-md:w-auto landscape:w-full landscape:h-full`}
+          className={`relative touch-none bg-slate-900 rounded-xl border border-slate-800 overflow-hidden ${scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'} md:w-full md:h-full portrait:max-md:aspect-[3/4] portrait:max-md:h-full portrait:max-md:w-auto landscape:w-full landscape:h-full`}
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -822,63 +835,71 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
               const isDimmed = (hasSearch && !dot.isMatch) || commDimmed;
               const isHighlighted = hasSearch && dot.isMatch;
 
-              // Mobile: custom touch handlers for long press = tooltip, tap = navigate
+              // Mobile : long press = tooltip (nom + stats), tap franc = navigation.
+              // Un seul tooltip partagé (state) -> pas d'empilement ; gardes
+              // moved/multi/pinch -> pas de navigation pendant un pan ou un pinch.
               if (isMobile) {
                 return (
-                  <Tooltip
+                  <motion.div
                     key={`${dot.name}-${idx}`}
-                    content={
-                      <div className="text-center whitespace-nowrap">
-                        <div className="text-[10px] font-bold text-white mb-1">{dot.name}</div>
-                        <div className="flex gap-3 text-[9px]">
-                          <span className="text-slate-400">WR: <span className={getDeltaStyle(dot.wr, formatStats.avgWR)}>{dot.wr.toFixed(1)}%</span></span>
-                          {dot.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{dot.alsa.toFixed(2)}</span></span>}
-                        </div>
-                      </div>
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{
+                      scale: isHighlighted ? 1.8 : 1,
+                      opacity: isDimmed ? 0.15 : 1,
+                    }}
+                    transition={isHighlighted
+                      ? { type: 'spring', stiffness: 300, damping: 15 }
+                      : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
                     }
-                  >
-                    <motion.div
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{
-                        scale: isHighlighted ? 1.8 : 1,
-                        opacity: isDimmed ? 0.15 : 1,
-                      }}
-                      transition={isHighlighted
-                        ? { type: 'spring', stiffness: 300, damping: 15 }
-                        : { type: 'spring', stiffness: 400, damping: 20, delay: Math.min(idx * 0.005, 0.5) }
+                    onTouchStart={(e) => {
+                      const t = e.touches[0];
+                      touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false, multi: e.touches.length > 1 };
+                      isLongPressRef.current = false;
+                      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                      if (tipHideTimerRef.current) { clearTimeout(tipHideTimerRef.current); tipHideTimerRef.current = null; }
+                      longPressTimerRef.current = window.setTimeout(() => {
+                        const info = touchInfoRef.current;
+                        if (!info || info.moved || info.multi || pinchRef.current) return;
+                        isLongPressRef.current = true;
+                        const margin = 90;
+                        const cx = Math.max(margin, Math.min(window.innerWidth - margin, info.x));
+                        setMobileTip({ name: dot.name, wr: dot.wr, alsa: dot.alsa, clientX: cx, clientY: info.y });
+                      }, 300);
+                    }}
+                    onTouchMove={(e) => {
+                      const info = touchInfoRef.current;
+                      if (info) {
+                        if (e.touches.length > 1) info.multi = true;
+                        const t = e.touches[0];
+                        if (t && (Math.abs(t.clientX - info.x) > 8 || Math.abs(t.clientY - info.y) > 8)) info.moved = true;
                       }
-                      onTouchStart={() => {
-                        isLongPressRef.current = false;
-                        longPressTimerRef.current = window.setTimeout(() => {
-                          isLongPressRef.current = true;
-                        }, 300);
-                      }}
-                      onTouchEnd={(e) => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
+                      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+                    }}
+                    onTouchEnd={(e) => {
+                      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+                      const info = touchInfoRef.current;
+                      const wasLong = isLongPressRef.current;
+                      touchInfoRef.current = null;
+                      isLongPressRef.current = false;
+                      if (wasLong) {
+                        // Le tooltip était affiché : on le masque peu après le relâchement.
+                        if (tipHideTimerRef.current) clearTimeout(tipHideTimerRef.current);
+                        tipHideTimerRef.current = window.setTimeout(() => setMobileTip(null), 1300);
+                        return;
+                      }
+                      // Tap franc uniquement : 1 doigt, immobile, hors pinch.
+                      if (info && !info.moved && !info.multi && !pinchRef.current) {
+                        e.stopPropagation();
+                        if (scale > 1) {
+                          setScale(1);
+                          setPosition({ x: 0, y: 0 });
                         }
-                        // Only navigate if it was NOT a long press
-                        if (!isLongPressRef.current) {
-                          e.stopPropagation();
-                          if (scale > 1) {
-                            setScale(1);
-                            setPosition({ x: 0, y: 0 });
-                          }
-                          onCardSelect?.(dot.card);
-                        }
-                        isLongPressRef.current = false;
-                      }}
-                      onTouchMove={() => {
-                        if (longPressTimerRef.current) {
-                          clearTimeout(longPressTimerRef.current);
-                          longPressTimerRef.current = null;
-                        }
-                      }}
-                      className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
-                      style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
-                    />
-                  </Tooltip>
+                        onCardSelect?.(dot.card);
+                      }
+                    }}
+                    className={`absolute w-2 h-2 ${dot.colorClass} rounded-full -translate-x-1/2 -translate-y-1/2 transition-all cursor-pointer border ${isHighlighted ? 'border-white ring-2 ring-white/50 z-30' : 'border-white/20'}`}
+                    style={{ left: `${dot.x}%`, top: `${dot.y}%`, backgroundColor: dot.dotColor || undefined }}
+                  />
                 );
               }
 
@@ -1034,6 +1055,28 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
                     {(hoveredCard.card.gih_wr! - formatStats.avgWR).toFixed(1)}%
                   </span>
                 </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tooltip mobile unique (long press sur un point) — un seul à la fois */}
+      <AnimatePresence>
+        {isMobile && mobileTip && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
+            className="fixed z-[9999] pointer-events-none -translate-x-1/2 -translate-y-full"
+            style={{ left: mobileTip.clientX, top: mobileTip.clientY - 14 }}
+          >
+            <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-center whitespace-nowrap">
+              <div className="text-[10px] font-bold text-white mb-1">{mobileTip.name}</div>
+              <div className="flex gap-3 text-[9px] justify-center">
+                <span className="text-slate-400">WR: <span className={getDeltaStyle(mobileTip.wr, formatStats.avgWR)}>{mobileTip.wr.toFixed(1)}%</span></span>
+                {mobileTip.alsa !== null && <span className="text-slate-400">ALSA: <span className="text-white">{mobileTip.alsa.toFixed(2)}</span></span>}
               </div>
             </div>
           </motion.div>
