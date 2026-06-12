@@ -10,7 +10,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "SOS"
+TARGET_SET = "MSH"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -30,6 +30,12 @@ HEADERS_SUPABASE = {
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
     "Prefer": "resolution=merge-duplicates"
+}
+
+# Scryfall exige depuis 2024 un User-Agent custom : sans lui, l'API renvoie 400.
+HEADERS_SCRYFALL = {
+    "User-Agent": "LimitlessMTG/1.0 (https://github.com/Korgman78/Limitless_mtg)",
+    "Accept": "application/json",
 }
 
 # --- REMOVAL PATTERNS ---
@@ -136,7 +142,7 @@ SUPPORT_TAG_PATTERNS = [
 
 def fetch_bonus_sheet_codes(set_code):
     """Recupere les set codes des bonus sheets (child sets) rattachees au set parent."""
-    resp = requests.get("https://api.scryfall.com/sets")
+    resp = requests.get("https://api.scryfall.com/sets", headers=HEADERS_SCRYFALL)
     if resp.status_code != 200:
         return []
     all_sets = resp.json().get("data", [])
@@ -155,7 +161,7 @@ def _fetch_scryfall_raw(set_code):
     raw_cards = []
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
     while url:
-        resp = requests.get(url)
+        resp = requests.get(url, headers=HEADERS_SCRYFALL)
         if resp.status_code != 200:
             print(f"Erreur Scryfall: {resp.status_code}")
             break

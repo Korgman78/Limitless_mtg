@@ -10,7 +10,7 @@ from pathlib import Path
 # ==============================================================================
 
 # ✅ VARIABLE DE CIBLAGE
-TARGET_SET = "SOS"
+TARGET_SET = "MSH"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -32,6 +32,12 @@ HEADERS_SUPABASE = {
     "Prefer": "resolution=merge-duplicates"
 }
 
+# Scryfall exige depuis 2024 un User-Agent custom : sans lui, l'API renvoie 400.
+HEADERS_SCRYFALL = {
+    "User-Agent": "LimitlessMTG/1.0 (https://github.com/Korgman78/Limitless_mtg)",
+    "Accept": "application/json",
+}
+
 # ==============================================================================
 # 2. LOGIQUE SCRYFALL
 # ==============================================================================
@@ -48,7 +54,7 @@ def get_scryfall_data(set_code, wanted_names):
     print(f"📡 Phase 1: Recherche par set '{set_code}' sur Scryfall...")
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
     while url:
-        response = requests.get(url)
+        response = requests.get(url, headers=HEADERS_SCRYFALL)
         if response.status_code != 200: break
         data = response.json()
         for card in data.get('data', []):
@@ -70,7 +76,7 @@ def get_scryfall_data(set_code, wanted_names):
         for i in range(0, len(missing_names), 75):
             chunk = missing_names[i:i + 75]
             identifiers = [{"name": n} for n in chunk]
-            resp = requests.post("https://api.scryfall.com/cards/collection", json={"identifiers": identifiers})
+            resp = requests.post("https://api.scryfall.com/cards/collection", json={"identifiers": identifiers}, headers=HEADERS_SCRYFALL)
             if resp.status_code == 200:
                 data = resp.json()
                 for card in data.get('data', []):
@@ -87,7 +93,7 @@ def get_scryfall_data(set_code, wanted_names):
         for name in missing_names:
             # On cherche par nom flou
             url = f"https://api.scryfall.com/cards/named?fuzzy={requests.utils.quote(name)}"
-            resp = requests.get(url)
+            resp = requests.get(url, headers=HEADERS_SCRYFALL)
             if resp.status_code == 200:
                 card = resp.json()
                 _process_card(card, cards_metadata)

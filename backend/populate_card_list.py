@@ -10,7 +10,7 @@ from pathlib import Path
 # ==============================================================================
 
 # ✅ VARIABLE DE CIBLAGE
-TARGET_SET = "SOS"
+TARGET_SET = "MSH"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -32,6 +32,12 @@ HEADERS_SUPABASE = {
     "Prefer": "resolution=merge-duplicates"
 }
 
+# Scryfall exige depuis 2024 un User-Agent custom : sans lui, l'API renvoie 400.
+HEADERS_SCRYFALL = {
+    "User-Agent": "LimitlessMTG/1.0 (https://github.com/Korgman78/Limitless_mtg)",
+    "Accept": "application/json",
+}
+
 # ==============================================================================
 # 2. RÉCUPÉRATION SCRYFALL
 # ==============================================================================
@@ -41,7 +47,7 @@ def fetch_bonus_sheet_codes(set_code):
     Récupère les set codes des bonus sheets (child sets de type masterpiece)
     rattachées au set parent via l'API Scryfall.
     """
-    resp = requests.get("https://api.scryfall.com/sets")
+    resp = requests.get("https://api.scryfall.com/sets", headers=HEADERS_SCRYFALL)
     if resp.status_code != 200:
         return []
     all_sets = resp.json().get("data", [])
@@ -66,7 +72,7 @@ def fetch_scryfall_set(set_code, store_as=None):
     url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
 
     while url:
-        resp = requests.get(url)
+        resp = requests.get(url, headers=HEADERS_SCRYFALL)
         if resp.status_code != 200: break
 
         data = resp.json()
