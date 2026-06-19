@@ -1,0 +1,33 @@
+name: Trophy Draft Picks (Draft Practice)
+
+on:
+  schedule:
+    # Tous les jours à 16:30 UTC — APRÈS la "Daily Trophy Decks Pipeline"
+    # (15:46 UTC) afin que les trophées mythic du jour soient dispos.
+    - cron: '30 16 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-draft-picks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+
+      - name: Ingest mythic draft picks
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LANDS17_COOKIE: ${{ secrets.LANDS17_COOKIE }}
+        run: python backend/etl_trophy_draft_picks.py

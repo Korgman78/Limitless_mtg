@@ -27,4 +27,10 @@ export const queryKeys = {
     ['trophyDeck', aggregateId] as const,
   cardMap: (set: string, format: string) =>
     ['cardMap', set, format] as const,
+  draftPracticeList: (set: string, format: string) =>
+    ['draftPracticeList', set, format] as const,
+  draftPractice: (aggregateId: string) =>
+    ['draftPractice', aggregateId] as const,
+  formatSynergies: (set: string, format: string) =>
+    ['formatSynergies', set, format] as const,
 }

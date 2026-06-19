@@ -113,6 +113,7 @@ const SECTIONS: GuideSection[] = [
     doItems: [
       { b: 'Toggle the view', t: ' between Full Deck / Core Cards Only and Main / Alternative variants.' },
       { b: 'Open the Trophies Map', t: ' — a cluster map where each dot is a real trophy deck and distance = card similarity; highlight an archetype’s signature cards or search a card to light up every deck playing it.' },
+      { b: 'Run Draft Practice', t: ' (draft formats only) — replay the exact packs faced by a top-Mythic trophy player. Pick blind or coached, then get a card-by-card recap: how often you matched the player, your picks’ average win rate, and your pool’s synergy (cohesion) versus theirs.' },
       { b: 'Test your own deck', t: ' to find the closest matching archetype, and tap the ❓ for the full methodology.' },
     ],
     proTip: '"Core Cards Only" strips the deck down to its non-negotiable picks — prioritise these when you draft the archetype.',
@@ -149,6 +150,7 @@ const GLOSSARY: { term: string; def: string }[] = [
   { term: 'Meta share', def: 'The percentage of all games played by a given archetype.' },
   { term: 'Trophy deck', def: 'A 7-win (7-X) run on Arena. These decks are the dataset behind Trophy Decks and the Trophies Map.' },
   { term: 'Core card', def: 'One of the highest-frequency pillars that defines an archetype’s skeleton — the cards you almost always run.' },
+  { term: 'Lift (synergy)', def: 'How much more often two cards appear together in trophy decks than chance would predict (lift > 1 = they go together). Averaged across a pool, it measures cohesion — used in Draft Practice and Card Graphs.' },
 ];
 
 const GLOSSARY_ID = '__glossary';

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle, Network } from 'lucide-react';
+import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle, Network, Swords } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
 import { useSkeletons, ArchetypalSkeleton } from '../../queries/useSkeletons';
 import { ManaIcons } from '../Common';
@@ -10,6 +10,7 @@ import { CmcStack } from './CmcStack';
 import { InsightCardList } from './InsightCardList';
 import { DeckTestPanel } from './DeckTestPanel/index';
 import { TrophyMapOverlay } from '../Overlays/TrophyMapOverlay';
+import { DraftPracticeOverlay } from '../Overlays/DraftPracticeOverlay';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
 
@@ -65,6 +66,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [importanceSort, setImportanceSort] = useState<'importance' | 'freq' | 'synergy' | 'wr'>('importance');
     const [deckViewFilter, setDeckViewFilter] = useState<DeckViewFilter>('all');
     const [showMap, setShowMap] = useState(false);
+    const [showPractice, setShowPractice] = useState(false);
+    const isDraft = !activeFormat.toLowerCase().includes('sealed');
 
     // Aliases pour compatibilité avec le code existant
     const selectedArch = selection.archetype;
@@ -243,12 +246,22 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                 </div>
 
                 <div className="flex flex-col gap-2 w-full md:w-auto md:items-end">
-                    <button
-                        onClick={() => { haptics.light(); setShowMap(true); }}
-                        className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border border-purple-400/30 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-purple-900/30 transition-all"
-                    >
-                        <Network size={15} /> Trophies Map
-                    </button>
+                    <div className="flex w-full md:w-auto gap-2">
+                        {isDraft && (
+                            <button
+                                onClick={() => { haptics.medium(); setShowPractice(true); }}
+                                className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600/90 to-teal-600/90 hover:from-emerald-500 hover:to-teal-500 border border-emerald-400/30 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-900/30 transition-all"
+                            >
+                                <Swords size={15} /> Draft Practice
+                            </button>
+                        )}
+                        <button
+                            onClick={() => { haptics.light(); setShowMap(true); }}
+                            className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600/90 to-indigo-600/90 hover:from-purple-500 hover:to-indigo-500 border border-purple-400/30 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-purple-900/30 transition-all"
+                        >
+                            <Network size={15} /> Trophies Map
+                        </button>
+                    </div>
                     <div className="flex w-full md:w-auto flex-wrap gap-1 p-1 bg-slate-900/40 rounded-xl border border-slate-800/60 backdrop-blur-sm">
                         {(['all', 'mono', '2 colors', '3 colors', '4+ colors'] as ArchFilter[]).map((f) => (
                             <button
@@ -841,6 +854,13 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
             <AnimatePresence>
                 {showMap && (
                     <TrophyMapOverlay activeSet={activeSet} activeFormat={activeFormat} skeletons={skeletons} onClose={() => setShowMap(false)} />
+                )}
+            </AnimatePresence>
+
+            {/* Draft Practice (replay mythic draft pods) */}
+            <AnimatePresence>
+                {showPractice && (
+                    <DraftPracticeOverlay activeSet={activeSet} activeFormat={activeFormat} onClose={() => setShowPractice(false)} />
                 )}
             </AnimatePresence>
 
