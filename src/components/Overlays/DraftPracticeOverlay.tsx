@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../constants';
 import { getCardImage } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 import { ManaIcons } from '../Common';
 import { haptics } from '../../utils/haptics';
 import { useCards } from '../../queries/useCards';
@@ -176,7 +177,7 @@ const CardTile: React.FC<{
       : 'border-slate-700/70 hover:border-indigo-400/60'
     } ${dim ? 'opacity-40 saturate-50' : ''} ${disabled ? 'cursor-default' : 'cursor-pointer'}`}
   >
-    <img src={getCardImage(name)} alt={name} loading="lazy" className="w-full h-full object-cover" />
+    <CardImage src={getCardImage(name)} alt={name} className="w-full h-full object-cover" />
     {!disabled && (
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-indigo-600/40 to-transparent transition-opacity" />
     )}
@@ -483,7 +484,7 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 shrink-0">Pool {userPicks.filter(Boolean).length}</span>
                   {userPicks.filter(Boolean).slice(-18).map((n, i) => (
-                    <img key={`${n}-${i}`} src={getCardImage(n)} alt={n} loading="lazy"
+                    <CardImage key={`${n}-${i}`} src={getCardImage(n)} alt={n}
                       className="h-9 w-[26px] rounded object-cover border border-slate-800 shrink-0" />
                   ))}
                 </div>
@@ -665,7 +666,7 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {recap.bestPick && (
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 flex items-center gap-3">
-                <img src={getCardImage(recap.bestPick.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-emerald-500/30" />
+                <CardImage src={getCardImage(recap.bestPick.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-emerald-500/30" />
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300 flex items-center gap-1"><Trophy size={11} /> Nailed it</p>
                   <p className="text-[12px] font-bold text-slate-200 truncate">{recap.bestPick.pro}</p>
@@ -675,7 +676,7 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
             )}
             {recap.worstMiss && (
               <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.05] p-4 flex items-center gap-3">
-                <img src={getCardImage(recap.worstMiss.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-rose-500/30" />
+                <CardImage src={getCardImage(recap.worstMiss.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-rose-500/30" />
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-widest text-rose-300 flex items-center gap-1"><Target size={11} /> Biggest miss</p>
                   <p className="text-[12px] font-bold text-slate-200 truncate">Player took {recap.worstMiss.pro}</p>
@@ -699,19 +700,19 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
                 {d.agree ? (
                   <span className="flex items-center gap-1.5 flex-1 min-w-0">
                     <Check size={14} className="text-emerald-400 shrink-0" />
-                    <img src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
+                    <CardImage src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
                     <span className="text-[11px] font-bold text-slate-300 truncate">{d.your}</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <img src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-indigo-500/40 shrink-0" />
+                      <CardImage src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-indigo-500/40 shrink-0" />
                       <span className="text-[11px] text-slate-400 truncate">{d.your}</span>
                       {d.yourWr != null && <span className={`text-[9px] font-black ${wrTone(d.yourWr)} shrink-0`}>{d.yourWr.toFixed(1)}</span>}
                     </span>
                     <ChevronRight size={12} className="text-slate-700 shrink-0" />
                     <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <img src={getCardImage(d.pro)} alt="" className="w-6 h-[33px] rounded object-cover border border-amber-500/40 shrink-0" />
+                      <CardImage src={getCardImage(d.pro)} alt="" className="w-6 h-[33px] rounded object-cover border border-amber-500/40 shrink-0" />
                       <span className="text-[11px] font-bold text-slate-200 truncate">{d.pro}</span>
                       {d.proWr != null && <span className={`text-[9px] font-black ${wrTone(d.proWr)} shrink-0`}>{d.proWr.toFixed(1)}</span>}
                     </span>
@@ -849,7 +850,7 @@ const BuildView: React.FC<{
                     used ? 'border-slate-800 opacity-35 saturate-50 cursor-default' : 'border-slate-700/70 hover:border-indigo-400/60 hover:-translate-y-0.5 cursor-pointer'
                   }`}
                 >
-                  <img src={getCardImage(p.name)} alt={p.name} loading="lazy" draggable={false} className="w-full h-full object-cover pointer-events-none" />
+                  <CardImage src={getCardImage(p.name)} alt={p.name} draggable={false} className="w-full h-full object-cover pointer-events-none" />
                   {/* copies remaining vs drafted */}
                   {p.count > 1 && (
                     <span className="absolute top-1 left-1 px-1 py-0.5 rounded bg-slate-950/85 text-[8px] font-black text-slate-200">{remaining}/{p.count}</span>
@@ -895,7 +896,7 @@ const BuildView: React.FC<{
                   <button key={d.name} onClick={() => onRemove(d.name)}
                     className="group/row flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-rose-500/[0.06] transition-colors text-left">
                     <span className="w-5 text-center text-[11px] font-black text-indigo-300 tabular-nums shrink-0">{d.qty}</span>
-                    <img src={getCardImage(d.name)} alt="" loading="lazy" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
+                    <CardImage src={getCardImage(d.name)} alt="" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
                     <span className="text-[11px] font-bold text-slate-300 truncate flex-1">{d.name}</span>
                     {wr != null && <span className={`text-[9px] font-black shrink-0 ${wrTone(wr)}`}>{wr.toFixed(1)}</span>}
                     <Minus size={13} className="text-slate-600 group-hover/row:text-rose-300 shrink-0" />

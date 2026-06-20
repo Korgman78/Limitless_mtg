@@ -4,6 +4,7 @@ import { X, Grid3X3, Search, Palette, Diamond, Network, HelpCircle, Maximize2 } 
 import type { Card } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, extractColors, getCardImage } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 import { Tooltip } from '../Common/Tooltip';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -1005,7 +1006,7 @@ const MatrixViewOverlayComponent: React.FC<MatrixViewOverlayProps> = ({
             className="fixed top-24 right-4 z-50 w-48 bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden"
           >
             {/* Card image */}
-            <img
+            <CardImage
               src={getCardImage(hoveredCard.card.name)}
               alt={hoveredCard.card.name}
               className="w-full aspect-[488/680] object-cover bg-slate-950"

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, TrendingUp, TrendingDown } from 'lucide-react';
 import { getCardImage } from '../../../utils/helpers';
+import CardImage from '../../Common/CardImage';
 import type { TrophyMover } from './types';
 
 interface Props {
@@ -20,11 +21,10 @@ const MoverRow: React.FC<{ card: TrophyMover; isGaining: boolean; index: number 
       transition={{ delay: index * 0.05, duration: 0.25 }}
       className="flex items-center gap-3 p-2 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors"
     >
-      <img
+      <CardImage
         src={getCardImage(card.name)}
         alt={card.name}
         className="w-16 h-auto rounded flex-shrink-0"
-        loading="lazy"
       />
 
       <div className="flex-1 min-w-0">

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { AlertTriangle, BarChart3, Target, X } from 'lucide-react';
 import { ManaIcons, Tooltip, Skeleton } from '../../Common';
 import { getCardImage } from '../../../utils/helpers';
+import CardImage from '../../Common/CardImage';
 import type {
   DeckAnalysisResult,
   CoreCardStatus,
@@ -346,7 +347,7 @@ const CardRow: React.FC<{
               <div
                 className={`w-12 sm:w-14 md:w-16 aspect-[2/3] rounded-md overflow-hidden border ${borderClass} shadow-lg transition-transform duration-200 group-hover:scale-110`}
               >
-                <img
+                <CardImage
                   src={getCardImage(card.name)}
                   alt={card.name}
                   className="w-full h-full object-cover"
@@ -533,7 +534,7 @@ const PotentialCutsPanel: React.FC<{
                   onClick={() => onZoom(card.name)}
                 >
                   <div className="w-9 sm:w-10 md:w-11 aspect-[2/3] rounded-md overflow-hidden border border-slate-700 transition-transform duration-200 group-hover:scale-110 shadow-lg">
-                    <img
+                    <CardImage
                       src={getCardImage(card.name)}
                       alt={card.name}
                       className="w-full h-full object-cover"
@@ -655,7 +656,7 @@ const PotentialAddsPanel: React.FC<{
                   onClick={() => onZoom(card.name)}
                 >
                   <div className="w-9 sm:w-10 md:w-11 aspect-[2/3] rounded-md overflow-hidden border border-slate-700 transition-transform duration-200 group-hover:scale-110 shadow-lg">
-                    <img
+                    <CardImage
                       src={getCardImage(card.name)}
                       alt={card.name}
                       className="w-full h-full object-cover"

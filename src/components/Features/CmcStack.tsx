@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getCardImage } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 
 export type SkeletonCard = {
     name: string;
@@ -64,11 +65,10 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, st
                             onClick={() => onCardSelect(card)}
                             className="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.4)] border border-slate-700/40 bg-slate-900 group"
                         >
-                            <img
+                            <CardImage
                                 src={getCardImage(card.name)}
                                 alt={card.name}
                                 className="w-full h-full object-cover"
-                                loading="lazy"
                             />
 
                             {card.count > 1 && (

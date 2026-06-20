@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { getCardImage } from '../../../utils/helpers';
+import CardImage from '../../Common/CardImage';
 import type { SpotlightCard } from './types';
 
 interface Props {
@@ -42,11 +43,10 @@ const SpotlightRow: React.FC<{
             className={`rounded-xl overflow-hidden border shadow-lg ${glowColor} bg-slate-800/60`}
           >
             <div className="relative">
-              <img
+              <CardImage
                 src={getCardImage(card.name)}
                 alt={card.name}
                 className="w-full aspect-[488/680] object-cover"
-                loading="lazy"
               />
               <div className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md text-xs font-bold backdrop-blur-sm ${
                 card.gih_wr >= 57 ? 'bg-emerald-600/80 text-white' :

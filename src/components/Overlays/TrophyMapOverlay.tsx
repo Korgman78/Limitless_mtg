@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search, List, ChevronUp } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
 import { getCardImage, sortColorsWUBRG } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useTrophyDeckMap, useTrophyDeckCardlist, type TrophyMapPoint } from '../../queries/useTrophyDeckMap';
 import { useTrophyArchetypeCards, useDecksWithCard, useSetCardNames } from '../../queries/useTrophyClusters';
@@ -551,7 +552,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
                 {activeArchCards.top_cards.length === 0 && <p className="text-center text-slate-600 text-xs py-8">No signature cards.</p>}
                 {activeArchCards.top_cards.map((c) => (
                   <div key={c.name} className="flex items-center gap-2.5">
-                    <img src={getCardImage(c.name)} alt={c.name} loading="lazy" className="w-9 h-[50px] rounded object-cover border border-slate-800 bg-black flex-shrink-0" />
+                    <CardImage src={getCardImage(c.name)} alt={c.name} className="w-9 h-[50px] rounded object-cover border border-slate-800 bg-black flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-bold text-slate-200 truncate">{c.name}</p>
                       <p className="text-[9px] text-slate-500 font-bold">in {Math.round(c.freq * 100)}% of decks · <span className="text-emerald-400">×{c.lift}</span> vs avg</p>
@@ -634,7 +635,7 @@ const DeckListPanel: React.FC<{ point: TrophyMapPoint; skeletons: ArchetypalSkel
           <div className="grid grid-cols-3 gap-1.5">
             {cards.map(([name, qty]) => (
               <div key={name} className="relative rounded-md overflow-hidden border border-slate-800 bg-black">
-                <img src={getCardImage(name)} alt={name} loading="lazy" className="w-full aspect-[63/88] object-cover" />
+                <CardImage src={getCardImage(name)} alt={name} className="w-full aspect-[63/88] object-cover" />
                 {qty > 1 && <span className="absolute top-0.5 right-0.5 bg-slate-950/90 text-white text-[9px] font-black px-1 py-0.5 rounded border border-white/20">×{qty}</span>}
               </div>
             ))}

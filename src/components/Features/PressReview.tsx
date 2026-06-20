@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import type { PressReviewProps, Article } from '../../types';
 import { supabase } from '../../supabase';
 import { SwipeableOverlay } from '../Overlays/SwipeableOverlay';
+import CardImage from '../Common/CardImage';
 import { useActiveSets, useArticles, useArticle, useScryfallCardNames } from '../../queries/useArticles';
 import { MetaPulseArticle } from './MetaPulse';
 import { BarChart3 } from 'lucide-react';
@@ -53,9 +54,10 @@ const CardTooltip: React.FC<{ name: string }> = ({ name }) => {
                            
                            flex justify-center items-start"
             >
-                <img 
-                  src={imageUrl} 
-                  alt={name} 
+                <CardImage
+                  src={imageUrl}
+                  alt={name}
+                  loading="eager"
                   className="rounded-2xl shadow-2xl border-2 border-slate-700 bg-slate-900 w-full h-auto"
                 />
             </motion.div>
@@ -308,9 +310,10 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
               onClick={(e) => e.stopPropagation()}
               className="flex flex-col items-center gap-4 max-w-sm w-full"
             >
-              <img
+              <CardImage
                 src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(zoomedCard.officialName)}&format=image&version=border_crop`}
                 alt={zoomedCard.officialName}
+                loading="eager"
                 className="max-h-[50vh] w-auto rounded-2xl shadow-2xl border-2 border-slate-700"
               />
 
@@ -784,9 +787,8 @@ export const PressReview: React.FC<PressReviewProps> = ({ activeSet, onViewCardI
                               const officialName = officialCardNames[approxName] || approxName;
                               return (
                                 <button key={idx} onClick={() => setZoomedCard({ officialName, dbName: approxName })} className="group relative w-20 md:w-28 transition-transform hover:scale-105 active:scale-95">
-                                  <img src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
-                                    alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" loading="lazy"
-                                    onError={(e: React.SyntheticEvent<HTMLImageElement>) => { if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.display = 'none'; }} />
+                                  <CardImage src={`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(officialName)}&format=image&version=border_crop`}
+                                    alt={officialName} className="rounded-md shadow-lg border border-slate-800 group-hover:border-indigo-500 transition-all w-full h-auto bg-slate-900" />
                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-md transition-colors flex items-center justify-center">
                                     <div className="opacity-0 group-hover:opacity-100 bg-indigo-600 rounded-full p-2 shadow-xl"><Search size={14} className="text-white" /></div>
                                   </div>

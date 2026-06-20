@@ -2,6 +2,7 @@ import React from 'react';
 import { Star, Gem, AlertTriangle } from 'lucide-react';
 import type { ArchetypeDashboardProps } from '../../types';
 import { extractColors, getDeltaStyle, getCardImage, normalizeRarity, normalizeArchetypeName } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 import { ManaIcons } from '../Common/ManaIcons';
 import { ArchetypeDashboardSkeleton } from '../Common/Skeleton';
 import { SwipeableOverlay } from './SwipeableOverlay';
@@ -72,7 +73,7 @@ const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, 
           cards.length === 0 ? <div className="text-xs text-slate-500">No matching cards found.</div> :
             cards.map((c: any) => (
               <button key={c.id} onClick={() => onCardClick(c)} className="w-full flex items-center gap-3 p-2 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-500 hover:bg-slate-800 transition-all group">
-                <img src={getCardImage(c.card_name)} className="w-8 h-11 rounded object-cover bg-black" loading="lazy" />
+                <CardImage src={getCardImage(c.card_name)} className="w-8 h-11 rounded object-cover bg-black" />
                 <div className="flex-1 min-w-0 text-left">
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-slate-200 truncate">{c.card_name}</span>
@@ -112,7 +113,7 @@ const ArchetypeDashboardComponent: React.FC<ArchetypeDashboardProps> = ({ deck, 
           )}
           <div className={`relative flex-shrink-0 md:w-1/3 bg-gradient-to-br ${getGradient(deck.colors)} shadow-xl border-b md:border-b-0 md:border-r border-white/10 pt-8 pb-6 px-4 overflow-hidden flex flex-col justify-center items-center`}>
             {bestCard && (
-              <img
+              <CardImage
                 src={getCardImage(bestCard.card_name)}
                 className="absolute right-[-20px] top-[-10px] w-52 opacity-20 rotate-12 pointer-events-none md:w-96 md:right-[-50px] md:top-10"
                 style={{ maskImage: 'linear-gradient(to left, black 20%, transparent 100%)' }}

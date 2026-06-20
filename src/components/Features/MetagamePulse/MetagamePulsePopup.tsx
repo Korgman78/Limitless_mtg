@@ -5,6 +5,7 @@ import { useMetagamePulse, type PulseTimeWindow, type ArchetypePulseItem, type C
 import { ManaIcons } from '../../Common/ManaIcons'
 import { Sparkline } from '../../Charts/Sparkline'
 import { getCardImage } from '../../../utils/helpers'
+import CardImage from '../../Common/CardImage'
 import { Tooltip } from '../../Common/Tooltip'
 
 // ── Time filter ─────────────────────────────────────────────────────────────
@@ -193,11 +194,10 @@ const CardItem: React.FC<{
       className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
-        <img
+        <CardImage
           src={getCardImage(item.name)}
           alt={item.name}
           className="w-full aspect-[488/680] object-cover"
-          loading="lazy"
         />
         <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-slate-900 to-transparent" />
       </div>
@@ -245,11 +245,10 @@ const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'g
       className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
-        <img
+        <CardImage
           src={getCardImage(item.name)}
           alt={item.name}
           className="w-full aspect-[488/680] object-cover"
-          loading="lazy"
         />
         <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-slate-900 to-transparent" />
       </div>

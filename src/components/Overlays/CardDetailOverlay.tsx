@@ -8,6 +8,7 @@ import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { ManaIcons } from '../Common/ManaIcons';
 import { Tooltip } from '../Common/Tooltip';
 import { Skeleton } from '../Common/Skeleton';
+import CardImage from '../Common/CardImage';
 import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
@@ -726,7 +727,7 @@ const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSele
       className="bg-slate-900/40 backdrop-blur-sm p-2 rounded-xl border border-white/5 flex items-center gap-4 hover:bg-slate-800/60 hover:border-indigo-500/30 cursor-pointer transition-all duration-300 group"
     >
       <div className="w-14 aspect-[2/3] flex-shrink-0 bg-slate-800 rounded-md overflow-hidden ring-1 ring-white/10 group-hover:ring-indigo-500/50 transition-all shadow-lg">
-        <img
+        <CardImage
           src={getCardImage(pairing.partner)}
           alt={pairing.partner}
           className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
@@ -813,7 +814,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
               {/* Image Thumbnail (Mobile) / Card Image (Desktop) */}
               <div className="w-[40%] md:w-full flex-shrink-0">
-                <motion.img
+                <CardImage
                   layoutId={`img-${card.id}`}
                   src={getCardImage(card.name)}
                   className="w-full h-auto rounded-[10px] md:rounded-[18px] shadow-2xl shadow-black md:my-4 ring-1 ring-white/10 object-contain"

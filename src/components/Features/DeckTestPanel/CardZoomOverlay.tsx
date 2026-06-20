@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getCardImage } from '../../../utils/helpers';
+import CardImage from '../../Common/CardImage';
 
 interface CardZoomOverlayProps {
   cardName: string | null;
@@ -27,9 +28,10 @@ export const CardZoomOverlay: React.FC<CardZoomOverlayProps> = ({
           onClick={(e) => e.stopPropagation()}
           className="flex flex-col items-center gap-3 max-w-sm w-full"
         >
-          <img
+          <CardImage
             src={getCardImage(cardName)}
             alt={cardName}
+            loading="eager"
             className="max-h-[70vh] w-auto rounded-2xl shadow-2xl border border-slate-600"
           />
           <button

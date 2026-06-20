@@ -6,6 +6,7 @@ import { FORMAT_OPTIONS, PLAYER_LEVEL_OPTIONS, RARITY_STYLES } from '../../const
 import { useDebounce } from '../../hooks/useDebounce';
 import { useCoachMarks } from '../../hooks/useCoachMarks';
 import { extractColors, normalizeRarity, getCardImage, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 import { ManaIcons } from '../Common/ManaIcons';
 import { ComparisonRowSkeleton } from '../Common/Skeleton';
 import { CoachMarkWrapper } from '../Common/CoachMark';
@@ -208,9 +209,11 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
             onClick={() => setZoomedCard(null)}>
-            <motion.img initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
-              src={getCardImage(zoomedCard)} className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl border border-white/10"
-              onClick={(e) => e.stopPropagation()} />
+            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
+              onClick={(e) => e.stopPropagation()}>
+              <CardImage src={getCardImage(zoomedCard)} loading="eager"
+                className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl border border-white/10" />
+            </motion.div>
             <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={24} /></button>
           </motion.div>
         )}
@@ -433,7 +436,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet })
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     {cardLike ? (
                       <div className="relative shrink-0">
-                        <img src={getCardImage(item.card_name)} className="w-12 h-16 md:w-14 md:h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" loading="lazy" alt={item.card_name} />
+                        <CardImage src={getCardImage(item.card_name)} className="w-12 h-16 md:w-14 md:h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" alt={item.card_name} />
                       </div>
                     ) : (
                       <div className="flex items-center gap-3 min-w-0">

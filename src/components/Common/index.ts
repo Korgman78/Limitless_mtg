@@ -4,3 +4,4 @@ export { Skeleton, CardSkeleton, DeckSkeleton, ComparisonRowSkeleton, ArticleSke
 export { Tooltip } from "./Tooltip";
 export { CoachMark, CoachMarkWrapper } from "./CoachMark";
 export { SearchAutocomplete } from "./SearchAutocomplete";
+export { default as CardImage } from "./CardImage";

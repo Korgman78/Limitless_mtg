@@ -1,6 +1,7 @@
 import React from 'react';
 import { Zap } from 'lucide-react';
 import { getCardImage } from '../../../utils/helpers';
+import CardImage from '../../Common/CardImage';
 import type { PulseSynergy } from './types';
 
 interface Props {
@@ -31,20 +32,18 @@ export const SynergySpotlight: React.FC<Props> = ({ synergies }) => {
             key={`${syn.card_a}-${syn.card_b}-${i}`}
             className="flex items-center gap-3 p-2.5 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors"
           >
-            <img
+            <CardImage
               src={getCardImage(syn.card_a)}
               alt={syn.card_a}
               className="w-16 h-auto rounded flex-shrink-0"
-              loading="lazy"
             />
             <div className="w-6 h-6 rounded-full bg-slate-700/50 flex items-center justify-center flex-shrink-0">
               <Zap className="w-3 h-3 text-amber-400" />
             </div>
-            <img
+            <CardImage
               src={getCardImage(syn.card_b)}
               alt={syn.card_b}
               className="w-16 h-auto rounded flex-shrink-0"
-              loading="lazy"
             />
             <div className="flex flex-col gap-0.5 ml-auto text-right flex-shrink-0">
               <span className="text-sm font-bold text-amber-400">+{syn.lift.toFixed(0)}%</span>

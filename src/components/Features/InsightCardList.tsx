@@ -2,6 +2,7 @@ import React from 'react';
 import { LucideIcon, HelpCircle } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
 import { getCardImage } from '../../utils/helpers';
+import CardImage from '../Common/CardImage';
 
 interface InsightCard {
     name: string;
@@ -74,7 +75,7 @@ export const InsightCardList: React.FC<InsightCardListProps> = ({
                         >
                             <span className="text-[10px] font-bold text-slate-500 w-4">{idx + 1}</span>
                             <div className={`w-8 h-11 rounded overflow-hidden flex-shrink-0 ring-1 ring-white/10 ${hoverRingColor} transition-all`}>
-                                <img src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
+                                <CardImage src={getCardImage(card.name)} alt={card.name} className="w-full h-full object-cover" />
                             </div>
                             <div className="flex-1 min-w-0 text-left">
                                 <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{card.name}</p>

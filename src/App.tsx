@@ -32,7 +32,7 @@ import { haptics } from './utils/haptics';
 import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName, sortColorsWUBRG } from './utils/helpers';
 
 // Components
-import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper } from './components/Common';
+import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper, CardImage } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, SwipeableOverlay, GuideOverlay } from './components/Overlays';
@@ -1037,7 +1037,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         <TrendIndicator history={(card as any).win_rate_history} />
                       </div>
 
-                      <motion.img layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" loading="lazy" />
+                      <CardImage layoutId={`img-${card.id}`} src={getCardImage(card.name)} className="w-11 h-16 md:w-16 md:h-24 rounded-[4px] md:rounded-md object-cover bg-slate-950 border border-slate-800 shadow-sm" />
                       <div className="flex-1 min-w-0 text-left flex flex-col justify-center h-full">
                         <div className="flex justify-between items-start mb-1">
                           <motion.span layoutId={`title-${card.id}`} className="text-sm font-bold truncate text-slate-200 group-hover:text-white md:text-base pr-8">{card.name}</motion.span>

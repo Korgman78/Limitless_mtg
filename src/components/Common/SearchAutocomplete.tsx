@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Card } from '../../types';
 import { getCardImage } from '../../utils/helpers';
+import CardImage from './CardImage';
 
 interface SearchAutocompleteProps {
   value: string;
@@ -133,11 +134,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                <img
+                <CardImage
                   src={getCardImage(card.name)}
                   alt=""
                   className="w-8 h-11 rounded object-cover bg-slate-800 flex-shrink-0"
-                  loading="lazy"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate">{card.name}</div>
