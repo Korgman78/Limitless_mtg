@@ -224,6 +224,45 @@ def compact_picks(draft):
         })
     return out
 
+def process_deck_to_cardlist(deck_data):
+    """
+    Transforme la réponse /api/deck/draft/ en {nom: quantité} pour le MAINDECK.
+    Repris de etl_script_trophydecks.py (même structure groups/cards).
+    """
+    if not deck_data:
+        return None
+    cards_info = deck_data.get("cards", {})
+
+    def count_group(group):
+        counts = {}
+        for cid in group.get("cards", []) or []:
+            name = cards_info.get(str(cid), {}).get("name")
+            if name:
+                counts[name] = counts.get(name, 0) + 1
+        return counts
+
+    # Groupe "Deck" (maindeck) en priorité
+    for group in deck_data.get("groups", []) or []:
+        if group.get("name", "").lower() in ("deck", "maindeck", "main"):
+            return count_group(group) or None
+    # Fallback : premier groupe non-sideboard
+    for group in deck_data.get("groups", []) or []:
+        gname = group.get("name", "").lower()
+        if "sideboard" not in gname and "side" not in gname:
+            counts = count_group(group)
+            if counts:
+                return counts
+    return None
+
+def fetch_deck_cardlist(aggregate_id, deck_index=0):
+    """Maindeck final {nom: qté} via /api/deck/draft/ (réponse enveloppée dans `data`).
+    EXIGE le cookie : l'ancien /data/deck renvoie un placeholder (40 Plains)."""
+    url = f"https://www.17lands.com/api/deck/draft/?draft_id={aggregate_id}&deck_index={deck_index}"
+    data = fetch_json(url)
+    if isinstance(data, dict) and "data" in data:
+        data = data["data"]
+    return process_deck_to_cardlist(data)
+
 # ==============================================================================
 # 3. TRAITEMENT D'UN SET / FORMAT
 # ==============================================================================
@@ -274,6 +313,12 @@ def process(set_code, fmt):
         if len(picks) < 10:
             print(f"      ⚠️ {agg[:16]}… : seulement {len(picks)} picks, ignoré")
             continue
+        # Deck final (maindeck) du joueur — rend la table auto-suffisante pour
+        # la phase "compare deck" (pas de dépendance à trophy_decks).
+        cardlist = fetch_deck_cardlist(agg, t.get("deck_index", 0))
+        random_sleep(5.0, 8.0)
+        if not cardlist:
+            print(f"      ⚠️ {agg[:16]}… : deck final indisponible (cardlist nul)")
         records.append({
             "aggregate_id": agg,
             "set_code": set_code,
@@ -286,9 +331,11 @@ def process(set_code, fmt):
             "losses": int(t.get("losses") or details.get("losses") or 0),
             "trophy_time": t.get("time"),
             "picks": picks,
+            "cardlist": cardlist,
             "scraped_at": datetime.now(timezone.utc).isoformat(),
         })
-        print(f"      ✅ {i}/{len(top)} {rank['display']} · {agg[:16]}… · {len(picks)} picks")
+        deck_n = sum(cardlist.values()) if cardlist else 0
+        print(f"      ✅ {i}/{len(top)} {rank['display']} · {agg[:16]}… · {len(picks)} picks · deck {deck_n}c")
 
     if records:
         url = f"{SUPABASE_URL}/rest/v1/trophy_draft_picks?on_conflict=aggregate_id"
