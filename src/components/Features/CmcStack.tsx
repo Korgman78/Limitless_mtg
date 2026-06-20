@@ -16,9 +16,11 @@ interface CmcStackProps {
     cards: SkeletonCard[];
     onCardSelect: (card: SkeletonCard) => void;
     stackOverlap?: string;
+    /** Libellé d'en-tête optionnel (par défaut = cmc). Ex: "Lands". */
+    label?: React.ReactNode;
 }
 
-export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, stackOverlap = '-135%' }) => {
+export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, stackOverlap = '-135%', label }) => {
     const grouped = useMemo(() => {
         return cards.reduce((acc: (SkeletonCard & { count: number })[], card) => {
             const existing = acc.find(x => x.name === card.name);
@@ -38,7 +40,7 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, st
     return (
         <div className="flex flex-col w-[46%] md:flex-1 md:min-w-0 group/stack transition-all hover:z-[100] px-0.5 md:px-1">
             <div className="flex items-center justify-between px-2 mb-2">
-                <span className="text-[16px] font-bold text-white/80">{cmc}</span>
+                <span className="text-[16px] font-bold text-white/80">{label ?? cmc}</span>
                 <span className="text-[10px] font-bold text-slate-600">({cards.length})</span>
             </div>
 

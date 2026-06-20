@@ -3,14 +3,23 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Crown, Sparkles, Target, Check, ArrowRight, RotateCcw, Shuffle,
   Eye, EyeOff, Loader2, Swords, Trophy, TrendingUp, ChevronRight,
+  Layers, Plus, Minus, Wand2, ChevronLeft,
 } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../constants';
 import { getCardImage } from '../../utils/helpers';
 import { ManaIcons } from '../Common';
 import { haptics } from '../../utils/haptics';
 import { useCards } from '../../queries/useCards';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { useSkeletons } from '../../queries/useSkeletons';
+import { CmcStack, type SkeletonCard } from '../Features/CmcStack';
+import { isLandCard } from '../../utils/deckAnalysisCore';
+import type { AnalysisSkeleton, DeckAnalysisResult } from '../../utils/deckAnalysisCore';
 import {
-  useDraftPracticeSessions, useDraftPracticeSession, useFormatSynergies,
+  analyzeDeckText, cardlistToDeckText, scoreDeckAnalysis, type DeckScore,
+} from '../../utils/analyzeDeckPipeline';
+import {
+  useDraftPracticeSessions, useDraftPracticeSession, useFormatSynergies, useDraftCardMeta,
   type DraftPick, type PairMap,
 } from '../../queries/useDraftPractice';
 
@@ -20,9 +29,24 @@ interface DraftPracticeOverlayProps {
   onClose: () => void;
 }
 
-type Phase = 'intro' | 'drafting' | 'recap';
+type Phase = 'intro' | 'drafting' | 'recap' | 'build' | 'compare';
 type Mode = 'blind' | 'coached';
 type WRMap = Map<string, number | null>;
+
+// Terres de base par couleur (pour le builder de deck)
+const BASIC_OF: Record<string, string> = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
+const COLORS5 = ['W', 'U', 'B', 'R', 'G'] as const;
+
+/** Répartit `total` terres de base sur les couleurs données, le plus équitablement possible. */
+function splitLands(total: number, colors: string): Record<string, number> {
+  const res: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+  const cs = [...new Set(colors.split('').filter((c) => c in BASIC_OF))];
+  if (!cs.length || total <= 0) return res;
+  cs.forEach((c, i) => {
+    res[c] = Math.floor(total / cs.length) + (i < total % cs.length ? 1 : 0);
+  });
+  return res;
+}
 
 // ------------------------------------------------------------------ scoring
 interface PickDetail {
@@ -165,6 +189,7 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   const { data: sessions = [], isLoading: listLoading } = useDraftPracticeSessions(activeSet, activeFormat);
   const { data: cardsData } = useCards(activeSet, activeFormat, 'Global');
   const { data: pairMap = {} } = useFormatSynergies(activeSet, activeFormat);
+  const { data: skeletons = [] } = useSkeletons(activeSet, activeFormat);
 
   const wrMap = useMemo<WRMap>(() => {
     const m: WRMap = new Map();
@@ -181,6 +206,13 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   const [idx, setIdx] = useState(0);
   const [userPicks, setUserPicks] = useState<string[]>([]);
   const [reveal, setReveal] = useState<string | null>(null); // coached: carte choisie en attente de "Next"
+
+  // Phase "build deck" : quantité par carte envoyée au deck + terres de base
+  const [deck, setDeck] = useState<Record<string, number>>({});
+  const [basics, setBasics] = useState<Record<string, number>>({ W: 0, U: 0, B: 0, R: 0, G: 0 });
+  // Phase "compare" : analyses des deux decks via le moteur "Test my deck"
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<{ you: DeckAnalysisResult | null; pro: DeckAnalysisResult | null } | null>(null);
 
   const formatLabel = FORMAT_OPTIONS.find(o => o.value === activeFormat)?.label || activeFormat;
 
@@ -201,6 +233,7 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     if (key === ctxRef.current) return;
     ctxRef.current = key;
     setSelectedId(null); setPhase('intro'); setIdx(0); setUserPicks([]); setReveal(null);
+    setDeck({}); setBasics({ W: 0, U: 0, B: 0, R: 0, G: 0 }); setAnalysis(null);
   }, [activeSet, activeFormat]);
 
   const shuffleOpponent = () => {
@@ -215,7 +248,10 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     haptics.medium();
     setIdx(0); setUserPicks([]); setReveal(null); setPhase('drafting');
   };
-  const restart = () => { setPhase('intro'); setIdx(0); setUserPicks([]); setReveal(null); };
+  const restart = () => {
+    setPhase('intro'); setIdx(0); setUserPicks([]); setReveal(null);
+    setDeck({}); setBasics({ W: 0, U: 0, B: 0, R: 0, G: 0 }); setAnalysis(null);
+  };
 
   const picks = session?.picks || [];
   const current = picks[idx];
@@ -240,8 +276,90 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   );
 
   const meta = session || sessions.find(s => s.aggregate_id === selectedId);
+
+  // -------------------------------------------------------------- build deck
+  // Pool de l'utilisateur = les cartes qu'il a réellement prises (multiset).
+  const pool = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of userPicks) if (n) m.set(n, (m.get(n) || 0) + 1);
+    return [...m.entries()].map(([name, count]) => ({ name, count }));
+  }, [userPicks]);
+
+  const includedSpellCount = useMemo(
+    () => Object.values(deck).reduce((s, q) => s + q, 0),
+    [deck]
+  );
+  const landCount = useMemo(
+    () => COLORS5.reduce((s, c) => s + (basics[c] || 0), 0),
+    [basics]
+  );
+  const deckTotal = includedSpellCount + landCount;
+
+  const goBuild = () => {
+    haptics.medium();
+    setDeck({});
+    setBasics({ W: 0, U: 0, B: 0, R: 0, G: 0 });
+    setAnalysis(null);
+    setPhase('build');
+  };
+
+  // Ajoute une copie (cappé au nombre de copies réellement draftées).
+  const addCard = useCallback((name: string) => {
+    haptics.selection();
+    setDeck((prev) => {
+      const max = pool.find((p) => p.name === name)?.count ?? 0;
+      const cur = prev[name] || 0;
+      if (cur >= max) return prev;
+      return { ...prev, [name]: cur + 1 };
+    });
+  }, [pool]);
+  const removeCard = useCallback((name: string) => {
+    haptics.light();
+    setDeck((prev) => {
+      const cur = prev[name] || 0;
+      if (cur <= 0) return prev;
+      const next = { ...prev };
+      if (cur - 1 <= 0) delete next[name]; else next[name] = cur - 1;
+      return next;
+    });
+  }, []);
+  const bumpBasic = (c: string, d: number) => {
+    haptics.light();
+    setBasics((prev) => ({ ...prev, [c]: Math.max(0, (prev[c] || 0) + d) }));
+  };
+  const autoLands = () => {
+    haptics.medium();
+    setBasics(splitLands(Math.max(0, 40 - includedSpellCount), meta?.colors || ''));
+  };
+
+  const buildUserDeckText = useCallback(() => {
+    const lines: string[] = [];
+    for (const [name, qty] of Object.entries(deck)) if (qty > 0) lines.push(`${qty} ${name}`);
+    for (const c of COLORS5) if (basics[c] > 0) lines.push(`${basics[c]} ${BASIC_OF[c]}`);
+    return `Deck\n${lines.join('\n')}`;
+  }, [deck, basics]);
+
+  const runCompare = async () => {
+    haptics.medium();
+    setAnalyzing(true);
+    setAnalysis(null);
+    setPhase('compare');
+    const skels = skeletons as AnalysisSkeleton[];
+    try {
+      const [you, pro] = await Promise.all([
+        analyzeDeckText(activeSet, activeFormat, buildUserDeckText(), skels),
+        session?.cardlist
+          ? analyzeDeckText(activeSet, activeFormat, cardlistToDeckText(session.cardlist), skels)
+          : Promise.resolve(null),
+      ]);
+      setAnalysis({ you, pro });
+    } catch {
+      setAnalysis({ you: null, pro: null });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
   const rankLabel = meta?.rank || (meta?.mythic_rank ? `Mythic #${meta.mythic_rank}` : 'Mythic');
-  const colors = meta?.colors || '';
 
   // -------------------------------------------------------------- shell
   return (
@@ -306,9 +424,9 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                       Replay the exact packs this player faced on their trophy run. Pick blind, then see — card by card — where you matched the player and where you diverged.
                     </p>
 
-                    {(colors || meta) && (
+                    {meta && (
                       <div className="flex items-center justify-center gap-3 mt-5 text-slate-400">
-                        {colors && <ManaIcons colors={colors} size="md" />}
+                        {/* Pas d'icônes de couleur ici : ne pas révéler ce que le joueur a drafté (mode blind). */}
                         <span className="text-[11px] font-bold">{rankLabel}{meta?.wins != null ? ` · ${meta.wins}-${meta.losses ?? 0}` : ''}</span>
                       </div>
                     )}
@@ -377,7 +495,7 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                   <motion.div key={idx}
                     initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-                    className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2 md:gap-3 max-w-6xl mx-auto">
+                    className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3 max-w-6xl mx-auto">
                     {current.options.map((name) => {
                       const isYou = reveal === name;
                       const isPro = !!reveal && name === current.taken;
@@ -431,7 +549,25 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
           /* ============================================ RECAP */
           ) : phase === 'recap' && recap ? (
             <RecapView recap={recap} rankLabel={rankLabel} onRetry={restart}
-              onNew={() => { shuffleOpponent(); restart(); }} onClose={onClose} />
+              onNew={() => { shuffleOpponent(); restart(); }} onBuild={goBuild} onClose={onClose} />
+
+          /* ============================================ BUILD DECK */
+          ) : phase === 'build' ? (
+            <BuildView
+              activeSet={activeSet} pool={pool} deck={deck} basics={basics}
+              includedSpellCount={includedSpellCount} landCount={landCount} deckTotal={deckTotal}
+              getWR={getWR} onAdd={addCard} onRemove={removeCard} onBump={bumpBasic} onAuto={autoLands}
+              onBack={() => setPhase('recap')} onCompare={runCompare}
+            />
+
+          /* ============================================ COMPARE DECKS */
+          ) : phase === 'compare' ? (
+            <CompareView
+              analyzing={analyzing} analysis={analysis} rankLabel={rankLabel}
+              proDeckAvailable={!!session?.cardlist}
+              onBack={() => setPhase('build')} onRetry={restart}
+              onNew={() => { shuffleOpponent(); restart(); }} onClose={onClose}
+            />
           ) : null}
         </AnimatePresence>
       </div>
@@ -468,7 +604,7 @@ const StatBar: React.FC<{ label: string; you: number; pro: number; suffix?: stri
   );
 };
 
-const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void; onNew: () => void; onClose: () => void }> = ({ recap, rankLabel, onRetry, onNew, onClose }) => {
+const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void; onNew: () => void; onBuild: () => void; onClose: () => void }> = ({ recap, rankLabel, onRetry, onNew, onBuild, onClose }) => {
   const { grade } = recap;
   return (
     <motion.div key="recap" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -586,18 +722,418 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
           </div>
         </div>
 
-        {/* actions */}
+        {/* next step : build deck */}
+        <button onClick={onBuild}
+          className="group w-full flex items-center justify-between gap-3 px-6 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-900/40 transition-all">
+          <span className="flex items-center gap-2.5 text-left">
+            <Layers size={18} />
+            <span>
+              <span className="block text-sm font-black uppercase tracking-widest">Now build your deck</span>
+              <span className="block text-[10px] text-indigo-200 font-bold normal-case tracking-normal">Different picks, but is your deck just as good?</span>
+            </span>
+          </span>
+          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+        </button>
+
+        {/* secondary actions */}
         <div className="flex flex-col sm:flex-row gap-3 pb-4">
           <button onClick={onRetry} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-black uppercase tracking-widest transition-colors">
             <RotateCcw size={14} /> Redraft this pod
           </button>
-          <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+          <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-black uppercase tracking-widest transition-colors">
             <Shuffle size={14} /> New opponent
           </button>
           <button onClick={onClose} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
             Done
           </button>
         </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// ============================================================ BUILD VIEW
+type SortKey = 'color' | 'cmc' | 'type';
+const BuildView: React.FC<{
+  activeSet: string;
+  pool: { name: string; count: number }[];
+  deck: Record<string, number>;
+  basics: Record<string, number>;
+  includedSpellCount: number; landCount: number; deckTotal: number;
+  getWR: (n: string) => number | null;
+  onAdd: (name: string) => void;
+  onRemove: (name: string) => void;
+  onBump: (c: string, d: number) => void;
+  onAuto: () => void;
+  onBack: () => void;
+  onCompare: () => void;
+}> = ({ activeSet, pool, deck, basics, includedSpellCount, landCount, deckTotal, getWR, onAdd, onRemove, onBump, onAuto, onBack, onCompare }) => {
+  const isMobile = useIsMobile();
+  const { data: cardMeta = {} } = useDraftCardMeta(activeSet);
+  const [dragOver, setDragOver] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('color');
+  const onTarget = deckTotal === 40;
+
+  // Rang couleur : mono WUBRG (0-4), or/multicolore (5), incolore/terrain (6)
+  const rankColor = (n: string) => {
+    const cs = (cardMeta[n]?.colors || '').replace(/[^WUBRG]/g, '');
+    if (!cs) return 6;
+    if (cs.length > 1) return 5;
+    return 'WUBRG'.indexOf(cs[0]);
+  };
+  const cmcOf = (n: string) => cardMeta[n]?.cmc ?? 99;
+  const isCre = (n: string) => cardMeta[n]?.isCreature ?? false;
+  const cmp = (na: string, nb: string) => {
+    if (sortKey === 'cmc') return cmcOf(na) - cmcOf(nb) || rankColor(na) - rankColor(nb) || na.localeCompare(nb);
+    if (sortKey === 'type') return (isCre(na) ? 0 : 1) - (isCre(nb) ? 0 : 1) || cmcOf(na) - cmcOf(nb) || na.localeCompare(nb);
+    return rankColor(na) - rankColor(nb) || cmcOf(na) - cmcOf(nb) || na.localeCompare(nb);
+  };
+
+  const sortedPool = [...pool].sort((a, b) => cmp(a.name, b.name));
+  const deckEntries = pool
+    .filter((p) => (deck[p.name] || 0) > 0)
+    .map((p) => ({ name: p.name, qty: deck[p.name] }))
+    .sort((a, b) => cmp(a.name, b.name));
+
+  return (
+    <motion.div key="build" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 flex flex-col">
+      {/* counter strip */}
+      <div className="flex-shrink-0 px-4 md:px-6 pt-3 pb-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Layers size={16} className="text-indigo-400 shrink-0" />
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-300 truncate">Build your deck</span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] font-bold shrink-0">
+            <span className="text-slate-400">{includedSpellCount} <span className="text-slate-600">spells</span></span>
+            <span className="text-slate-400">{landCount} <span className="text-slate-600">lands</span></span>
+            <span className={`tabular-nums font-black ${onTarget ? 'text-emerald-300' : 'text-amber-300'}`}>{deckTotal}/40</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Sort</span>
+          <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 overflow-hidden text-[9px] font-black uppercase tracking-widest">
+            {([['color', 'Color'], ['cmc', 'CMC'], ['type', 'Type']] as [SortKey, string][]).map(([k, label]) => (
+              <button key={k} onClick={() => setSortKey(k)}
+                className={`px-2.5 py-1.5 transition-colors ${sortKey === k ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="ml-auto text-[10px] text-slate-600 hidden sm:block">
+            {isMobile ? 'Tap to add' : 'Double-click or drag to add · click deck card to remove'}
+          </span>
+        </div>
+      </div>
+
+      {/* pool (2/3) + deck (1/3), stacked on mobile */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 px-4 md:px-6 overflow-y-auto md:overflow-hidden pb-3">
+        {/* POOL */}
+        <div className="md:w-2/3 md:min-h-0 md:overflow-y-auto">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-1.5 md:sticky md:top-0 md:bg-slate-950 md:py-1 z-10">Your pool</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+            {sortedPool.map((p) => {
+              const inDeck = deck[p.name] || 0;
+              const remaining = p.count - inDeck;
+              const used = remaining <= 0;
+              const wr = getWR(p.name);
+              return (
+                <div
+                  key={p.name}
+                  draggable={!used}
+                  onDragStart={(e) => e.dataTransfer.setData('text/plain', p.name)}
+                  onClick={isMobile ? () => onAdd(p.name) : undefined}
+                  onDoubleClick={!isMobile ? () => onAdd(p.name) : undefined}
+                  className={`group relative rounded-lg overflow-hidden border bg-black aspect-[63/88] select-none transition-transform ${
+                    used ? 'border-slate-800 opacity-35 saturate-50 cursor-default' : 'border-slate-700/70 hover:border-indigo-400/60 hover:-translate-y-0.5 cursor-pointer'
+                  }`}
+                >
+                  <img src={getCardImage(p.name)} alt={p.name} loading="lazy" draggable={false} className="w-full h-full object-cover pointer-events-none" />
+                  {/* copies remaining vs drafted */}
+                  {p.count > 1 && (
+                    <span className="absolute top-1 left-1 px-1 py-0.5 rounded bg-slate-950/85 text-[8px] font-black text-slate-200">{remaining}/{p.count}</span>
+                  )}
+                  {inDeck > 0 && (
+                    <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center rounded-full bg-indigo-500 text-white text-[8px] font-black">{inDeck}</span>
+                  )}
+                  {wr != null && (
+                    <span className={`absolute bottom-1 right-1 px-1 py-0.5 rounded bg-slate-950/85 text-[8px] font-black ${wrTone(wr)}`}>{wr.toFixed(1)}</span>
+                  )}
+                  {!used && !isMobile && (
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-gradient-to-t from-indigo-600/40 to-transparent transition-opacity grid place-items-center">
+                      <Plus size={18} className="text-white drop-shadow" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* DECK */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); const n = e.dataTransfer.getData('text/plain'); if (n) onAdd(n); }}
+          className={`md:w-1/3 md:min-h-0 md:overflow-y-auto rounded-xl border ${dragOver ? 'border-indigo-400 bg-indigo-500/[0.07]' : 'border-slate-800 bg-slate-900/40'} transition-colors`}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800 md:sticky md:top-0 bg-slate-900/80 backdrop-blur z-10">
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Your deck</span>
+            <span className={`text-[11px] font-black tabular-nums ${onTarget ? 'text-emerald-300' : 'text-amber-300'}`}>{deckTotal}/40</span>
+          </div>
+
+          {deckEntries.length === 0 ? (
+            <div className="px-3 py-8 text-center">
+              <p className="text-[11px] text-slate-600">{isMobile ? 'Tap pool cards to add them here.' : 'Double-click or drop pool cards here.'}</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-800/60">
+              {deckEntries.map((d) => {
+                const wr = getWR(d.name);
+                return (
+                  <button key={d.name} onClick={() => onRemove(d.name)}
+                    className="group/row flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-rose-500/[0.06] transition-colors text-left">
+                    <span className="w-5 text-center text-[11px] font-black text-indigo-300 tabular-nums shrink-0">{d.qty}</span>
+                    <img src={getCardImage(d.name)} alt="" loading="lazy" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
+                    <span className="text-[11px] font-bold text-slate-300 truncate flex-1">{d.name}</span>
+                    {wr != null && <span className={`text-[9px] font-black shrink-0 ${wrTone(wr)}`}>{wr.toFixed(1)}</span>}
+                    <Minus size={13} className="text-slate-600 group-hover/row:text-rose-300 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* basics */}
+          <div className="px-2.5 py-2 border-t border-slate-800">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Lands</span>
+              <button onClick={onAuto} className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-[9px] font-black uppercase tracking-widest text-slate-300">
+                <Wand2 size={11} /> Auto
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {COLORS5.map((c) => (
+                <div key={c} className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                  <ManaIcons colors={c} size="sm" />
+                  <button onClick={() => onBump(c, -1)} className="p-0.5 text-slate-400 hover:text-white"><Minus size={11} /></button>
+                  <span className="w-3.5 text-center text-[11px] font-black text-white tabular-nums">{basics[c]}</span>
+                  <button onClick={() => onBump(c, 1)} className="p-0.5 text-slate-400 hover:text-white"><Plus size={11} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* actions */}
+      <div className="flex-shrink-0 border-t border-slate-800 bg-slate-900/90 backdrop-blur px-4 md:px-6 py-3">
+        <div className="max-w-5xl mx-auto flex items-center gap-3">
+          <button onClick={onBack} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+            <ChevronLeft size={14} /> Back
+          </button>
+          <button onClick={onCompare} disabled={includedSpellCount === 0}
+            className="ml-auto flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+            <Swords size={14} /> Compare to player's deck
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// ============================================================ COMPARE VIEW
+const scoreTone = (s: number) => (s >= 72 ? 'text-emerald-300' : s >= 55 ? 'text-sky-300' : 'text-amber-300');
+const scoreRing = (s: number) => (s >= 72 ? 'from-emerald-400 to-teal-500' : s >= 55 ? 'from-sky-400 to-indigo-500' : 'from-amber-400 to-orange-500');
+
+const MetricRow: React.FC<{ label: string; value: string; pct: number; tone?: string }> = ({ label, value, pct, tone }) => (
+  <div>
+    <div className="flex items-center justify-between text-[10px] mb-1">
+      <span className="text-slate-500 font-bold">{label}</span>
+      <span className={`font-black tabular-nums ${tone || 'text-slate-300'}`}>{value}</span>
+    </div>
+    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+      <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+    </div>
+  </div>
+);
+
+const DeckScoreCard: React.FC<{ title: string; accent: string; analysis: DeckAnalysisResult | null; score: DeckScore | null }> = ({ title, accent, analysis, score }) => {
+  if (!analysis || !score) {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 flex flex-col items-center justify-center text-center min-h-[260px]">
+        <p className={`text-[10px] font-black uppercase tracking-widest ${accent} mb-2`}>{title}</p>
+        <p className="text-[11px] text-slate-600">Deck unavailable for this replay.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className={`text-[10px] font-black uppercase tracking-widest ${accent}`}>{title}</p>
+        <p className="text-[9px] font-bold text-slate-500 truncate max-w-[55%] text-right">{analysis.matchedArchetype}</p>
+      </div>
+      <div className="flex items-center justify-center">
+        <div className={`relative w-24 h-24 rounded-full grid place-items-center bg-gradient-to-br ${scoreRing(score.score)} shadow-xl`}>
+          <span className="text-4xl font-black text-slate-950 tabular-nums">{score.score}</span>
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        <MetricRow label="Avg win rate" value={score.avgWr != null ? `${score.avgWr.toFixed(1)}%` : '—'} pct={score.avgWr != null ? (score.avgWr - 50) * 10 : 0} tone={scoreTone(score.score)} />
+        <MetricRow label="Curve fit" value={`${Math.round(score.curveFit * 100)}%`} pct={score.curveFit * 100} />
+        <MetricRow label="Creature balance" value={`${Math.round(score.creatureFit * 100)}%`} pct={score.creatureFit * 100} />
+        <MetricRow label="Core coverage" value={score.coreTotal > 0 ? `${score.corePresent}/${score.coreTotal}` : '—'} pct={(score.coreCoverage ?? 0) * 100} />
+      </div>
+    </div>
+  );
+};
+
+// Rendu visuel d'un deck en colonnes de courbe de mana (réutilise CmcStack).
+const DeckBoard: React.FC<{ title: string; accent: string; analysis: DeckAnalysisResult }> = ({ title, accent, analysis }) => {
+  const metaByName = analysis.metaByName || {};
+  const { stacks, lands } = useMemo(() => {
+    const stacks: Record<number, SkeletonCard[]> = {};
+    for (let c = 0; c <= 7; c += 1) stacks[c] = [];
+    const lands: SkeletonCard[] = [];
+    for (const card of analysis.mainCards || []) {
+      const meta = metaByName[card.name];
+      const mk = (cmc: number): SkeletonCard => ({ name: card.name, cmc, type: meta?.type || '', cost: meta?.cost || '', rarity: meta?.rarity || '' });
+      const isLand = isLandCard(card.name, metaByName);
+      for (let i = 0; i < card.qty; i += 1) {
+        if (isLand) lands.push(mk(0));
+        else { const cmc = Math.max(0, Math.min(7, Math.round(Number(meta?.cmc ?? 0)))); stacks[cmc].push(mk(cmc)); }
+      }
+    }
+    return { stacks, lands };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis]);
+
+  const maxCmc = Math.max(5, ...Object.keys(stacks).map(Number).filter((c) => stacks[c].length > 0));
+  const cmcRange = Array.from({ length: maxCmc + 1 }, (_, i) => i);
+  const total = (analysis.mainCards || []).reduce((s, c) => s + c.qty, 0);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+      <div className="flex items-center justify-between mb-2 px-1">
+        <p className={`text-[10px] font-black uppercase tracking-widest ${accent}`}>{title}</p>
+        <p className="text-[9px] font-bold text-slate-500 truncate ml-2">{analysis.matchedArchetype} · {total} cards</p>
+      </div>
+      <div className="overflow-x-auto no-scrollbar">
+        <div className="flex flex-nowrap items-start gap-0 md:gap-1 min-w-[620px] [&>div]:flex-1 [&>div]:min-w-0 [&>div]:w-auto">
+          {cmcRange.map((cmc) => (
+            <CmcStack key={cmc} cmc={cmc} cards={stacks[cmc]} onCardSelect={() => {}} />
+          ))}
+          {lands.length > 0 && (
+            <CmcStack cmc={0} label={<span className="text-[11px] uppercase tracking-wide">Lands</span>} cards={lands} onCardSelect={() => {}} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CompareView: React.FC<{
+  analyzing: boolean;
+  analysis: { you: DeckAnalysisResult | null; pro: DeckAnalysisResult | null } | null;
+  rankLabel: string;
+  proDeckAvailable: boolean;
+  onBack: () => void; onRetry: () => void; onNew: () => void; onClose: () => void;
+}> = ({ analyzing, analysis, rankLabel, proDeckAvailable, onBack, onRetry, onNew, onClose }) => {
+  const [showDecks, setShowDecks] = useState(false);
+  const youScore = analysis?.you ? scoreDeckAnalysis(analysis.you) : null;
+  const proScore = analysis?.pro ? scoreDeckAnalysis(analysis.pro) : null;
+
+  const verdict = (() => {
+    if (!youScore) return null;
+    if (!proScore) return { t: 'Your deck is locked in', d: "We couldn't score the player's deck for this replay — but yours holds up on its own.", tone: 'text-sky-300' };
+    const diff = youScore.score - proScore.score;
+    if (diff >= 3) return { t: 'Different path, better deck', d: 'You drafted differently from the player — and your deck scores higher. Trusting your read paid off.', tone: 'text-emerald-300' };
+    if (diff >= -3) return { t: 'Neck and neck', d: 'A different draft, yet a deck just as strong. Several roads lead to a trophy.', tone: 'text-sky-300' };
+    return { t: 'The player edged it', d: 'Their deck scores higher this time — study where their picks built more synergy.', tone: 'text-amber-300' };
+  })();
+
+  return (
+    <motion.div key="compare" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 overflow-y-auto">
+      <div className="px-4 md:px-6 py-8 space-y-6">
+        {/* Bloc étroit : titre + verdict + scores */}
+        <div className="max-w-3xl mx-auto space-y-6">
+          <div className="text-center">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deck comparison</p>
+            <h3 className="text-xl md:text-2xl font-black text-white tracking-tight mt-1">Your deck vs {rankLabel}</h3>
+            <p className="text-[10px] text-slate-600 mt-1">Same engine as “Test my deck” — scored against trophy-deck skeletons.</p>
+          </div>
+
+          {analyzing ? (
+            <div className="flex flex-col items-center justify-center gap-4 py-20">
+              <Loader2 className="animate-spin text-indigo-400" size={36} />
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Scoring both decks…</p>
+            </div>
+          ) : (
+            <>
+              {verdict && (
+                <div className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-950 p-5 text-center">
+                  <p className={`text-lg font-black ${verdict.tone}`}>{verdict.t}</p>
+                  <p className="text-[12px] text-slate-400 mt-1.5 leading-relaxed max-w-md mx-auto">{verdict.d}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <DeckScoreCard title="You" accent="text-indigo-300" analysis={analysis?.you ?? null} score={youScore} />
+                <DeckScoreCard title="Player" accent="text-amber-300" analysis={analysis?.pro ?? null} score={proScore} />
+              </div>
+
+              {(analysis?.you || analysis?.pro) && (
+                <button onClick={() => setShowDecks((v) => !v)}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                  <Layers size={14} /> {showDecks ? 'Hide decklists' : 'View both decklists'}
+                  <ChevronRight size={14} className={`transition-transform ${showDecks ? 'rotate-90' : ''}`} />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Bloc large : decklists visuelles (beaucoup plus grandes sur desktop) */}
+        {!analyzing && (
+          <AnimatePresence initial={false}>
+            {showDecks && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }} className="overflow-hidden">
+                <div className="max-w-6xl mx-auto space-y-4">
+                  {analysis?.you && <DeckBoard title="Your deck" accent="text-indigo-300" analysis={analysis.you} />}
+                  {analysis?.pro && <DeckBoard title={`Player's deck`} accent="text-amber-300" analysis={analysis.pro} />}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+
+        {/* Bloc étroit : note + actions */}
+        {!analyzing && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            {!proDeckAvailable && (
+              <p className="text-[10px] text-slate-600 text-center">The player's final deck wasn't captured for this older replay. Newer replays include it.</p>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 pb-4">
+              <button onClick={onBack} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                <ChevronLeft size={14} /> Tweak deck
+              </button>
+              <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+                <Shuffle size={14} /> New opponent
+              </button>
+              <button onClick={onRetry} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                <RotateCcw size={14} /> Redraft
+              </button>
+              <button onClick={onClose} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );

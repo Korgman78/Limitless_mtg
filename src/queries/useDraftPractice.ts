@@ -27,6 +27,8 @@ export interface DraftSession extends DraftSessionMeta {
   set_code: string
   format: string
   picks: DraftPick[]
+  /** Maindeck final du joueur {nom: qté} — peut être null (deck non récupéré). */
+  cardlist: Record<string, number> | null
 }
 
 /**
@@ -93,6 +95,43 @@ export function useFormatSynergies(activeSet: string, activeFormat: string, enab
   })
 }
 
+export interface DraftCardMeta {
+  colors: string | null
+  cmc: number
+  isCreature: boolean
+}
+
+/**
+ * Méta légère des cartes d'un set (couleur + CMC + créature/non) pour le tri du
+ * builder. Une seule requête `card_list` (~250 lignes), cachée. `enabled`
+ * permet de la rendre paresseuse (chargée seulement en phase build).
+ */
+export function useDraftCardMeta(activeSet: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.cards(activeSet, '', 'meta'), 'draftBuilder'],
+    queryFn: async (): Promise<Record<string, DraftCardMeta>> => {
+      if (!activeSet) return {}
+      const { data, error } = await supabase
+        .from('card_list')
+        .select('card_name, card_type, card_cmc, colors')
+        .eq('set_code', activeSet)
+      if (error) throw error
+      const m: Record<string, DraftCardMeta> = {}
+      for (const r of (data || []) as Array<{ card_name: string; card_type: string | null; card_cmc: number | null; colors: string | null }>) {
+        m[r.card_name] = {
+          colors: r.colors ?? null,
+          cmc: Number(r.card_cmc ?? 0),
+          isCreature: typeof r.card_type === 'string' && r.card_type.toLowerCase().includes('creature'),
+        }
+      }
+      return m
+    },
+    enabled: enabled && !!activeSet,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+  })
+}
+
 /** Charge une session complète (avec la séquence de picks) à la demande. */
 export function useDraftPracticeSession(aggregateId: string | null) {
   return useQuery({
@@ -101,7 +140,7 @@ export function useDraftPracticeSession(aggregateId: string | null) {
       if (!aggregateId) return null
       const { data, error } = await supabase
         .from('trophy_draft_picks')
-        .select('aggregate_id, set_code, format, colors, rank, mythic_rank, mythic_pct, wins, losses, picks')
+        .select('aggregate_id, set_code, format, colors, rank, mythic_rank, mythic_pct, wins, losses, picks, cardlist')
         .eq('aggregate_id', aggregateId)
         .single()
       if (error) throw error
