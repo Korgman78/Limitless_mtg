@@ -47,7 +47,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = []  # [] = tous les sets actifs
+TARGET_SET_CODES = ["SOS"]  # [] = tous les sets actifs
 TARGET_FORMATS = ["PremierDraft", "TradDraft"]  # draft only (le scellé n'a pas de picks)
 
 # Qualitatif : peu d'exemples, les meilleurs. Nouveaux drafts max / set / format / run.
@@ -85,7 +85,7 @@ HEADERS_SUPABASE = {
 # 2. UTILITAIRES
 # ==============================================================================
 
-def random_sleep(lo=2.0, hi=3.5):
+def random_sleep(lo=5.0, hi=8.0):
     time.sleep(random.uniform(lo, hi))
 
 def get_active_sets():
@@ -163,7 +163,8 @@ def fetch_json(url):
             print(f"      ⚠️ HTTP {r.status_code} (essai {attempt+1}) {url[:60]}…")
         except Exception as e:
             print(f"      ⚠️ exception: {e} (essai {attempt+1})")
-        time.sleep(2 * (attempt + 1))
+        # Backoff plus long : un 403 = rate-limit IP, on laisse 17Lands respirer.
+        time.sleep(8 * (attempt + 1))
     return None
 
 def parse_rank(details):
@@ -247,7 +248,7 @@ def process(set_code, fmt):
     for t in candidates:
         agg = t["aggregate_id"]
         details = fetch_json(f"https://www.17lands.com/data/details?draft_id={agg}")
-        random_sleep(2.0, 3.0)
+        random_sleep(5.0, 8.0)
         if not details:
             continue
         rank = parse_rank(details)
@@ -265,7 +266,7 @@ def process(set_code, fmt):
     for i, (rank, t, details) in enumerate(top, 1):
         agg = t["aggregate_id"]
         draft = fetch_json(f"https://www.17lands.com/data/draft?draft_id={agg}")
-        random_sleep(2.0, 3.5)
+        random_sleep(5.0, 8.0)
         if not draft:
             print(f"      ⚠️ {agg[:16]}… : draft log indisponible")
             continue
