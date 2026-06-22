@@ -45,8 +45,27 @@ export const calculateGrade = (cardArchWr: number | null | undefined, deckMeanWr
   return { letter: 'F', color: 'text-red-700 border-red-800 bg-red-900/20' };
 };
 
-export const getCardImage = (name: string): string =>
+// --- Registre d'URLs d'images (name -> URL CDN directe) ---
+// Alimente par useCardImageMap depuis card_list.image_url. Permet a getCardImage
+// (appele sync dans ~28 endroits) de servir l'URL CDN directe quand elle est
+// connue, sans toucher aux call sites. Fallback : endpoint API Scryfall.
+const cardImageRegistry = new Map<string, string>();
+
+const normalizeCardKey = (name: string): string => name.trim().toLowerCase();
+
+/** Enregistre un lot de mappings name -> image_url (ignore les URLs vides). */
+export const registerCardImages = (entries: Record<string, string | null | undefined>): void => {
+  for (const [name, url] of Object.entries(entries)) {
+    if (url) cardImageRegistry.set(normalizeCardKey(name), url);
+  }
+};
+
+/** URL API Scryfall (302 -> CDN). Fallback quand l'URL directe est inconnue. */
+const getScryfallApiImage = (name: string): string =>
   `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=border_crop`;
+
+export const getCardImage = (name: string): string =>
+  cardImageRegistry.get(normalizeCardKey(name)) ?? getScryfallApiImage(name);
 
 // Sort colors in WUBRG order
 export const sortColorsWUBRG = (colors: string): string => {

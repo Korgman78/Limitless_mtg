@@ -85,6 +85,9 @@ def fetch_scryfall_set(set_code, store_as=None):
             colors = "".join(c.get('colors', []))
             rarity = c.get('rarity')
 
+            # URL CDN directe (border_crop, face avant). Fallback DFC : card_faces[0].
+            image_url = (c.get('image_uris') or {}).get('border_crop')
+
             # Gestion DFC
             if 'card_faces' in c and not mana_cost:
                 face = c['card_faces'][0]
@@ -92,6 +95,8 @@ def fetch_scryfall_set(set_code, store_as=None):
                 type_line = face.get('type_line')
                 if not colors:
                      colors = "".join(face.get('colors', []))
+                if not image_url:
+                    image_url = (face.get('image_uris') or {}).get('border_crop')
 
             cards.append({
                 "card_name": name,
@@ -100,7 +105,8 @@ def fetch_scryfall_set(set_code, store_as=None):
                 "card_cmc": cmc,
                 "card_cost": mana_cost,
                 "rarity": rarity,
-                "card_type": type_line
+                "card_type": type_line,
+                "image_url": image_url
             })
 
         url = data.get('next_page')

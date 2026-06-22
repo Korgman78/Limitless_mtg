@@ -14,6 +14,7 @@ import { FORMAT_OPTIONS, PAIRS, TRIOS, RARITY_STYLES } from './constants';
 import { useSets } from './queries/useSets';
 import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
+import { useCardImages } from './queries/useCardImages';
 import { useFormatPivots } from './queries/useFormatPivots';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
@@ -217,6 +218,10 @@ export default function MTGLimitedApp(): React.ReactElement {
   const { data: cardsData, isLoading: cardsLoading, error: cardsError, refetch: refetchCards } = useCards(activeSet, activeFormat, archetypeFilter);
   // Données globales pour FormatBlueprint (indépendantes du filtre d'archétype sélectionné dans l'onglet Cards)
   const { data: globalCardsData, isLoading: globalCardsLoading } = useCards(activeSet, activeFormat, 'Global');
+
+  // Registre des URLs d'images CDN directes pour le set actif (alimente getCardImage).
+  // Le re-render au chargement bascule les <img> du fallback API vers le CDN direct.
+  useCardImages(activeSet);
 
   const decks = decksData?.decks || [];
   const totalGames = decksData?.totalGames || 1;
