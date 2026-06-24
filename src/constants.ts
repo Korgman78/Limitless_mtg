@@ -2,9 +2,7 @@ import type { FormatOption, ColorPair } from './types';
 
 // Sets under 17lands embargo (data is scraped but hidden in prod)
 // Remove a set code from this list to make it visible
-export const EMBARGOED_SETS: string[] = [
-  'MSH', // Marvel Super Heroes — masqué en prod jusqu'à données 17Lands suffisantes
-];
+export const EMBARGOED_SETS: string[] = [];
 
 export const FORMAT_OPTIONS: FormatOption[] = [
   { label: 'Premier Draft', value: 'PremierDraft', short: 'PD' },

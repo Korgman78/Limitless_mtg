@@ -47,7 +47,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = ["SOS"]  # [] = tous les sets actifs
+TARGET_SET_CODES = ["MSH"]  # [] = tous les sets actifs
 TARGET_FORMATS = ["PremierDraft", "TradDraft"]  # draft only (le scellé n'a pas de picks)
 
 # Qualitatif : peu d'exemples, les meilleurs. Nouveaux drafts max / set / format / run.

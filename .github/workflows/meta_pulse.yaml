@@ -25,4 +25,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python backend/generate_meta_pulse.py --sets ECL --min-games 500
+        run: python backend/generate_meta_pulse.py --sets MSH --min-games 500
