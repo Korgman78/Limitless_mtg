@@ -20,7 +20,7 @@ TARGET_SET = "MSH"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
-root_dir = current_dir.parent
+root_dir = current_dir.parent.parent  # backend/enrichment -> racine du projet
 env_path = root_dir / '.env'
 load_dotenv(dotenv_path=env_path)
 
