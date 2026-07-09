@@ -77,6 +77,24 @@ def safe_float(value, is_percentage=False):
 def get_gih_strict(row):
     return safe_float(row.get('ever_drawn_win_rate'), is_percentage=True)
 
+def extract_card_rows(data):
+    """Normalise la reponse de /api/card_data.
+
+    Le nouvel endpoint enveloppe les cartes dans {copyright, notes, data:[...]}.
+    On reste tolerant a l'ancien format (tableau brut) au cas ou.
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        rows = data.get('data')
+        if isinstance(rows, list):
+            return rows
+        # Fallback : premiere valeur de type liste
+        for v in data.values():
+            if isinstance(v, list):
+                return v
+    return []
+
 def fetch_data_safe(url, context_name="Données"):
     try:
         print(f"   📡 GET : {url}")
@@ -234,20 +252,22 @@ def ingest_cards(set_code, start_date):
             
             is_sealed = "Sealed" in fmt
             splash_param = "true" if is_sealed else "false"
-            
-            base_url = f"https://www.17lands.com/card_ratings/data?expansion={set_code}&event_type={fmt}&start_date={start_date}&end_date={END_DATE}&combine_splash={splash_param}"
+
+            # ⚠️ Migration API 17Lands (juil. 2026) : les stats de cartes filtrees
+            # par couleur d'archetype sont passees de /card_ratings/data (qui ignore
+            # desormais le param `colors`) au nouvel endpoint /api/card_data.
+            # start_date/end_date/combine_splash sont ignores par ce endpoint, qui
+            # renvoie tout l'historique cumule du set (comportement voulu).
+            base_url = f"https://www.17lands.com/api/card_data?expansion={set_code}&event_type={fmt}&start_date={start_date}&end_date={END_DATE}&combine_splash={splash_param}"
             url = f"{base_url}&colors={color}" if color else base_url
-            
+
             data = fetch_data_safe(url, f"Cartes {context}")
             random_sleep(2.0, 3.5)
 
             if not data: continue
-            
-            target_list = data if isinstance(data, list) else []
-            if isinstance(data, dict):
-                 for v in data.values():
-                     if isinstance(v, list): target_list = v; break
-            
+
+            target_list = extract_card_rows(data)
+
             if not target_list: continue
             unique_batch = {}
 
@@ -341,8 +361,9 @@ def ingest_cards_player_level(set_code, start_date):
         splash_param = "true" if is_sealed else "false"
 
         for level in PLAYER_LEVELS:
+            # Migration API 17Lands : /card_ratings/data -> /api/card_data (voir ingest_cards).
             url = (
-                f"https://www.17lands.com/card_ratings/data?expansion={set_code}"
+                f"https://www.17lands.com/api/card_data?expansion={set_code}"
                 f"&event_type={fmt}&start_date={start_date}&end_date={END_DATE}"
                 f"&combine_splash={splash_param}&user_group={level}"
             )
@@ -352,10 +373,7 @@ def ingest_cards_player_level(set_code, start_date):
 
             if not data: continue
 
-            target_list = data if isinstance(data, list) else []
-            if isinstance(data, dict):
-                for v in data.values():
-                    if isinstance(v, list): target_list = v; break
+            target_list = extract_card_rows(data)
 
             if not target_list: continue
             unique_batch = {}
