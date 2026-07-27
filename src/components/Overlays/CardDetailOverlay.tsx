@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle, TrendingUp, Anchor } from 'lucide-react';
-import type { CardDetailOverlayProps, Card, CrossPerformance } from '../../types';
+import { Layers, ArrowUpDown, AlertTriangle, Trophy, MousePointerClick, Crosshair, Users, HelpCircle, TrendingUp, Anchor, EyeOff } from 'lucide-react';
+import type { CardDetailOverlayProps, Card, CrossPerformance, Deck } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { normalizeRarity, getDeltaStyle, getCardImage, calculateGrade, areColorsEqual, extractColors, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
 import { useCoachMarks } from '../../hooks/useCoachMarks';
@@ -752,6 +752,7 @@ const StrategicPairingCard = ({ pairing, label, colorClass, allCards, onCardSele
 const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, activeFormat, activeSet, decks, cards: allCards, globalMeanWR, onClose, onCardSelect }) => {
   const rCode = normalizeRarity(card.rarity);
   const [sortMode, setSortMode] = useState<string>('synergy');
+  const [hideMinorArchetypes, setHideMinorArchetypes] = useState(false);
   const [showPeers, setShowPeers] = useState(false);
   const [showAllRarityPeers, setShowAllRarityPeers] = useState(false);
 
@@ -788,6 +789,22 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
       return (b.cardWr - b.deckWr) - (a.cardWr - a.deckWr);
     });
   }, [crossPerf, sortMode]);
+
+  // Meta share (%) per archetype, from the deck games already loaded. Lets the
+  // user hide fringe archetypes (< 1% of the metagame) that add noise.
+  const MINOR_META_PCT = 1;
+  const metaShareByDeck = useMemo(() => {
+    const total = decks.reduce((s: number, d: Deck) => s + (d.games || 0), 0) || 1;
+    const m = new Map<string, number>();
+    for (const d of decks) m.set(d.name, (d.games || 0) / total * 100);
+    return m;
+  }, [decks]);
+
+  const visiblePerf = useMemo(() => {
+    if (!hideMinorArchetypes) return sortedPerf;
+    // Unknown share (fallback archetype with no matched deck) stays visible.
+    return sortedPerf.filter((p: CrossPerformance) => (metaShareByDeck.get(p.deckName) ?? Infinity) >= MINOR_META_PCT);
+  }, [sortedPerf, hideMinorArchetypes, metaShareByDeck]);
 
   const minGamesDisplay = activeFormat.toLowerCase().includes('sealed') ? 10 : 500;
 
@@ -919,17 +936,26 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
             <CardEvaluationBlock card={card} allCards={allCards} globalMeanWR={globalMeanWR} onCardSelect={onCardSelect} showPeers={showPeers} setShowPeers={setShowPeers} showAllRarityPeers={showAllRarityPeers} setShowAllRarityPeers={setShowAllRarityPeers} displayWR={globalStats.gih_wr} displayALSA={globalStats.alsa} wrHistory={globalStats.win_rate_history} alsaHistory={globalStats.alsa_history} />
 
             <div>
-              <div className="flex justify-between items-center mb-3">
+              <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:justify-between sm:items-center">
                 <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                   <Layers size={14} /> Performance by Archetype
                 </h3>
-                <button
-                  onClick={() => setSortMode(prev => prev === 'synergy' ? 'winrate' : 'synergy')}
-                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20 transition-colors"
-                >
-                  <ArrowUpDown size={10} />
-                  {sortMode === 'synergy' ? 'Sort by Win Rate' : 'Sort by Impact'}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setHideMinorArchetypes(prev => !prev)}
+                    className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded transition-colors ${hideMinorArchetypes ? 'text-amber-300 bg-amber-400/15 hover:bg-amber-400/25' : 'text-slate-400 bg-slate-700/40 hover:bg-slate-700/60'}`}
+                  >
+                    <EyeOff size={10} />
+                    {'Hide <1%'}
+                  </button>
+                  <button
+                    onClick={() => setSortMode(prev => prev === 'synergy' ? 'winrate' : 'synergy')}
+                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded hover:bg-indigo-400/20 transition-colors"
+                  >
+                    <ArrowUpDown size={10} />
+                    {sortMode === 'synergy' ? 'Sort by Win Rate' : 'Sort by Impact'}
+                  </button>
+                </div>
               </div>
 
               {crossPerfLoading ? (
@@ -942,9 +968,13 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                 <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center">
                   <p className="text-xs text-slate-500">Not enough play data across archetypes (min. {minGamesDisplay} games).</p>
                 </div>
+              ) : visiblePerf.length === 0 ? (
+                <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 text-center">
+                  <p className="text-xs text-slate-500">All archetypes are below 1% of the metagame. <button onClick={() => setHideMinorArchetypes(false)} className="text-indigo-400 font-bold hover:underline">Show all</button></p>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                  {sortedPerf.map((perf: CrossPerformance, idx: number) => {
+                  {visiblePerf.map((perf: CrossPerformance, idx: number) => {
                     const grade = calculateGrade(perf.cardWr, perf.deckWr);
                     return (
                       <div key={idx} className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center gap-3">
