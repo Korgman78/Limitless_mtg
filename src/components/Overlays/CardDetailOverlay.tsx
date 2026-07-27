@@ -772,9 +772,10 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const { data: pivotData } = useFormatPivots(activeSet, activeFormat, true);
   const pivotInfo = useMemo(() => {
     if (!pivotData || !pivotData.pivotNames.has(card.name)) return null;
-    const std = pivotData.stdDevByName[card.name];
-    const rank = Object.values(pivotData.stdDevByName).filter(s => s < std).length + 1;
-    return { std, rank, eligible: pivotData.eligibleCount };
+    const score = pivotData.pivotScoreByName[card.name];
+    const rank = Object.values(pivotData.pivotScoreByName).filter(s => s < score).length + 1;
+    const ranks = pivotData.pivotRanksByName[card.name];
+    return { rank, pool: pivotData.pivotPoolSize, stdRank: ranks?.std, covRank: ranks?.coverage };
   }, [pivotData, card.name]);
 
   const fetchError = error ? 'Failed to load card data' : null;
@@ -837,10 +838,14 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                         <div className="text-center max-w-[220px]">
                           <div className="text-[10px] font-bold text-amber-300 mb-1">Format pivot</div>
                           <div className="text-[9px] text-slate-300 leading-relaxed">
-                            Above-average win rate and the most consistent performance across the archetypes it is played in (weighted by meta share).
+                            Above-average win rate and consistent performance across the archetypes it is played in. Ranked 50/50 on consistency and how much of the metagame it covers.
                           </div>
-                          <div className="text-[8px] text-slate-500 mt-1">
-                            Consistency rank #{pivotInfo.rank} of {pivotInfo.eligible} eligible C/U
+                          <div className="text-[8px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-700/60 flex items-center justify-center gap-2">
+                            <span className="font-bold text-amber-300/90">Rank #{pivotInfo.rank}<span className="text-slate-600 font-normal">/{pivotInfo.pool}</span></span>
+                            <span className="text-slate-600">·</span>
+                            <span>Consistency #{pivotInfo.stdRank}</span>
+                            <span className="text-slate-600">·</span>
+                            <span>Coverage #{pivotInfo.covRank}</span>
                           </div>
                         </div>
                       }>

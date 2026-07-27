@@ -28,8 +28,14 @@ import { normalizeRarity } from '../utils/helpers'
  *      (so a low-variance niche card can't masquerade as a pivot),
  *   5. its mean delta is at least MIN_MEAN_DELTA (it performs ~at archetype
  *      level on average — it doesn't consistently drag the deck down).
- * Among eligible cards, the bottom 15% by stddev of delta (the flattest =
- * the most reliable) are flagged as pivots — a relative, not arbitrary, cut.
+ * Among eligible cards, the flattest PIVOT_PERCENTILE by stddev of delta form
+ * the pivot pool — a relative, not arbitrary, cut on consistency.
+ *
+ * RANKING inside the pool blends the two axes 50/50 via a Borda rank-average:
+ * each card is ranked by delta-stddev (1 = flattest) and, separately, by
+ * metagame coverage (1 = broadest), and the two ranks are averaged (lower =
+ * better). Using ranks rather than raw values keeps the split honest — coverage
+ * can't dominate just because its scale is larger, and one outlier can't skew it.
  */
 
 // Share of the eligible pool flagged as pivots (lowest delta-stddev first).
@@ -57,11 +63,16 @@ const AGGREGATE_NAMES = new Set([
 
 export interface FormatPivotsResult {
   pivotNames: Set<string>
-  stdDevByName: Record<string, number>
-  eligibleCount: number
+  /** Final pivot ranking score = Borda average of the consistency rank and the
+   *  coverage rank within the pool (lower = better). Only holds pool members. */
+  pivotScoreByName: Record<string, number>
+  /** The two component ranks (1 = best) that make up the score, for display. */
+  pivotRanksByName: Record<string, { std: number; coverage: number }>
+  /** Number of cards in the pivot pool (denominator of the displayed rank). */
+  pivotPoolSize: number
 }
 
-const EMPTY: FormatPivotsResult = { pivotNames: new Set(), stdDevByName: {}, eligibleCount: 0 }
+const EMPTY: FormatPivotsResult = { pivotNames: new Set(), pivotScoreByName: {}, pivotRanksByName: {}, pivotPoolSize: 0 }
 
 export function useFormatPivots(activeSet: string, activeFormat: string, enabled: boolean) {
   return useQuery({
@@ -151,9 +162,9 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
         }
       }
 
-      // Keep eligible cards and score them by the stddev of their deltas.
-      const eligible: { name: string; std: number }[] = []
-      const stdDevByName: Record<string, number> = {}
+      // Keep eligible cards with their two ranking axes: delta-stddev
+      // (consistency) and metagame coverage.
+      const eligible: { name: string; std: number; coverage: number }[] = []
       for (const [name, agg] of byCard) {
         const r = normalizeRarity(agg.rarity)
         if (r !== 'C' && r !== 'U') continue
@@ -192,16 +203,35 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
 
         const variance = entries.reduce((s, e, i) => s + weights[i] * (e.delta - meanDelta) ** 2, 0) / totalWeight
         const std = Math.sqrt(variance)
-        eligible.push({ name, std })
-        stdDevByName[name] = std
+        eligible.push({ name, std, coverage })
       }
 
-      // Bottom 15% by delta-stddev = the most consistent contributors = pivots.
-      eligible.sort((a, b) => a.std - b.std)
+      // Selection (unchanged): the flattest PIVOT_PERCENTILE by delta-stddev
+      // form the pivot pool — a card must be genuinely consistent to qualify.
       const cut = eligible.length > 0 ? Math.max(1, Math.round(eligible.length * PIVOT_PERCENTILE)) : 0
-      const pivotNames = new Set(eligible.slice(0, cut).map(e => e.name))
+      const pool = [...eligible].sort((a, b) => a.std - b.std).slice(0, cut)
 
-      return { pivotNames, stdDevByName, eligibleCount: eligible.length }
+      // Ranking (50/50 Borda): rank the pool on each axis (1 = best), then
+      // average the two ranks. Ties on one axis are broken by the other so the
+      // ordinal ranks are deterministic.
+      const rankStd = new Map<string, number>()
+      ;[...pool].sort((a, b) => (a.std - b.std) || (b.coverage - a.coverage))
+        .forEach((e, i) => rankStd.set(e.name, i + 1))
+      const rankCov = new Map<string, number>()
+      ;[...pool].sort((a, b) => (b.coverage - a.coverage) || (a.std - b.std))
+        .forEach((e, i) => rankCov.set(e.name, i + 1))
+
+      const pivotScoreByName: Record<string, number> = {}
+      const pivotRanksByName: Record<string, { std: number; coverage: number }> = {}
+      for (const e of pool) {
+        const rs = rankStd.get(e.name)!
+        const rc = rankCov.get(e.name)!
+        pivotScoreByName[e.name] = (rs + rc) / 2
+        pivotRanksByName[e.name] = { std: rs, coverage: rc }
+      }
+      const pivotNames = new Set(pool.map(e => e.name))
+
+      return { pivotNames, pivotScoreByName, pivotRanksByName, pivotPoolSize: pool.length }
     },
     enabled: enabled && !!activeSet,
     staleTime: 5 * 60_000,
