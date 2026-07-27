@@ -48,7 +48,11 @@ from pathlib import Path
 # ==============================================================================
 
 TARGET_SET_CODES = ["MSH"]  # [] = tous les sets actifs
-TARGET_FORMATS = ["PremierDraft", "TradDraft"]  # draft only (le scellé n'a pas de picks)
+# Premier Draft uniquement : le Trad Draft ne se joue pas en classé, donc 17Lands
+# n'expose aucune séquence de picks classée pour ce format (rien à ingérer). La
+# feature Draft Practice s'appuie donc toujours sur les picks Premier Draft, même
+# lorsque l'utilisateur est en Trad Draft dans l'app.
+TARGET_FORMATS = ["PremierDraft"]
 
 # Qualitatif : peu d'exemples, les meilleurs. Nouveaux drafts max / set / format / run.
 MAX_PER_FORMAT = 10

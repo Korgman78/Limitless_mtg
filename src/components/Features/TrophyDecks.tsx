@@ -861,7 +861,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
             {/* Draft Practice (replay mythic draft pods) */}
             <AnimatePresence>
                 {showPractice && (
-                    <DraftPracticeOverlay activeSet={activeSet} activeFormat={activeFormat} onClose={() => setShowPractice(false)} />
+                    <DraftPracticeOverlay activeSet={activeSet} onClose={() => setShowPractice(false)} />
                 )}
             </AnimatePresence>
 

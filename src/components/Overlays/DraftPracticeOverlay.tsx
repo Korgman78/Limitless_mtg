@@ -26,13 +26,18 @@ import {
 
 interface DraftPracticeOverlayProps {
   activeSet: string;
-  activeFormat: string;
   onClose: () => void;
 }
 
 type Phase = 'intro' | 'drafting' | 'recap' | 'build' | 'compare';
 type Mode = 'blind' | 'coached';
 type WRMap = Map<string, number | null>;
+
+// Draft Practice ne rejoue que des drafts Premier Draft : le Trad Draft ne se
+// joue pas en classé, donc l'ETL n'ingère aucune séquence de picks pour ce
+// format. On sert donc toujours les picks/stats Premier Draft, quel que soit le
+// format actif de l'app (le point d'entrée reste dispo en PD comme en TD).
+const PRACTICE_FORMAT = 'PremierDraft';
 
 // Terres de base par couleur (pour le builder de deck)
 const BASIC_OF: Record<string, string> = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
@@ -186,11 +191,11 @@ const CardTile: React.FC<{
 );
 
 // ============================================================ MAIN COMPONENT
-export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, activeFormat, onClose }) => {
-  const { data: sessions = [], isLoading: listLoading } = useDraftPracticeSessions(activeSet, activeFormat);
-  const { data: cardsData } = useCards(activeSet, activeFormat, 'Global');
-  const { data: pairMap = {} } = useFormatSynergies(activeSet, activeFormat);
-  const { data: skeletons = [] } = useSkeletons(activeSet, activeFormat);
+export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, onClose }) => {
+  const { data: sessions = [], isLoading: listLoading } = useDraftPracticeSessions(activeSet, PRACTICE_FORMAT);
+  const { data: cardsData } = useCards(activeSet, PRACTICE_FORMAT, 'Global');
+  const { data: pairMap = {} } = useFormatSynergies(activeSet, PRACTICE_FORMAT);
+  const { data: skeletons = [] } = useSkeletons(activeSet, PRACTICE_FORMAT);
 
   const wrMap = useMemo<WRMap>(() => {
     const m: WRMap = new Map();
@@ -215,7 +220,7 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<{ you: DeckAnalysisResult | null; pro: DeckAnalysisResult | null } | null>(null);
 
-  const formatLabel = FORMAT_OPTIONS.find(o => o.value === activeFormat)?.label || activeFormat;
+  const formatLabel = FORMAT_OPTIONS.find(o => o.value === PRACTICE_FORMAT)?.label || PRACTICE_FORMAT;
 
   // Choisit (ou re-valide) une session quand la liste dispo change
   useEffect(() => {
@@ -227,15 +232,16 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     );
   }, [sessions]);
 
-  // Reset complet UNIQUEMENT quand le set/format change réellement (pas au montage)
-  const ctxRef = useRef(`${activeSet}|${activeFormat}`);
+  // Reset complet UNIQUEMENT quand le set change réellement (pas au montage). Le
+  // format est épinglé sur PRACTICE_FORMAT, donc basculer PD↔TD dans l'app ne
+  // doit pas réinitialiser la session en cours.
+  const ctxRef = useRef(activeSet);
   useEffect(() => {
-    const key = `${activeSet}|${activeFormat}`;
-    if (key === ctxRef.current) return;
-    ctxRef.current = key;
+    if (activeSet === ctxRef.current) return;
+    ctxRef.current = activeSet;
     setSelectedId(null); setPhase('intro'); setIdx(0); setUserPicks([]); setReveal(null);
     setDeck({}); setBasics({ W: 0, U: 0, B: 0, R: 0, G: 0 }); setAnalysis(null);
-  }, [activeSet, activeFormat]);
+  }, [activeSet]);
 
   const shuffleOpponent = () => {
     if (sessions.length < 2) return;
@@ -348,9 +354,9 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     const skels = skeletons as AnalysisSkeleton[];
     try {
       const [you, pro] = await Promise.all([
-        analyzeDeckText(activeSet, activeFormat, buildUserDeckText(), skels),
+        analyzeDeckText(activeSet, PRACTICE_FORMAT, buildUserDeckText(), skels),
         session?.cardlist
-          ? analyzeDeckText(activeSet, activeFormat, cardlistToDeckText(session.cardlist), skels)
+          ? analyzeDeckText(activeSet, PRACTICE_FORMAT, cardlistToDeckText(session.cardlist), skels)
           : Promise.resolve(null),
       ]);
       setAnalysis({ you, pro });
