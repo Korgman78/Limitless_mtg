@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 import argparse
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -53,48 +54,70 @@ def get_active_sets():
         print(f"❌ Exception fetch sets: {e}")
         return []
 
+def _get_with_retry(url, retries=3, backoff=3):
+    """GET avec retries pour absorber timeouts / 429 sur les gros payloads (14k+ decks)."""
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.get(url, headers=HEADERS_SUPABASE, timeout=60)
+            if response.status_code == 200:
+                return response
+            print(f"   ⚠️ HTTP {response.status_code} (tentative {attempt}/{retries}): {response.text[:150]}")
+        except Exception as e:
+            print(f"   ⚠️ Exception fetch (tentative {attempt}/{retries}): {e}")
+        if attempt < retries:
+            time.sleep(backoff * attempt)
+    return None
+
 def get_trophy_decks(set_code, fmt):
-    """Récupère tous les trophy decks pour un set/format avec pagination"""
+    """Récupère tous les trophy decks pour un set/format avec pagination + retries.
+
+    Retourne None en cas d'échec dur (retries épuisés) pour ne PAS confondre avec
+    un format légitimement vide : on préfère sauter le format sans écraser les
+    synergies existantes plutôt que d'insérer des données partielles/fausses.
+    """
     all_decks = []
     offset = 0
     page_size = 1000
 
     while True:
         url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist&order=id&limit={page_size}&offset={offset}"
-        try:
-            response = requests.get(url, headers=HEADERS_SUPABASE)
-            if response.status_code != 200:
-                print(f"   ❌ Erreur fetch decks: {response.text[:200]}")
-                break
+        response = _get_with_retry(url)
+        if response is None:
+            print(f"   ❌ Fetch decks abandonné après retries (offset={offset})")
+            return None  # échec dur
 
-            data = response.json()
-            if not data:
-                break
-
-            all_decks.extend(data)
-
-            if len(data) < page_size:
-                break  # Dernière page
-
-            offset += page_size
-            print(f"   📄 {len(all_decks)} decks chargés...")
-
-        except Exception as e:
-            print(f"   ❌ Exception fetch decks: {e}")
+        data = response.json()
+        if not data:
             break
+
+        all_decks.extend(data)
+
+        if len(data) < page_size:
+            break  # Dernière page
+
+        offset += page_size
+        print(f"   📄 {len(all_decks)} decks chargés...")
 
     return all_decks
 
+def _order_key(name):
+    """Clé de tri reproduisant le poids primaire (insensible à la casse) de la
+    collation Postgres. Le tri ASCII de Python place les majuscules avant les
+    minuscules ('P' < 'o'), ce qui viole la contrainte `card_order_check`
+    (card_a < card_b) côté DB. casefold() aligne les deux ordres."""
+    return (name.casefold(), name)
+
 def save_synergies(synergies, set_code, fmt):
-    """Sauvegarde les synergies dans Supabase"""
+    """Sauvegarde les synergies dans Supabase. Retourne (saved, failed)."""
     if not synergies:
-        return 0
+        return 0, 0
 
     # Préparer les records
     records = []
     for (card_a, card_b), data in synergies.items():
-        # Ordonner alphabétiquement et ajuster les confidences en conséquence
-        if card_a > card_b:
+        # Ordre canonique aligné sur la collation Postgres (cf. _order_key),
+        # et confidences ajustées en conséquence.
+        if _order_key(card_a) > _order_key(card_b):
             card_a, card_b = card_b, card_a
             conf_a_to_b = data['confidence_b_to_a']
             conf_b_to_a = data['confidence_a_to_b']
@@ -115,22 +138,43 @@ def save_synergies(synergies, set_code, fmt):
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
 
-    # Upsert par batch
+    api_url = f"{SUPABASE_URL}/rest/v1/synergy_scores?on_conflict=set_code,format,card_a,card_b"
+
+    # Upsert par batch. Un batch PostgREST est atomique : une seule ligne fautive
+    # fait échouer les 500. On retombe alors en insertion ligne-par-ligne pour ne
+    # perdre que les vrais rejets au lieu de tout le batch.
     saved = 0
+    failed = 0
     for i in range(0, len(records), 500):
         chunk = records[i:i + 500]
-        api_url = f"{SUPABASE_URL}/rest/v1/synergy_scores?on_conflict=set_code,format,card_a,card_b"
-
         try:
-            resp = requests.post(api_url, json=chunk, headers=HEADERS_SUPABASE)
-            if resp.status_code >= 400:
-                print(f"      ❌ Erreur batch {i}: {resp.text[:200]}")
-            else:
+            resp = requests.post(api_url, json=chunk, headers=HEADERS_SUPABASE, timeout=60)
+            if resp.status_code < 400:
                 saved += len(chunk)
-        except Exception as e:
-            print(f"      ❌ Exception POST: {e}")
+                continue
 
-    return saved
+            print(f"      ⚠️ Batch {i} rejeté ({resp.status_code}), fallback ligne-par-ligne...")
+            for rec in chunk:
+                try:
+                    r = requests.post(api_url, json=[rec], headers=HEADERS_SUPABASE, timeout=30)
+                    if r.status_code < 400:
+                        saved += 1
+                    else:
+                        failed += 1
+                        if failed <= 5:
+                            print(f"         ❌ {rec['card_a']} + {rec['card_b']}: {r.text[:120]}")
+                except Exception as e:
+                    failed += 1
+                    if failed <= 5:
+                        print(f"         ❌ Exception ligne: {e}")
+        except Exception as e:
+            print(f"      ❌ Exception POST batch {i}: {e}")
+            failed += len(chunk)
+
+    if failed:
+        print(f"      ⚠️ {failed} synergies rejetées individuellement (ignorées)")
+
+    return saved, failed
 
 def delete_old_synergies(set_code, fmt):
     """Supprime les anciennes synergies pour un set/format avant recalcul"""
@@ -253,14 +297,21 @@ def process_synergies(set_code, formats):
     print(f"{'='*60}")
 
     total_saved = 0
+    total_fetch_failed = 0
+    total_row_failed = 0
 
     for fmt in formats:
         print(f"\n📂 Format: {fmt}")
 
         # Récupérer les trophy decks
         decks = get_trophy_decks(set_code, fmt)
+        if decks is None:
+            # Échec dur du fetch : on saute SANS toucher aux synergies existantes.
+            print(f"   ❌ Fetch échoué — format sauté (données existantes préservées)")
+            total_fetch_failed += 1
+            continue
         if not decks:
-            print(f"   ⚠️ Aucun deck trouvé")
+            print(f"   ⚠️ Aucun deck trouvé (format vide)")
             continue
 
         # Calculer les lift scores
@@ -272,8 +323,9 @@ def process_synergies(set_code, formats):
             delete_old_synergies(set_code, fmt)
 
             # Sauvegarder les nouvelles
-            saved = save_synergies(synergies, set_code, fmt)
+            saved, failed = save_synergies(synergies, set_code, fmt)
             total_saved += saved
+            total_row_failed += failed
             print(f"   ✅ {saved} synergies sauvegardées")
 
             # === LOGS: Top 10 par Lift Score ===
@@ -295,7 +347,7 @@ def process_synergies(set_code, formats):
             for i, ((card_a, card_b), data) in enumerate(top_by_conf_ba, 1):
                 print(f"      {i:2}. {card_b} → {card_a}: {data['confidence_b_to_a']:.0%} (lift={data['lift']:.2f}, co={data['co_occurrence']})")
 
-    return total_saved
+    return total_saved, total_fetch_failed, total_row_failed
 
 # ==============================================================================
 # MAIN
@@ -361,12 +413,28 @@ if __name__ == "__main__":
 
     # Traiter chaque set
     total_saved = 0
+    total_fetch_failed = 0
+    total_row_failed = 0
     for set_code in sets_to_process:
-        saved = process_synergies(set_code, TARGET_FORMATS)
+        saved, fetch_failed, row_failed = process_synergies(set_code, TARGET_FORMATS)
         total_saved += saved
+        total_fetch_failed += fetch_failed
+        total_row_failed += row_failed
 
     # Résumé final
     print(f"\n{'='*60}")
     print("✨ ETL Synergies - Terminé")
     print(f"{'='*60}")
     print(f"💾 Total synergies sauvegardées: {total_saved}")
+    if total_row_failed:
+        print(f"ℹ️ {total_row_failed} synergie(s) rejetée(s) individuellement (edge-cases de collation, négligeable)")
+
+    # Sortir en erreur pour rendre le workflow GitHub ROUGE (au lieu de
+    # "vert-silencieux") uniquement sur un VRAI problème :
+    #  - échec dur de fetch (les données n'ont PAS été mises à jour), ou
+    #  - rejets d'insert massifs au-delà de la tolérance (signale une régression,
+    #    pas les quelques paires à ponctuation exotique que le fallback isole).
+    ROW_FAIL_TOLERANCE = 25
+    if total_fetch_failed or total_row_failed > ROW_FAIL_TOLERANCE:
+        print(f"❌ Échec: {total_fetch_failed} fetch(s) dur(s), {total_row_failed} rejet(s) d'insert (tolérance {ROW_FAIL_TOLERANCE})")
+        exit(1)
