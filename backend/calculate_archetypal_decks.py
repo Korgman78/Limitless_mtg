@@ -103,17 +103,63 @@ def get_cards_metadata(set_code, fmt):
     return merged_data
 
 def get_trophy_decks(set_code, fmt):
+    """Charge les trophy decks d'un set/format avec pagination + retries.
+
+    Retourne None sur un échec dur (le format doit être sauté SANS écraser les
+    squelettes existants), une liste (éventuellement vide) sinon. PremierDraft
+    dépasse les 14k decks : on ne sélectionne que les colonnes réellement
+    utilisées et on pagine par 500 pour rester sous le statement timeout
+    Postgres (erreur 57014 sinon, silencieuse dans l'ancienne version).
+    """
     print(f"🏆 Chargement des trophy decks pour {set_code} ({fmt})...")
-    decks = fetch_data("trophy_decks", f"set_code=eq.{set_code}&format=eq.{fmt}&select=*")
+
+    all_decks = []
+    offset = 0
+    page_size = 500
+    page_num = 0
+    max_retries = 3
+
+    while True:
+        url = (f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}"
+               f"&select=archetype,cardlist,trophy_time&order=id&limit={page_size}&offset={offset}")
+
+        data = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.get(url, headers=HEADERS_SUPABASE, timeout=120)
+            except requests.RequestException as e:
+                print(f"   ⚠️ Page {page_num + 1} tentative {attempt}/{max_retries}: {e}")
+                time.sleep(3 * attempt)
+                continue
+
+            if resp.status_code == 200:
+                data = resp.json()
+                break
+
+            print(f"   ⚠️ Page {page_num + 1} tentative {attempt}/{max_retries}: "
+                  f"status={resp.status_code} - {resp.text[:200]}")
+            time.sleep(3 * attempt)
+
+        if data is None:
+            print(f"   ❌ Échec dur du fetch trophy_decks après {max_retries} tentatives")
+            return None
+
+        page_num += 1
+        all_decks.extend(data)
+        print(f"   📄 Page {page_num}: {len(data)} lignes (total: {len(all_decks)})")
+
+        if len(data) < page_size:
+            break
+        offset += page_size
 
     # Debug: vérifier le nombre de decks par archétype
     from collections import Counter
-    arch_counts = Counter(d['archetype'] for d in decks)
-    print(f"   📊 Distribution des {len(decks)} decks par archétype:")
+    arch_counts = Counter(d['archetype'] for d in all_decks)
+    print(f"   📊 Distribution des {len(all_decks)} decks par archétype:")
     for arch, count in sorted(arch_counts.items(), key=lambda x: -x[1])[:10]:
         print(f"      {arch}: {count} decks")
 
-    return decks
+    return all_decks
 
 def get_archetype_synergies(set_code, fmt):
     """Charge les scores de synergie significatifs"""
@@ -858,6 +904,8 @@ if __name__ == "__main__":
     print(f"   TARGET_FORMATS: {TARGET_FORMATS}")
     print("=" * 60)
 
+    failed_formats = []
+
     for set_code in TARGET_SET_CODES:
         print(f"🚀 Traitement du set {set_code}...")
 
@@ -866,12 +914,20 @@ if __name__ == "__main__":
             card_meta = get_cards_metadata(set_code, fmt)
             trophies = get_trophy_decks(set_code, fmt)
             synergies = get_archetype_synergies(set_code, fmt)
-            
+
             # Calculer le WR moyen du format (pour le centrage des scores d'importance)
             all_wrs = [m['gih_wr'] for m in card_meta.values() if m.get('gih_wr')]
             format_avg_wr = statistics.mean(all_wrs) if all_wrs else 55.0
             print(f"      📊 GIH WR moyen du format: {format_avg_wr:.2f}% (sur {len(all_wrs)} cartes)")
-            
+
+            if trophies is None:
+                # Échec dur du fetch : squelettes existants préservés, mais on
+                # veut que le workflow soit ROUGE (sinon on garde des scores de
+                # synergie périmés à 0 sans jamais le savoir).
+                print(f"      ❌ Fetch échoué pour {set_code} ({fmt}) — squelettes existants préservés")
+                failed_formats.append(f"{set_code}/{fmt}")
+                continue
+
             if not trophies:
                 print(f"      ⚠️ Aucun trophy deck pour {set_code} ({fmt}).")
                 continue
@@ -918,7 +974,12 @@ if __name__ == "__main__":
                 resp = requests.post(url, json=results, headers=HEADERS_SUPABASE)
                 if resp.status_code >= 400:
                     print(f"      ❌ Erreur sauvegarde: {resp.text}")
+                    failed_formats.append(f"{set_code}/{fmt} (insert)")
                 else:
                     print(f"      ✅ Squelettes mis à jour pour {set_code} ({fmt}) !")
-    
+
+    if failed_formats:
+        print(f"\n❌ Échec sur {len(failed_formats)} format(s): {', '.join(failed_formats)}")
+        exit(1)
+
     print("\n🏁 Mission accomplie.")
