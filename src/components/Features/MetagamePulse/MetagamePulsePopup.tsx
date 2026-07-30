@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { TrendingUp, TrendingDown, Trophy, Activity, Layers, BarChart3 } from 'lucide-react'
 import { useMetagamePulse, type PulseTimeWindow, type ArchetypePulseItem, type CardPulseItem, type TrophyPulseItem } from '../../../queries/useMetagamePulse'
@@ -17,46 +17,95 @@ const TIME_OPTIONS: { value: PulseTimeWindow; label: string }[] = [
   { value: 'start', label: 'Since Start' },
 ]
 
-// ── Infinite marquee carousel ──────────────────────────────────────────────
-// Duplicates children so the strip is seamless. CSS animation scrolls
-// the first copy off-screen, then resets instantly — creating a loop.
-// Speed is deliberately slow (≈ 30-40s per cycle).
+// ── Deck: static grid on desktop, swipeable rail on mobile ─────────────────
+// Desktop (md+) : plain CSS grid, everything visible at once, zero motion.
+// Mobile        : native scroll-snap rail. Each slide takes ~78% of the
+//                 viewport so the next card always peeks — the swipe
+//                 affordance stays visible. Dots reflect / drive position.
 
-const InfiniteCarousel: React.FC<{ children: React.ReactNode; speed?: number }> = ({
+const SwipeDeck: React.FC<{ children: React.ReactNode; cols?: string }> = ({
   children,
-  speed = 35,
+  cols = 'md:grid-cols-5',
 }) => {
-  const [isPaused, setIsPaused] = useState(false)
+  const items = React.Children.toArray(children)
+  const railRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(0)
+
+  // Stable signature of the current list — changes only when the items
+  // themselves change (toggle Rising/Falling, metric, time window).
+  const signature = items.map((c) => (React.isValidElement(c) ? c.key : '')).join('|')
+
+  // Stride = distance between two slide origins (width + gap), read from DOM
+  // so it stays correct whatever the responsive width ends up being.
+  const strideOf = (rail: HTMLDivElement): number => {
+    const kids = rail.children
+    if (kids.length > 1) {
+      return (kids[1] as HTMLElement).offsetLeft - (kids[0] as HTMLElement).offsetLeft
+    }
+    return (kids[0] as HTMLElement)?.offsetWidth || rail.clientWidth
+  }
+
+  const handleScroll = useCallback(() => {
+    const rail = railRef.current
+    if (!rail) return
+    const stride = strideOf(rail)
+    if (!stride) return
+    const idx = Math.max(0, Math.min(items.length - 1, Math.round(rail.scrollLeft / stride)))
+    setActive((prev) => (prev === idx ? prev : idx))
+  }, [items.length])
+
+  const scrollTo = useCallback((idx: number) => {
+    const rail = railRef.current
+    if (!rail) return
+    rail.scrollTo({ left: strideOf(rail) * idx, behavior: 'smooth' })
+  }, [])
+
+  // Reset to the first slide when the underlying list changes (toggle, filter)
+  useEffect(() => {
+    railRef.current?.scrollTo({ left: 0 })
+    setActive(0)
+  }, [signature])
 
   return (
-    <div
-      className="overflow-hidden rounded-xl"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onTouchStart={() => setIsPaused(true)}
-      onTouchEnd={() => setTimeout(() => setIsPaused(false), 4000)}
-    >
-      <div
-        className="flex gap-4 w-max carousel-track"
-        style={{
-          animationDuration: `${speed}s`,
-          animationPlayState: isPaused ? 'paused' : 'running',
-        }}
-      >
-        {/* Original set */}
-        {children}
-        {/* Duplicate for seamless loop */}
-        {children}
+    <div className="space-y-2.5">
+      <div className="relative">
+        <div
+          ref={railRef}
+          onScroll={handleScroll}
+          className={`flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 pr-8 pulse-rail md:grid ${cols} md:gap-3 md:overflow-visible md:pr-0 md:pb-0`}
+        >
+          {items.map((child, i) => (
+            <div key={i} className="snap-start shrink-0 w-[78%] md:w-auto">
+              {child}
+            </div>
+          ))}
+        </div>
+
+        {/* Right fade — hints there is more to the right (mobile only) */}
+        {items.length > 1 && active < items.length - 1 && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-950 to-transparent md:hidden" />
+        )}
       </div>
 
+      {/* Dots — mobile only */}
+      {items.length > 1 && (
+        <div className="flex items-center justify-center gap-1.5 md:hidden">
+          {items.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => scrollTo(i)}
+              aria-label={`Go to item ${i + 1}`}
+              className={`h-1.5 rounded-full transition-all ${
+                i === active ? 'w-5 bg-indigo-400' : 'w-1.5 bg-slate-700'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+
       <style>{`
-        @keyframes marquee-scroll {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .carousel-track {
-          animation: marquee-scroll linear infinite;
-        }
+        .pulse-rail { scrollbar-width: none; -ms-overflow-style: none; }
+        .pulse-rail::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
   )
@@ -130,9 +179,9 @@ const ArchetypeCard: React.FC<{ item: ArchetypePulseItem; index: number; directi
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.08, duration: 0.3 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.25 }}
       onClick={onClick}
       className={`rounded-xl border ${borderColor} bg-slate-800/50 p-2 md:p-3 space-y-1.5 md:space-y-2.5 backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
@@ -187,11 +236,11 @@ const CardItem: React.FC<{
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.07, duration: 0.3 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.25 }}
       onClick={onClick}
-      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
+      className={`w-full h-full rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
         <CardImage
@@ -202,11 +251,11 @@ const CardItem: React.FC<{
         <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-slate-900 to-transparent" />
       </div>
 
-      <div className="p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-base font-bold text-white tabular-nums">{displayValue}</span>
+      <div className="p-2.5 md:p-3 space-y-2">
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-sm md:text-base font-bold text-white tabular-nums">{displayValue}</span>
           <Tooltip content={<span className="text-[10px]">{DELTA_TOOLTIPS[metric]}</span>}>
-            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-bold cursor-help ${deltaBg} ${deltaColor}`}>
+            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] md:text-[11px] font-bold cursor-help ${deltaBg} ${deltaColor}`}>
               {isRising ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
               {deltaLabel}
             </span>
@@ -215,7 +264,7 @@ const CardItem: React.FC<{
 
         {item.wrHistory.length > 1 && (
           <div className="flex justify-center">
-            <Sparkline data={item.wrHistory} width={200} height={22} />
+            <Sparkline data={item.wrHistory} width={130} height={22} />
           </div>
         )}
       </div>
@@ -238,11 +287,11 @@ const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'g
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.08, duration: 0.3 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.25 }}
       onClick={onClick}
-      className={`flex-shrink-0 w-[220px] md:w-[250px] rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
+      className={`w-full h-full rounded-xl border ${borderColor} bg-slate-800/50 overflow-hidden backdrop-blur-sm ${onClick ? 'cursor-pointer active:scale-[0.97] transition-transform' : ''}`}
     >
       <div className="relative">
         <CardImage
@@ -253,10 +302,10 @@ const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'g
         <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-slate-900 to-transparent" />
       </div>
 
-      <div className="p-3 space-y-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Trophy share</span>
-          <span className="text-base font-bold text-white tabular-nums">
+      <div className="p-2.5 md:p-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] md:text-xs text-slate-400">Trophy share</span>
+          <span className="text-sm md:text-base font-bold text-white tabular-nums">
             {(item.freq * 100).toFixed(1)}%
           </span>
         </div>
@@ -276,9 +325,9 @@ const TrophyCard: React.FC<{ item: TrophyPulseItem; index: number; direction: 'g
 // ── Section shimmer (used per-section during refetch) ───────────────────────
 
 const SectionShimmer: React.FC<{ height?: string }> = ({ height = 'h-[200px]' }) => (
-  <div className="flex gap-4 animate-pulse">
-    {[0, 1, 2].map((j) => (
-      <div key={j} className={`flex-1 min-w-[220px] ${height} bg-slate-800/40 rounded-xl`} />
+  <div className="grid grid-cols-3 md:grid-cols-5 gap-3 animate-pulse">
+    {[0, 1, 2, 3, 4].map((j) => (
+      <div key={j} className={`${height} bg-slate-800/40 rounded-xl ${j > 2 ? 'hidden md:block' : ''}`} />
     ))}
   </div>
 )
@@ -296,9 +345,9 @@ const PulseSkeleton: React.FC = () => (
             <div className="h-2.5 w-44 bg-slate-800/60 rounded" />
           </div>
         </div>
-        <div className="flex gap-4">
-          {[0, 1, 2].map((j) => (
-            <div key={j} className="flex-1 min-w-[220px] h-[200px] bg-slate-800/40 rounded-xl" />
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+          {[0, 1, 2, 3, 4].map((j) => (
+            <div key={j} className={`h-[200px] bg-slate-800/40 rounded-xl ${j > 2 ? 'hidden md:block' : ''}`} />
           ))}
         </div>
       </div>
@@ -347,7 +396,7 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, o
     <div className="flex flex-col h-full bg-slate-950 overflow-y-auto">
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-950/95 via-slate-900/95 to-purple-950/95 backdrop-blur-md px-5 py-4 border-b border-indigo-500/20">
-        <div className="max-w-3xl mx-auto space-y-3">
+        <div className="max-w-3xl lg:max-w-5xl mx-auto space-y-3">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30">
               <Activity className="w-5 h-5 text-indigo-400" />
@@ -380,7 +429,7 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, o
       </div>
 
       {/* ── Body ───────────────────────────────────────────────────────── */}
-      <div className="px-4 sm:px-6 py-6 space-y-8 max-w-3xl mx-auto w-full">
+      <div className="px-4 sm:px-6 py-6 space-y-8 max-w-3xl lg:max-w-5xl mx-auto w-full">
         {isLoading ? (
           <PulseSkeleton />
         ) : (
@@ -445,11 +494,11 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, o
               {isRefetching ? (
                 <SectionShimmer />
               ) : cards.length > 0 ? (
-                <InfiniteCarousel speed={40}>
+                <SwipeDeck>
                   {cards.map((c, i) => (
                     <CardItem key={c.name} item={c} index={i} direction={cardDirection} metric={cardMetric} onClick={onCardClick ? () => onCardClick(c.name) : undefined} />
                   ))}
-                </InfiniteCarousel>
+                </SwipeDeck>
               ) : (
                 <EmptyState label="card" />
               )}
@@ -475,11 +524,11 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, o
               {isRefetching ? (
                 <SectionShimmer />
               ) : trophyMovers.length > 0 ? (
-                <InfiniteCarousel speed={35}>
+                <SwipeDeck>
                   {trophyMovers.map((t, i) => (
                     <TrophyCard key={t.name} item={t} index={i} direction={trophyDirection} onClick={onCardClick ? () => onCardClick(t.name) : undefined} />
                   ))}
-                </InfiniteCarousel>
+                </SwipeDeck>
               ) : (
                 <EmptyState label="trophy" />
               )}
