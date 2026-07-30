@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { TrendingUp, TrendingDown, Trophy, Activity, Layers, BarChart3 } from 'lucide-react'
-import { useMetagamePulse, type PulseTimeWindow, type ArchetypePulseItem, type CardPulseItem, type TrophyPulseItem } from '../../../queries/useMetagamePulse'
+import { useMetagamePulse, MIN_META_SHARE, type PulseTimeWindow, type ArchetypePulseItem, type CardPulseItem, type TrophyPulseItem } from '../../../queries/useMetagamePulse'
 import { ManaIcons } from '../../Common/ManaIcons'
 import { Sparkline } from '../../Charts/Sparkline'
 import { getCardImage } from '../../../utils/helpers'
@@ -74,8 +74,10 @@ const SwipeDeck: React.FC<{ children: React.ReactNode; cols?: string }> = ({
           onScroll={handleScroll}
           className={`flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 pr-8 pulse-rail md:grid ${cols} md:gap-3 md:overflow-visible md:pr-0 md:pb-0`}
         >
+          {/* snap-always : un flick ne peut pas sauter par-dessus une carte,
+              le scroll doit s'arreter a chaque point de snap */}
           {items.map((child, i) => (
-            <div key={i} className="snap-start shrink-0 w-[78%] md:w-auto">
+            <div key={i} className="snap-start snap-always shrink-0 w-[78%] md:w-auto">
               {child}
             </div>
           ))}
@@ -119,7 +121,8 @@ const PulseSection: React.FC<{
   subtitle: string
   children: React.ReactNode
   delay?: number
-}> = ({ icon, title, subtitle, children, delay = 0 }) => (
+  badge?: { label: string; hint: string }
+}> = ({ icon, title, subtitle, children, delay = 0, badge }) => (
   <motion.div
     initial={{ opacity: 0, y: 16 }}
     animate={{ opacity: 1, y: 0 }}
@@ -131,7 +134,16 @@ const PulseSection: React.FC<{
         {icon}
       </div>
       <div>
-        <h3 className="text-sm font-bold text-white">{title}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-sm font-bold text-white">{title}</h3>
+          {badge && (
+            <Tooltip content={<span className="text-[10px]">{badge.hint}</span>}>
+              <span className="px-1.5 py-px rounded border border-slate-700/60 bg-slate-800/60 text-[9px] font-semibold text-slate-500 cursor-help whitespace-nowrap">
+                {badge.label}
+              </span>
+            </Tooltip>
+          )}
+        </div>
         <p className="text-[10px] text-slate-500">{subtitle}</p>
       </div>
     </div>
@@ -440,6 +452,10 @@ export const MetagamePulsePopup: React.FC<Props> = ({ activeSet, activeFormat, o
               title="Archetypes Pulse"
               subtitle="Biggest win rate movers"
               delay={0}
+              badge={{
+                label: `>${(MIN_META_SHARE * 100).toFixed(0)}% meta only`,
+                hint: `Archetypes played in less than ${(MIN_META_SHARE * 100).toFixed(0)}% of the metagame are excluded — their samples are too small for a reliable trend.`,
+              }}
             >
               <div className="flex items-center gap-2 mb-1">
                 <TogglePill

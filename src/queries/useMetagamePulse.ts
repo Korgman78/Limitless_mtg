@@ -47,6 +47,25 @@ export interface MetagamePulseData {
 
 const BASIC_LANDS = new Set(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'])
 
+/** Archetypes below this share of the metagame are too noisy to rank. */
+export const MIN_META_SHARE = 0.01
+
+/** Rollup rows in archetype_stats — they aggregate other rows, never a real deck. */
+const AGGREGATE_ARCHETYPES = [
+  'All Decks',
+  'Two-color', 'Two-color + Splash',
+  'Three-color', 'Three-color + Splash',
+  'Mono-color', 'Mono-color + Splash',
+  'Four-color', 'Four-color + Splash',
+  'Five-color', 'Five-color + Splash',
+]
+
+/** "BGW" / "BGW + Splash" → a real archetype. "Three-color" → a rollup. */
+const REAL_ARCHETYPE_COLORS = /^[WUBRG]+( \+ Splash)?$/
+
+/** Pure 2-3 color archetypes, the only ones the pulse ranks. */
+const PURE_PAIR_OR_TRIO_COLORS = /^[WUBRG]{2,3}$/
+
 const LOOKBACK: Record<PulseTimeWindow, number> = {
   '3d': 3,
   '1w': 7,
@@ -200,28 +219,34 @@ export function useMetagamePulse(
 
       // ── 3. Archetypes pulse ───────────────────────────────────────────────
 
-      const totalGames = archetypesRaw.reduce(
-        (sum: number, a: any) => sum + (a.games_count || 0), 0,
-      )
+      // Meta share denominator = the whole metagame, i.e. every real archetype
+      // row (mono, pairs, trios, 4-5c, and their + Splash variants — these
+      // buckets partition the format). Ranking only pure pairs/trios must NOT
+      // shrink the denominator, otherwise every share is inflated: on MSH that
+      // was x1.92, pushing Abzan from 0.67% to 1.29% and past the 1% gate.
+      const allDecksRow = archetypesRaw.find((a: any) => a.archetype_name === 'All Decks')
+      const totalGames =
+        allDecksRow?.games_count ||
+        archetypesRaw.reduce(
+          (sum: number, a: any) =>
+            sum +
+            (a.colors && REAL_ARCHETYPE_COLORS.test(a.colors) ? a.games_count || 0 : 0),
+          0,
+        )
 
-      // Filter out aggregate rows
+      // Ranked population: pure 2-3 color archetypes, rollup rows excluded
       const validArchetypes = archetypesRaw.filter(
         (a: any) =>
           a.colors &&
-          a.colors.length >= 2 &&
-          a.colors.length <= 3 &&
-          !['All Decks', 'Two-color', 'Two-color + Splash', 'Three-color', 'Three-color + Splash', 'Mono-color', 'Mono-color + Splash'].includes(a.archetype_name),
-      )
-
-      const validGames = validArchetypes.reduce(
-        (sum: number, a: any) => sum + (a.games_count || 0), 0,
+          PURE_PAIR_OR_TRIO_COLORS.test(a.colors) &&
+          !AGGREGATE_ARCHETYPES.includes(a.archetype_name),
       )
 
       const archetypePulseItems: ArchetypePulseItem[] = validArchetypes
         .map((a: any) => {
-          // Filter archetypes below 1% meta share
-          const metaShare = validGames > 0 ? (a.games_count || 0) / validGames : 0
-          if (metaShare < 0.01) return null
+          // Drop archetypes below MIN_META_SHARE of the metagame
+          const metaShare = totalGames > 0 ? (a.games_count || 0) / totalGames : 0
+          if (metaShare < MIN_META_SHARE) return null
 
           const history: number[] = a.win_rate_history || []
           const wr = a.win_rate || 0
