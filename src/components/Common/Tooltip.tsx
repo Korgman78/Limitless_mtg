@@ -21,6 +21,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [placement, setPlacement] = useState<'top' | 'bottom' | 'left'>('top');
   const triggerRef = useRef<HTMLDivElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
   // Long press detection
   const longPressTimerRef = useRef<number | null>(null);
@@ -56,6 +57,20 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
       }
     }
   }, [isVisible, positionProp]);
+
+  // Recadrage après mesure : le clamp ci-dessus suppose une largeur de 140px,
+  // ce qui laisse déborder les bulles plus larges (textes explicatifs) sur les
+  // écrans étroits. On corrige avec la largeur réelle une fois rendue.
+  useEffect(() => {
+    if (!isVisible || placement === 'left' || !bubbleRef.current) return;
+    const rect = bubbleRef.current.getBoundingClientRect();
+    const margin = 8;
+    const overflowRight = rect.right - (window.innerWidth - margin);
+    const overflowLeft = margin - rect.left;
+    // Seuil > 0.5px : évite une boucle de recadrage sur des arrondis subpixel.
+    if (overflowRight > 0.5) setCoords((c) => ({ ...c, x: c.x - overflowRight }));
+    else if (overflowLeft > 0.5) setCoords((c) => ({ ...c, x: c.x + overflowLeft }));
+  }, [isVisible, placement, coords.x]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -153,7 +168,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ children, content, position: p
               transition={{ duration: 0.1 }}
               style={getTooltipStyle()}
             >
-              <div className="bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-slate-200">
+              <div ref={bubbleRef} className="max-w-[min(20rem,calc(100vw-1rem))] bg-slate-800/95 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl shadow-black/40 text-slate-200">
                 {content}
               </div>
             </motion.div>

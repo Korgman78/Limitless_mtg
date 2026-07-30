@@ -8,7 +8,7 @@ import {
 import { FORMAT_OPTIONS } from '../../constants';
 import { getCardImage } from '../../utils/helpers';
 import CardImage from '../Common/CardImage';
-import { ManaIcons } from '../Common';
+import { ManaIcons, Tooltip } from '../Common';
 import { haptics } from '../../utils/haptics';
 import { useCards } from '../../queries/useCards';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -1146,13 +1146,64 @@ const BuildView: React.FC<{
 
 // ============================================================ COMPARE VIEW
 const scoreTone = (s: number) => (s >= 72 ? 'text-emerald-300' : s >= 55 ? 'text-sky-300' : 'text-amber-300');
-const scoreRing = (s: number) => (s >= 72 ? 'from-emerald-400 to-teal-500' : s >= 55 ? 'from-sky-400 to-indigo-500' : 'from-amber-400 to-orange-500');
+// Teinte de l'arc (stroke SVG) : même palette que le texte, en plus saturé.
+const scoreStroke = (s: number) => (s >= 72 ? '#34d399' : s >= 55 ? '#38bdf8' : '#fbbf24');
+const scoreBand = (s: number) => (s >= 72 ? 'Trophy-grade' : s >= 55 ? 'Solid' : 'Needs work');
 
-const MetricRow: React.FC<{ label: string; value: string; pct: number; tone?: string }> = ({ label, value, pct, tone }) => (
+/**
+ * Score global en anneau de progression : la jauge porte l'information (score
+ * sur 100) au lieu d'un disque dégradé purement décoratif.
+ */
+const ScoreDial: React.FC<{ score: number }> = ({ score }) => {
+  const R = 42;
+  const C = 2 * Math.PI * R;
+  const pct = Math.max(0, Math.min(100, score)) / 100;
+  return (
+    <div className="relative w-[104px] h-[104px]">
+      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+        <circle cx="50" cy="50" r={R} fill="none" stroke="#1e293b" strokeWidth="6" />
+        <motion.circle
+          cx="50" cy="50" r={R} fill="none"
+          stroke={scoreStroke(score)} strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={C}
+          initial={{ strokeDashoffset: C }}
+          animate={{ strokeDashoffset: C * (1 - pct) }}
+          transition={{ delay: 0.15, type: 'spring', stiffness: 60, damping: 18 }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={`text-[32px] leading-none font-black tabular-nums ${scoreTone(score)}`}>{score}</span>
+        <span className="text-[8px] font-bold uppercase tracking-widest text-slate-600 mt-1">/ 100</span>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Bulle d'aide compacte : survol au desktop, appui long au mobile (Tooltip
+ * gère les deux). Largeur bornée pour rester lisible sur petit écran.
+ */
+const HelpDot: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <Tooltip content={
+    <div className="max-w-[230px] text-left">
+      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 mb-1">{title}</p>
+      <div className="text-[10px] text-slate-300 leading-relaxed space-y-1">{children}</div>
+    </div>
+  }>
+    <span className="w-3.5 h-3.5 grid place-items-center rounded-full border border-slate-600 text-slate-500 text-[8px] font-black cursor-help hover:border-indigo-400 hover:text-indigo-300 transition-colors">
+      ?
+    </span>
+  </Tooltip>
+);
+
+const MetricRow: React.FC<{ label: string; value: string; pct: number; tone?: string; help?: React.ReactNode; helpTitle?: string }> = ({ label, value, pct, tone, help, helpTitle }) => (
   <div>
-    <div className="flex items-center justify-between text-[10px] mb-1">
-      <span className="text-slate-500 font-bold">{label}</span>
-      <span className={`font-black tabular-nums ${tone || 'text-slate-300'}`}>{value}</span>
+    <div className="flex items-center justify-between text-[10px] mb-1 gap-2">
+      <div className="flex items-center gap-1 min-w-0">
+        <span className="text-slate-500 font-bold truncate">{label}</span>
+        {help && <HelpDot title={helpTitle || label}>{help}</HelpDot>}
+      </div>
+      <span className={`font-black tabular-nums shrink-0 ${tone || 'text-slate-300'}`}>{value}</span>
     </div>
     <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
       <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
@@ -1175,16 +1226,46 @@ const DeckScoreCard: React.FC<{ title: string; accent: string; analysis: DeckAna
         <p className={`text-[10px] font-black uppercase tracking-widest ${accent}`}>{title}</p>
         <p className="text-[9px] font-bold text-slate-500 truncate max-w-[55%] text-right">{analysis.matchedArchetype}</p>
       </div>
-      <div className="flex items-center justify-center">
-        <div className={`relative w-24 h-24 rounded-full grid place-items-center bg-gradient-to-br ${scoreRing(score.score)} shadow-xl`}>
-          <span className="text-4xl font-black text-slate-950 tabular-nums">{score.score}</span>
+      <div className="flex flex-col items-center justify-center gap-1">
+        <ScoreDial score={score.score} />
+        <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-500">
+          <span className={scoreTone(score.score)}>{scoreBand(score.score)}</span>
+          <span className="text-slate-700">·</span>
+          Deck score
+          <HelpDot title="Deck score /100">
+            <p>Weighted blend of the four metrics below, scored against the trophy-deck skeleton of <strong className="text-slate-200">{analysis.matchedArchetype}</strong>:</p>
+            <p className="text-slate-400">
+              40% card power · 25% core coverage · 20% curve fit · 15% creature balance
+            </p>
+            <p className="text-slate-500">Same engine as “Test my deck”. 55+ is a solid deck, 72+ is trophy-grade.</p>
+          </HelpDot>
         </div>
       </div>
       <div className="space-y-2.5">
-        <MetricRow label="Avg win rate" value={score.avgWr != null ? `${score.avgWr.toFixed(1)}%` : '—'} pct={score.avgWr != null ? (score.avgWr - 50) * 10 : 0} tone={scoreTone(score.score)} />
-        <MetricRow label="Curve fit" value={`${Math.round(score.curveFit * 100)}%`} pct={score.curveFit * 100} />
-        <MetricRow label="Creature balance" value={`${Math.round(score.creatureFit * 100)}%`} pct={score.creatureFit * 100} />
-        <MetricRow label="Core coverage" value={score.coreTotal > 0 ? `${score.corePresent}/${score.coreTotal}` : '—'} pct={(score.coreCoverage ?? 0) * 100} />
+        <MetricRow label="Avg win rate" value={score.avgWr != null ? `${score.avgWr.toFixed(1)}%` : '—'} pct={score.avgWr != null ? (score.avgWr - 50) * 10 : 0} tone={scoreTone(score.score)}
+          helpTitle="Avg win rate · 40%"
+          help={<>
+            <p>Average 17Lands GIH win rate of your non-land cards, read inside your archetype when available, global otherwise.</p>
+            <p className="text-slate-400">Scaled 50% → 0 and 60% → 100 before weighting. Raw card power, synergies excluded.</p>
+          </>} />
+        <MetricRow label="Curve fit" value={`${Math.round(score.curveFit * 100)}%`} pct={score.curveFit * 100}
+          helpTitle="Curve fit · 20%"
+          help={<>
+            <p>How close your mana curve is to the average curve of trophy decks in this archetype.</p>
+            <p className="text-slate-400">Sum of the gaps slot by slot: 0 card off = 100%, 12 cards off or more = 0%.</p>
+          </>} />
+        <MetricRow label="Creature balance" value={`${Math.round(score.creatureFit * 100)}%`} pct={score.creatureFit * 100}
+          helpTitle="Creature balance · 15%"
+          help={<>
+            <p>Gap between your creature count and the trophy-deck average for this archetype.</p>
+            <p className="text-slate-400">Same count = 100%, 6 creatures off or more = 0%. Too few bodies loses on board, too many gives up interaction.</p>
+          </>} />
+        <MetricRow label="Core coverage" value={score.coreTotal > 0 ? `${score.corePresent}/${score.coreTotal}` : '—'} pct={(score.coreCoverage ?? 0) * 100}
+          helpTitle="Core coverage · 25%"
+          help={<>
+            <p>Share of the archetype's core cards you actually play — the cards present in most trophy decks of this colour pair.</p>
+            <p className="text-slate-400">Missing them isn't fatal, but each one is a payoff your deck gives up.</p>
+          </>} />
       </div>
     </div>
   );
@@ -1334,15 +1415,9 @@ const CompareView: React.FC<{
   const proScore = analysis?.pro ? scoreDeckAnalysis(analysis.pro) : null;
   const friendScore = analysis?.friend ? scoreDeckAnalysis(analysis.friend) : null;
 
+  // Pas de verdict en mode défi : les trois scores et le duel parlent d'eux-mêmes.
   const verdict = (() => {
-    if (!youScore) return null;
-    // En défi, le duel qui intéresse le joueur est celui contre son ami.
-    if (friendName && friendScore) {
-      const diff = youScore.score - friendScore.score;
-      if (diff >= 3) return { t: `You beat ${friendName}`, d: `Same packs, different reads — and your deck scores ${diff} points higher. Send them the bad news.`, tone: 'text-emerald-300' };
-      if (diff >= -3) return { t: 'Too close to call', d: `You and ${friendName} came out of the same pod with decks of equal strength.`, tone: 'text-sky-300' };
-      return { t: `${friendName} edged it`, d: `Their deck scores ${-diff} points higher from the same packs — check their picks below to see where they gained.`, tone: 'text-amber-300' };
-    }
+    if (!youScore || friendName) return null;
     if (!proScore) return { t: 'Your deck is locked in', d: "We couldn't score the player's deck for this replay — but yours holds up on its own.", tone: 'text-sky-300' };
     const diff = youScore.score - proScore.score;
     if (diff >= 3) return { t: 'Different path, better deck', d: 'You drafted differently from the player — and your deck scores higher. Trusting your read paid off.', tone: 'text-emerald-300' };
@@ -1426,7 +1501,7 @@ const CompareView: React.FC<{
               {(analysis?.you || analysis?.pro) && (
                 <button onClick={() => setShowDecks((v) => !v)}
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
-                  <Layers size={14} /> {showDecks ? 'Hide decklists' : 'View both decklists'}
+                  <Layers size={14} /> {showDecks ? 'Hide all decks' : 'View all decks'}
                   <ChevronRight size={14} className={`transition-transform ${showDecks ? 'rotate-90' : ''}`} />
                 </button>
               )}
