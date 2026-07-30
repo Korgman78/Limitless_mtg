@@ -6,6 +6,155 @@
     <link rel="apple-touch-icon" href="/Logo.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Limitless</title>
+    <!--
+      Garde-fou anti-ecran-blanc. Le service worker precache index.html ; quand le
+      navigateur evince le bundle du Cache Storage (pression memoire sur mobile) ou
+      que le SW ne se met pas a jour, la page servie pointe vers un JS introuvable :
+      #root reste vide, definitivement, et sans aucun message.
+      On detecte les deux formes de l'echec (asset qui ne charge pas, app qui ne se
+      monte pas), on purge SW + caches, et on recharge une seule fois. Si ca ne suffit
+      pas, on affiche l'erreur au lieu du vide.
+      Volontairement en ES5 sans dependance : ce code doit tourner sur le moteur meme
+      qui vient d'echouer, et avant le bundle.
+    -->
+    <script>
+      (function () {
+        var FLAG = 'limitless-recovery';
+        var WATCHDOG_MS = 12000;
+        var lastError = '';
+        var recovering = false;
+        var watchdog = null;
+        var quick = null;
+        var poll = null;
+        var waits = 0;
+
+        function tried() {
+          try { return sessionStorage.getItem(FLAG) === '1'; } catch (e) { return false; }
+        }
+        function setTried(v) {
+          try { v ? sessionStorage.setItem(FLAG, '1') : sessionStorage.removeItem(FLAG); } catch (e) {}
+        }
+
+        // Desinscrit les service workers et vide le Cache Storage, puis rappelle `then`.
+        function purge(then) {
+          var jobs = [];
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+              var out = [];
+              for (var i = 0; i < regs.length; i++) out.push(regs[i].unregister());
+              return Promise.all(out);
+            }));
+          }
+          if (window.caches && caches.keys) {
+            jobs.push(caches.keys().then(function (keys) {
+              var out = [];
+              for (var i = 0; i < keys.length; i++) out.push(caches['delete'](keys[i]));
+              return Promise.all(out);
+            }));
+          }
+          if (!jobs.length || !window.Promise) return then();
+          Promise.all(jobs).then(then, then);
+        }
+
+        function stopTimers() {
+          if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+          if (quick) { clearTimeout(quick); quick = null; }
+          if (poll) { clearInterval(poll); poll = null; }
+        }
+
+        function empty() {
+          var root = document.getElementById('root');
+          return !!root && root.childElementCount === 0;
+        }
+
+        // Dernier recours : on remplace le vide par un message et une purge manuelle.
+        function explain(reason) {
+          var root = document.getElementById('root');
+          if (!root) return;
+          root.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;' +
+            'font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#cbd5e1;background:#020617">' +
+            '<div style="max-width:420px;text-align:center">' +
+            '<p style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#818cf8;margin:0 0 12px">Limitless</p>' +
+            '<h1 style="font-size:18px;font-weight:800;color:#fff;margin:0 0 10px">This page failed to load</h1>' +
+            '<p style="font-size:13px;line-height:1.6;margin:0 0 18px;color:#94a3b8">' +
+            'The app\'s cached files are incomplete. Clearing this site\'s data fixes it.</p>' +
+            '<button id="limitless-purge" style="width:100%;padding:12px 20px;border-radius:12px;border:0;cursor:pointer;' +
+            'background:#4f46e5;color:#fff;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">' +
+            'Clear cache and reload</button>' +
+            '<p style="font-size:10px;color:#475569;margin:16px 0 0;word-break:break-word">' + reason + '</p>' +
+            '</div></div>';
+          var btn = document.getElementById('limitless-purge');
+          if (btn) btn.onclick = function () {
+            btn.disabled = true;
+            btn.textContent = 'Clearing...';
+            setTried(false);
+            purge(function () { location.reload(); });
+          };
+        }
+
+        function recover(reason) {
+          if (recovering) return;
+          recovering = true;
+          stopTimers();
+          if (tried()) return explain(lastError || reason);
+          setTried(true);
+          purge(function () { location.reload(); });
+        }
+
+        // 1. Un asset du bundle qui ne charge pas (404, cache incomplet, reseau coupe).
+        //    Restreint a /assets/ : un bloqueur de pub sur un script tiers ne doit pas
+        //    declencher de purge.
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (!t || t === window || !t.tagName) return;
+          var tag = t.tagName.toUpperCase();
+          if (tag !== 'SCRIPT' && tag !== 'LINK') return;
+          var src = t.src || t.href || '';
+          if (src.indexOf('/assets/') === -1) return;
+          lastError = 'Asset introuvable : ' + src.replace(location.origin, '');
+          recover(lastError);
+        }, true);
+
+        // 2. Le bundle a charge mais a jete (React remonte ses erreurs de rendu non
+        //    rattrapees a window). On garde le message : c'est la seule trace lisible
+        //    sur un telephone sans console. Et si rien n'est monte, pas la peine
+        //    d'attendre le watchdog, on sait deja que c'est perdu.
+        function onRuntimeError(msg) {
+          if (msg) lastError = String(msg).slice(0, 200);
+          if (quick || !empty()) return;
+          quick = setTimeout(function () { if (empty()) recover(lastError); }, 1500);
+        }
+        window.addEventListener('error', function (e) {
+          if (e && e.target && e.target !== window && e.target.tagName) return; // deja traite en 1.
+          onRuntimeError(e && e.message);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          onRuntimeError(r && (r.message || r));
+        });
+
+        // 3. App qui ne se monte pas, sans erreur : #root vide passe le delai.
+        //    On ne purge pas si le document n'a pas fini de charger — sur un reseau
+        //    lent le bundle (1,2 Mo) peut encore etre en vol, et purger la ferait
+        //    repartir de zero pour rien.
+        function arm() {
+          watchdog = setTimeout(function () {
+            if (!empty()) return;
+            if (document.readyState !== 'complete' && ++waits < 3) return arm();
+            recover('Application non montee apres ' + (WATCHDOG_MS / 1000) * (waits + 1) + 's');
+          }, WATCHDOG_MS);
+        }
+        arm();
+
+        // Montage reussi : on desarme, et on oublie la tentative pour que le prochain
+        // incident ait droit lui aussi a sa purge automatique.
+        poll = setInterval(function () {
+          var root = document.getElementById('root');
+          if (root && root.childElementCount > 0) { stopTimers(); setTried(false); }
+        }, 500);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
