@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Users, BarChart3, Clock, TrendingUp, TrendingDown, Eye, Sparkles, ChevronDown, Star, HelpCircle, Network, Swords } from 'lucide-react';
 import { Tooltip } from '../Common/Tooltip';
@@ -12,6 +12,7 @@ import { InsightCardList } from './InsightCardList';
 import { DeckTestPanel } from './DeckTestPanel/index';
 import { TrophyMapOverlay } from '../Overlays/TrophyMapOverlay';
 import { DraftPracticeOverlay } from '../Overlays/DraftPracticeOverlay';
+import type { DraftChallenge } from '../../utils/draftChallenge';
 
 type SkeletonCard = ArchetypalSkeleton['deck_list'][number];
 
@@ -24,6 +25,10 @@ interface TrophyDecksProps {
     activeFormat: string;
     onCardSelect: (card: SkeletonCard) => void;
     onFormatChange?: (format: string) => void;
+    /** Défi Draft Practice reçu par lien : ouvre l'overlay directement. */
+    draftChallenge?: DraftChallenge | null;
+    /** Appelé quand l'overlay se ferme, pour retomber en mode normal. */
+    onDraftChallengeDone?: () => void;
 }
 
 type ArchFilter = 'all' | 'mono' | '2 colors' | '3 colors' | '4+ colors';
@@ -58,7 +63,7 @@ const getArchetypeSurface = (colors: string | null | undefined) => {
     };
 };
 
-export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect, onFormatChange }) => {
+export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect, onFormatChange, draftChallenge = null, onDraftChallengeDone }) => {
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
     const [selection, setSelection] = useState<ArchSelection>({ archetype: null, isAlternative: false });
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
@@ -69,6 +74,11 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [showMap, setShowMap] = useState(false);
     const [showPractice, setShowPractice] = useState(false);
     const isDraft = !activeFormat.toLowerCase().includes('sealed');
+
+    // Un lien de défi ouvre Draft Practice sans passer par le bouton.
+    useEffect(() => {
+        if (draftChallenge) setShowPractice(true);
+    }, [draftChallenge]);
 
     // Aliases pour compatibilité avec le code existant
     const selectedArch = selection.archetype;
@@ -861,7 +871,11 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
             {/* Draft Practice (replay mythic draft pods) */}
             <AnimatePresence>
                 {showPractice && (
-                    <DraftPracticeOverlay activeSet={activeSet} onClose={() => setShowPractice(false)} />
+                    <DraftPracticeOverlay
+                        activeSet={activeSet}
+                        challenge={draftChallenge}
+                        onClose={() => { setShowPractice(false); onDraftChallengeDone?.(); }}
+                    />
                 )}
             </AnimatePresence>
 

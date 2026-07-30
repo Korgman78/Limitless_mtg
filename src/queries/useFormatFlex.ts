@@ -4,7 +4,7 @@ import { queryKeys } from './keys'
 import { normalizeRarity } from '../utils/helpers'
 
 /**
- * "Pivot cards" of a format = commons/uncommons that contribute consistently
+ * "Flex cards" of a format = commons/uncommons that contribute consistently
  * whatever the archetype.
  *
  * The consistency metric is the standard deviation NOT of the card's raw GIH
@@ -25,11 +25,11 @@ import { normalizeRarity } from '../utils/helpers'
  *      — it is genuinely good in absolute terms,
  *   3. it has a delta in at least MIN_ARCHETYPES archetypes,
  *   4. those archetypes cover at least MIN_META_COVERAGE of the metagame
- *      (so a low-variance niche card can't masquerade as a pivot),
+ *      (so a low-variance niche card can't masquerade as a flex card),
  *   5. its mean delta is at least MIN_MEAN_DELTA (it performs ~at archetype
  *      level on average — it doesn't consistently drag the deck down).
- * Among eligible cards, the flattest PIVOT_PERCENTILE by stddev of delta form
- * the pivot pool — a relative, not arbitrary, cut on consistency.
+ * Among eligible cards, the flattest FLEX_PERCENTILE by stddev of delta form
+ * the flex pool — a relative, not arbitrary, cut on consistency.
  *
  * RANKING inside the pool blends the two axes 50/50 via a Borda rank-average:
  * each card is ranked by delta-stddev (1 = flattest) and, separately, by
@@ -38,16 +38,16 @@ import { normalizeRarity } from '../utils/helpers'
  * can't dominate just because its scale is larger, and one outlier can't skew it.
  */
 
-// Share of the eligible pool flagged as pivots (lowest delta-stddev first).
-const PIVOT_PERCENTILE = 0.20
+// Share of the eligible pool flagged as flex cards (lowest delta-stddev first).
+const FLEX_PERCENTILE = 0.20
 // A card needs a delta in at least this many archetypes for its stddev to be
 // statistically meaningful (avoids 1-2 point "flat" noise dominating the cut).
 const MIN_ARCHETYPES = 3
-// The archetypes a pivot is played in must represent at least this % of the
+// The archetypes a flex card is played in must represent at least this % of the
 // metagame (sum of meta share, splash variants of the same colours included).
-// Calibrated on 5 sets: legitimate pivots all sit ≥25%, niche gold cards below.
+// Calibrated on 5 sets: legitimate flex cards all sit ≥25%, niche gold cards below.
 const MIN_META_COVERAGE = 25
-// Minimum mean delta: a pivot must perform roughly at its host archetypes'
+// Minimum mean delta: a flex card must perform roughly at its host archetypes'
 // level on average (within ~1.25%), so a consistent under-performer can't qualify.
 const MIN_MEAN_DELTA = -1.25
 
@@ -61,23 +61,23 @@ const AGGREGATE_NAMES = new Set([
   'Three-color + Splash', 'Mono-color', 'Mono-color + Splash',
 ])
 
-export interface FormatPivotsResult {
-  pivotNames: Set<string>
-  /** Final pivot ranking score = Borda average of the consistency rank and the
+export interface FormatFlexResult {
+  flexNames: Set<string>
+  /** Final flex ranking score = Borda average of the consistency rank and the
    *  coverage rank within the pool (lower = better). Only holds pool members. */
-  pivotScoreByName: Record<string, number>
+  flexScoreByName: Record<string, number>
   /** The two component ranks (1 = best) that make up the score, for display. */
-  pivotRanksByName: Record<string, { std: number; coverage: number }>
-  /** Number of cards in the pivot pool (denominator of the displayed rank). */
-  pivotPoolSize: number
+  flexRanksByName: Record<string, { std: number; coverage: number }>
+  /** Number of cards in the flex pool (denominator of the displayed rank). */
+  flexPoolSize: number
 }
 
-const EMPTY: FormatPivotsResult = { pivotNames: new Set(), pivotScoreByName: {}, pivotRanksByName: {}, pivotPoolSize: 0 }
+const EMPTY: FormatFlexResult = { flexNames: new Set(), flexScoreByName: {}, flexRanksByName: {}, flexPoolSize: 0 }
 
-export function useFormatPivots(activeSet: string, activeFormat: string, enabled: boolean) {
+export function useFormatFlex(activeSet: string, activeFormat: string, enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.formatPivots(activeSet, activeFormat),
-    queryFn: async (): Promise<FormatPivotsResult> => {
+    queryKey: queryKeys.formatFlex(activeSet, activeFormat),
+    queryFn: async (): Promise<FormatFlexResult> => {
       if (!activeSet) return EMPTY
 
       // A set/format holds ~7k card_stats rows (≈250 cards × ~20 archetype
@@ -206,9 +206,9 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
         eligible.push({ name, std, coverage })
       }
 
-      // Selection (unchanged): the flattest PIVOT_PERCENTILE by delta-stddev
-      // form the pivot pool — a card must be genuinely consistent to qualify.
-      const cut = eligible.length > 0 ? Math.max(1, Math.round(eligible.length * PIVOT_PERCENTILE)) : 0
+      // Selection (unchanged): the flattest FLEX_PERCENTILE by delta-stddev
+      // form the flex pool — a card must be genuinely consistent to qualify.
+      const cut = eligible.length > 0 ? Math.max(1, Math.round(eligible.length * FLEX_PERCENTILE)) : 0
       const pool = [...eligible].sort((a, b) => a.std - b.std).slice(0, cut)
 
       // Ranking (50/50 Borda): rank the pool on each axis (1 = best), then
@@ -221,17 +221,17 @@ export function useFormatPivots(activeSet: string, activeFormat: string, enabled
       ;[...pool].sort((a, b) => (b.coverage - a.coverage) || (a.std - b.std))
         .forEach((e, i) => rankCov.set(e.name, i + 1))
 
-      const pivotScoreByName: Record<string, number> = {}
-      const pivotRanksByName: Record<string, { std: number; coverage: number }> = {}
+      const flexScoreByName: Record<string, number> = {}
+      const flexRanksByName: Record<string, { std: number; coverage: number }> = {}
       for (const e of pool) {
         const rs = rankStd.get(e.name)!
         const rc = rankCov.get(e.name)!
-        pivotScoreByName[e.name] = (rs + rc) / 2
-        pivotRanksByName[e.name] = { std: rs, coverage: rc }
+        flexScoreByName[e.name] = (rs + rc) / 2
+        flexRanksByName[e.name] = { std: rs, coverage: rc }
       }
-      const pivotNames = new Set(pool.map(e => e.name))
+      const flexNames = new Set(pool.map(e => e.name))
 
-      return { pivotNames, pivotScoreByName, pivotRanksByName, pivotPoolSize: pool.length }
+      return { flexNames, flexScoreByName, flexRanksByName, flexPoolSize: pool.length }
     },
     enabled: enabled && !!activeSet,
     staleTime: 5 * 60_000,

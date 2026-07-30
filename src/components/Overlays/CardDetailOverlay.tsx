@@ -13,7 +13,7 @@ import { SwipeableOverlay } from './SwipeableOverlay';
 import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 import { useCardSynergies, type CardSynergy } from '../../queries/useCardSynergies';
-import { useFormatPivots } from '../../queries/useFormatPivots';
+import { useFormatFlex } from '../../queries/useFormatFlex';
 
 // --- BLOC D'ÉVALUATION ---
 interface CardEvaluationBlockProps {
@@ -769,15 +769,15 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
   const topConfidence = synergyData?.topConfidence || [];
   const topSynergy = synergyData?.topSynergy || [];
 
-  // Pivot status — same cached query as the Cards-tab PIVOT filter
-  const { data: pivotData } = useFormatPivots(activeSet, activeFormat, true);
-  const pivotInfo = useMemo(() => {
-    if (!pivotData || !pivotData.pivotNames.has(card.name)) return null;
-    const score = pivotData.pivotScoreByName[card.name];
-    const rank = Object.values(pivotData.pivotScoreByName).filter(s => s < score).length + 1;
-    const ranks = pivotData.pivotRanksByName[card.name];
-    return { rank, pool: pivotData.pivotPoolSize, stdRank: ranks?.std, covRank: ranks?.coverage };
-  }, [pivotData, card.name]);
+  // Flex status — same cached query as the Cards-tab FLEX filter
+  const { data: flexData } = useFormatFlex(activeSet, activeFormat, true);
+  const flexInfo = useMemo(() => {
+    if (!flexData || !flexData.flexNames.has(card.name)) return null;
+    const score = flexData.flexScoreByName[card.name];
+    const rank = Object.values(flexData.flexScoreByName).filter(s => s < score).length + 1;
+    const ranks = flexData.flexRanksByName[card.name];
+    return { rank, pool: flexData.flexPoolSize, stdRank: ranks?.std, covRank: ranks?.coverage };
+  }, [flexData, card.name]);
 
   const fetchError = error ? 'Failed to load card data' : null;
 
@@ -850,25 +850,25 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       {rCode}
                     </span>
                     <ManaIcons colors={card.colors} size="sm" />
-                    {pivotInfo && (
+                    {flexInfo && (
                       <Tooltip position="bottom" content={
                         <div className="text-center max-w-[220px]">
-                          <div className="text-[10px] font-bold text-amber-300 mb-1">Format pivot</div>
+                          <div className="text-[10px] font-bold text-amber-300 mb-1">Format flex card</div>
                           <div className="text-[9px] text-slate-300 leading-relaxed">
                             Above-average win rate and consistent performance across the archetypes it is played in. Ranked 50/50 on consistency and how much of the metagame it covers.
                           </div>
                           <div className="text-[8px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-700/60 flex items-center justify-center gap-2">
-                            <span className="font-bold text-amber-300/90">Rank #{pivotInfo.rank}<span className="text-slate-600 font-normal">/{pivotInfo.pool}</span></span>
+                            <span className="font-bold text-amber-300/90">Rank #{flexInfo.rank}<span className="text-slate-600 font-normal">/{flexInfo.pool}</span></span>
                             <span className="text-slate-600">·</span>
-                            <span>Consistency #{pivotInfo.stdRank}</span>
+                            <span>Consistency #{flexInfo.stdRank}</span>
                             <span className="text-slate-600">·</span>
-                            <span>Coverage #{pivotInfo.covRank}</span>
+                            <span>Coverage #{flexInfo.covRank}</span>
                           </div>
                         </div>
                       }>
                         <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border font-black tracking-wide text-amber-300 border-amber-500/40 bg-amber-500/10 cursor-help">
                           <Anchor size={9} className="text-amber-400" />
-                          PIVOT
+                          FLEX
                         </span>
                       </Tooltip>
                     )}

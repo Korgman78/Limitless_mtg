@@ -4,8 +4,8 @@ export const queryKeys = {
   cards: (set: string, format: string, archetype: string) =>
     ['cards', set, format, archetype] as const,
   cardImages: (set: string) => ['cardImages', set] as const,
-  formatPivots: (set: string, format: string) =>
-    ['formatPivots', set, format] as const,
+  formatFlex: (set: string, format: string) =>
+    ['formatFlex', set, format] as const,
   archetypeCards: (set: string, format: string, colors: string) =>
     ['archetypeCards', set, format, colors] as const,
   cardCrossPerf: (set: string, format: string, cardName: string) =>

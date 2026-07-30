@@ -71,7 +71,7 @@ const SECTIONS: GuideSection[] = [
       { b: 'Search a card', t: ' by name with full-text autocomplete.' },
       { b: 'Open Card Analysis', t: ' — click any card for its detail popup: an evaluation matrix plotting its win rate against pick order, how it performs across the archetypes that play it, and the cards it’s most often played alongside and synergises with.' },
       { b: 'Open Card Graphs', t: ' — three views in one: the WR / ALSA scatter (undervalued cards jump out), a Map where cards cluster by how often they share trophy decks, and Communities that auto-group cards into synergy packages.' },
-      { b: 'Toggle PIVOT', t: ' — filter to the format’s pivot cards: commons & uncommons with above-average win rate that perform the most consistently across every archetype (the safe, flexible picks).' },
+      { b: 'Toggle FLEX', t: ' — filter to the format’s flex cards: commons & uncommons with above-average win rate that perform the most consistently across every archetype (the safe, flexible picks).' },
     ],
     proTip: 'Sort by ALSA, then look for high win-rate cards that are picked late — those are your sleeper value picks.',
     cta: { tab: 'cards', label: 'Open Cards Ratings' },

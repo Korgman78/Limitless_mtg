@@ -99,29 +99,57 @@ export interface DraftCardMeta {
   colors: string | null
   cmc: number
   isCreature: boolean
+  /** Ligne de type brute (repérage des terres dans le builder). */
+  type: string | null
+  /** Coût mana ("{1}{W}") — sert au calcul de manabase (Auto lands). */
+  cost: string | null
+  /** Couleurs produites par la carte (terres non-base, dorks, artefacts). */
+  producedColours: string | null
+  isManaProducer: boolean
 }
 
+type CardListMetaRow = {
+  card_name: string
+  card_type: string | null
+  card_cmc: number | null
+  colors: string | null
+  card_cost?: string | null
+  produced_colours?: string | null
+  is_mana_producer?: boolean | null
+}
+
+const FULL_META_COLS = 'card_name, card_type, card_cmc, colors, card_cost, produced_colours, is_mana_producer'
+const BASE_META_COLS = 'card_name, card_type, card_cmc, colors'
+
 /**
- * Méta légère des cartes d'un set (couleur + CMC + créature/non) pour le tri du
- * builder. Une seule requête `card_list` (~250 lignes), cachée. `enabled`
- * permet de la rendre paresseuse (chargée seulement en phase build).
+ * Méta des cartes d'un set pour le builder de deck : tri (couleur/CMC/type) et
+ * calcul de la manabase (coût, production de mana). Une seule requête
+ * `card_list` (~250 lignes), cachée. Les colonnes mana n'existent pas sur les
+ * anciens schémas → fallback sur les colonnes de base. `enabled` permet de
+ * rendre la requête paresseuse (chargée seulement en phase build).
  */
 export function useDraftCardMeta(activeSet: string, enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.cards(activeSet, '', 'meta'), 'draftBuilder'],
     queryFn: async (): Promise<Record<string, DraftCardMeta>> => {
       if (!activeSet) return {}
-      const { data, error } = await supabase
-        .from('card_list')
-        .select('card_name, card_type, card_cmc, colors')
-        .eq('set_code', activeSet)
+      const full = await supabase.from('card_list').select(FULL_META_COLS).eq('set_code', activeSet)
+      const fallback = full.error
+        ? await supabase.from('card_list').select(BASE_META_COLS).eq('set_code', activeSet)
+        : null
+      const rows = (full.error ? fallback?.data : full.data) as CardListMetaRow[] | null | undefined
+      const error = full.error ? fallback?.error : null
       if (error) throw error
       const m: Record<string, DraftCardMeta> = {}
-      for (const r of (data || []) as Array<{ card_name: string; card_type: string | null; card_cmc: number | null; colors: string | null }>) {
+      for (const r of rows || []) {
         m[r.card_name] = {
           colors: r.colors ?? null,
           cmc: Number(r.card_cmc ?? 0),
           isCreature: typeof r.card_type === 'string' && r.card_type.toLowerCase().includes('creature'),
+          type: r.card_type ?? null,
+          cost: r.card_cost ?? null,
+          producedColours: r.produced_colours ?? null,
+          isManaProducer: r.is_mana_producer ?? false,
         }
       }
       return m

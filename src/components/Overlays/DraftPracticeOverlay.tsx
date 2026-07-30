@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Crown, Sparkles, Target, Check, ArrowRight, RotateCcw, Shuffle,
   Eye, EyeOff, Loader2, Swords, Trophy, TrendingUp, ChevronRight,
-  Layers, Plus, Minus, Wand2, ChevronLeft,
+  Layers, Plus, Minus, Wand2, ChevronLeft, Users, Share2,
 } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../constants';
 import { getCardImage } from '../../utils/helpers';
@@ -21,17 +21,28 @@ import {
 } from '../../utils/analyzeDeckPipeline';
 import {
   useDraftPracticeSessions, useDraftPracticeSession, useFormatSynergies, useDraftCardMeta,
-  type DraftPick, type PairMap,
+  type DraftPick, type PairMap, type DraftCardMeta,
 } from '../../queries/useDraftPractice';
+import { suggestBasicLands, BASIC_LAND_OF, MANA_COLORS, type ManaCardMeta } from '../../utils/manabase';
+import { buildChallengeUrl, type ChallengeEntrant, type DraftChallenge } from '../../utils/draftChallenge';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 interface DraftPracticeOverlayProps {
   activeSet: string;
   onClose: () => void;
+  /** Défi reçu par lien : pod imposé + picks/deck de l'ami pour la comparaison. */
+  challenge?: DraftChallenge | null;
 }
 
 type Phase = 'intro' | 'drafting' | 'recap' | 'build' | 'compare';
 type Mode = 'blind' | 'coached';
 type WRMap = Map<string, number | null>;
+/** Decks analysés en phase compare : toi, le joueur mythic, l'ami (si défi). */
+interface DeckAnalyses {
+  you: DeckAnalysisResult | null;
+  pro: DeckAnalysisResult | null;
+  friend: DeckAnalysisResult | null;
+}
 
 // Draft Practice ne rejoue que des drafts Premier Draft : le Trad Draft ne se
 // joue pas en classé, donc l'ETL n'ingère aucune séquence de picks pour ce
@@ -40,19 +51,20 @@ type WRMap = Map<string, number | null>;
 const PRACTICE_FORMAT = 'PremierDraft';
 
 // Terres de base par couleur (pour le builder de deck)
-const BASIC_OF: Record<string, string> = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
-const COLORS5 = ['W', 'U', 'B', 'R', 'G'] as const;
+const BASIC_OF = BASIC_LAND_OF;
+const COLORS5 = MANA_COLORS;
 
-/** Répartit `total` terres de base sur les couleurs données, le plus équitablement possible. */
-function splitLands(total: number, colors: string): Record<string, number> {
-  const res: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-  const cs = [...new Set(colors.split('').filter((c) => c in BASIC_OF))];
-  if (!cs.length || total <= 0) return res;
-  cs.forEach((c, i) => {
-    res[c] = Math.floor(total / cs.length) + (i < total % cs.length ? 1 : 0);
-  });
-  return res;
-}
+/** Méta du builder → forme attendue par le solveur de manabase. */
+const toManaMeta = (m: Record<string, DraftCardMeta>): Record<string, ManaCardMeta> => {
+  const out: Record<string, ManaCardMeta> = {};
+  for (const [name, c] of Object.entries(m)) {
+    out[name] = {
+      cost: c.cost, cmc: c.cmc, type: c.type, colors: c.colors,
+      producedColours: c.producedColours, isManaProducer: c.isManaProducer,
+    };
+  }
+  return out;
+};
 
 // ------------------------------------------------------------------ scoring
 interface PickDetail {
@@ -167,7 +179,7 @@ const wrTone = (wr: number | null): string => {
 
 const CardTile: React.FC<{
   name: string; onPick?: () => void;
-  ring?: 'none' | 'you' | 'pro'; badge?: React.ReactNode; dim?: boolean; disabled?: boolean;
+  ring?: 'none' | 'you' | 'pro' | 'friend'; badge?: React.ReactNode; dim?: boolean; disabled?: boolean;
 }> = ({ name, onPick, ring = 'none', badge, dim, disabled }) => (
   <motion.button
     type="button"
@@ -179,6 +191,7 @@ const CardTile: React.FC<{
     className={`group relative rounded-lg overflow-hidden border bg-black aspect-[63/88] ${
       ring === 'you' ? 'border-indigo-400 ring-2 ring-indigo-400/60'
       : ring === 'pro' ? 'border-amber-400 ring-2 ring-amber-400/60'
+      : ring === 'friend' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/60'
       : 'border-slate-700/70 hover:border-indigo-400/60'
     } ${dim ? 'opacity-40 saturate-50' : ''} ${disabled ? 'cursor-default' : 'cursor-pointer'}`}
   >
@@ -191,7 +204,7 @@ const CardTile: React.FC<{
 );
 
 // ============================================================ MAIN COMPONENT
-export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, onClose }) => {
+export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, onClose, challenge = null }) => {
   const { data: sessions = [], isLoading: listLoading } = useDraftPracticeSessions(activeSet, PRACTICE_FORMAT);
   const { data: cardsData } = useCards(activeSet, PRACTICE_FORMAT, 'Global');
   const { data: pairMap = {} } = useFormatSynergies(activeSet, PRACTICE_FORMAT);
@@ -205,10 +218,15 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   const getWR = useCallback((n: string) => wrMap.get(n) ?? null, [wrMap]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data: session, isLoading: sessionLoading } = useDraftPracticeSession(selectedId);
+  const { data: session, isLoading: sessionLoading, isError: sessionError } = useDraftPracticeSession(selectedId);
+  // Lien de défi dont le pod n'est plus (ou pas encore) en base : le replay est
+  // introuvable, on le dit au lieu d'afficher un écran vide.
+  const challengePodMissing = !!challenge && !sessionLoading && (sessionError || !session);
 
   const [phase, setPhase] = useState<Phase>('intro');
-  const [mode, setMode] = useState<Mode>('coached');
+  // Un défi impose son mode : sinon le % d'accord avec le joueur mythic ne serait
+  // pas comparable entre les deux amis.
+  const [mode, setMode] = useState<Mode>(challenge?.mode ?? 'coached');
   const [idx, setIdx] = useState(0);
   const [userPicks, setUserPicks] = useState<string[]>([]);
   const [reveal, setReveal] = useState<string | null>(null); // coached: carte choisie en attente de "Next"
@@ -216,21 +234,30 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   // Phase "build deck" : quantité par carte envoyée au deck + terres de base
   const [deck, setDeck] = useState<Record<string, number>>({});
   const [basics, setBasics] = useState<Record<string, number>>({ W: 0, U: 0, B: 0, R: 0, G: 0 });
+  // Méta cartes du builder (tri + manabase). Chargée dès la phase build, puis
+  // servie par le cache React Query (BuildView la relit sans requête en plus).
+  const { data: cardMeta = {} } = useDraftCardMeta(activeSet, phase === 'build');
+  const manaMeta = useMemo<Record<string, ManaCardMeta>>(() => toManaMeta(cardMeta), [cardMeta]);
   // Phase "compare" : analyses des deux decks via le moteur "Test my deck"
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<{ you: DeckAnalysisResult | null; pro: DeckAnalysisResult | null } | null>(null);
+  const [analysis, setAnalysis] = useState<DeckAnalyses | null>(null);
 
   const formatLabel = FORMAT_OPTIONS.find(o => o.value === PRACTICE_FORMAT)?.label || PRACTICE_FORMAT;
 
+  // Défi reçu : le pod est imposé, pas de tirage aléatoire ni de shuffle.
+  useEffect(() => {
+    if (challenge?.aggregateId) setSelectedId(challenge.aggregateId);
+  }, [challenge]);
+
   // Choisit (ou re-valide) une session quand la liste dispo change
   useEffect(() => {
-    if (!sessions.length) return;
+    if (challenge || !sessions.length) return;
     setSelectedId(prev =>
       prev && sessions.some(s => s.aggregate_id === prev)
         ? prev
         : sessions[Math.floor(Math.random() * sessions.length)].aggregate_id
     );
-  }, [sessions]);
+  }, [sessions, challenge]);
 
   // Reset complet UNIQUEMENT quand le set change réellement (pas au montage). Le
   // format est épinglé sur PRACTICE_FORMAT, donc basculer PD↔TD dans l'app ne
@@ -277,8 +304,12 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     else advance();
   };
 
+  // Calculé aussi en phase compare : la comparaison des drafts (accord avec le
+  // joueur mythic, qualité des picks) y est affichée face à celle de l'ami.
   const recap = useMemo<Recap | null>(
-    () => (phase === 'recap' && picks.length ? computeRecap(picks, userPicks, getWR, pairMap) : null),
+    () => ((phase === 'recap' || phase === 'compare') && picks.length
+      ? computeRecap(picks, userPicks, getWR, pairMap)
+      : null),
     [phase, picks, userPicks, getWR, pairMap]
   );
 
@@ -334,10 +365,13 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     haptics.light();
     setBasics((prev) => ({ ...prev, [c]: Math.max(0, (prev[c] || 0) + d) }));
   };
-  const autoLands = () => {
+  // Auto lands : manabase déduite des cartes réellement mises dans le deck
+  // (pips exigés, CMC, terres non-base et producteurs de mana déjà présents) —
+  // et non plus des couleurs de l'archétype du joueur mythic.
+  const autoLands = useCallback(() => {
     haptics.medium();
-    setBasics(splitLands(Math.max(0, 40 - includedSpellCount), meta?.colors || ''));
-  };
+    setBasics(suggestBasicLands(deck, manaMeta).basics);
+  }, [deck, manaMeta]);
 
   const buildUserDeckText = useCallback(() => {
     const lines: string[] = [];
@@ -346,22 +380,81 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     return `Deck\n${lines.join('\n')}`;
   }, [deck, basics]);
 
+  // ----------------------------------------------------------------- défi 1v1
+  // Un défi n'est exploitable que si sa séquence de picks colle à celle du pod
+  // (même replay, même longueur) — sinon le lien vient d'une version différente.
+  const friend = challenge?.entrants[0] ?? null;
+  const friendReady = !!friend && picks.length > 0 && friend.pickIdx.length === picks.length;
+
+  const friendPicks = useMemo(
+    () => (friendReady && friend
+      ? picks.map((p, i) => p.options[friend.pickIdx[i]] ?? p.options[0])
+      : []),
+    [friendReady, friend, picks]
+  );
+  const friendRecap = useMemo<Recap | null>(
+    () => (friendReady && friendPicks.length ? computeRecap(picks, friendPicks, getWR, pairMap) : null),
+    [friendReady, friendPicks, picks, getWR, pairMap]
+  );
+  // Étiquette courte de l'ami + son pick sur le pack affiché (mode coached).
+  const friendLabel = friend?.name?.trim() || 'Your friend';
+  const currentFriendPick = friendReady ? friendPicks[idx] ?? null : null;
+
+  const friendDeckText = useCallback(() => {
+    if (!friendReady || !friend) return null;
+    const qty = new Map<string, number>();
+    friendPicks.forEach((name, i) => {
+      if (friend.inDeck[i] && name) qty.set(name, (qty.get(name) || 0) + 1);
+    });
+    const lines = [...qty.entries()].map(([name, q]) => `${q} ${name}`);
+    for (const c of COLORS5) if ((friend.basics[c] || 0) > 0) lines.push(`${friend.basics[c]} ${BASIC_OF[c]}`);
+    return lines.length ? `Deck\n${lines.join('\n')}` : null;
+  }, [friendReady, friend, friendPicks]);
+
+  /** Sérialise le draft + deck du joueur courant pour le lien de partage. */
+  const buildMyEntrant = useCallback((name: string): ChallengeEntrant => {
+    const remaining = { ...deck };
+    const pickIdx: number[] = [];
+    const inDeck: boolean[] = [];
+    picks.forEach((p, i) => {
+      const chosen = userPicks[i] ?? p.options[0];
+      pickIdx.push(Math.max(0, p.options.indexOf(chosen)));
+      const left = remaining[chosen] || 0;
+      if (left > 0) { remaining[chosen] = left - 1; inDeck.push(true); } else inDeck.push(false);
+    });
+    return { name, pickIdx, inDeck, basics };
+  }, [deck, basics, picks, userPicks]);
+
+  const shareUrl = useCallback((name: string) => {
+    if (!selectedId) return '';
+    return buildChallengeUrl({
+      set: activeSet,
+      aggregateId: selectedId,
+      mode,
+      entrants: [buildMyEntrant(name)],
+    });
+  }, [activeSet, selectedId, mode, buildMyEntrant]);
+
   const runCompare = async () => {
     haptics.medium();
     setAnalyzing(true);
     setAnalysis(null);
     setPhase('compare');
     const skels = skeletons as AnalysisSkeleton[];
+    const friendText = friendDeckText();
     try {
-      const [you, pro] = await Promise.all([
+      const [you, pro, friendDeck] = await Promise.all([
         analyzeDeckText(activeSet, PRACTICE_FORMAT, buildUserDeckText(), skels),
         session?.cardlist
           ? analyzeDeckText(activeSet, PRACTICE_FORMAT, cardlistToDeckText(session.cardlist), skels)
           : Promise.resolve(null),
+        friendText
+          ? analyzeDeckText(activeSet, PRACTICE_FORMAT, friendText, skels)
+          : Promise.resolve(null),
       ]);
-      setAnalysis({ you, pro });
+      setAnalysis({ you, pro, friend: friendDeck });
     } catch {
-      setAnalysis({ you: null, pro: null });
+      setAnalysis({ you: null, pro: null, friend: null });
     } finally {
       setAnalyzing(false);
     }
@@ -407,6 +500,19 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
               <Loader2 className="animate-spin text-indigo-400" size={40} strokeWidth={1.4} />
               <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Loading mythic drafts…</p>
             </motion.div>
+          ) : challengePodMissing ? (
+            <motion.div key="challenge-missing" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-8">
+              <Users size={44} className="text-slate-800" />
+              <p className="text-sm font-bold text-slate-400">This challenge replay isn't available.</p>
+              <p className="text-[11px] text-slate-600 max-w-sm">
+                The pod behind that link isn't in the database for {activeSet} — it may have been shared from another set, or the replay is no longer seeded. Start a fresh draft instead.
+              </p>
+              <button onClick={onClose}
+                className="mt-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                Close
+              </button>
+            </motion.div>
           ) : (!listLoading && sessions.length === 0) ? (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-8">
@@ -423,6 +529,23 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                 <div className="relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-b from-slate-900/80 to-slate-950 p-7 md:p-9 shadow-2xl">
                   <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-indigo-600/15 blur-3xl" />
                   <div className="relative text-center">
+                    {friend && (
+                      <div className={`mb-5 rounded-2xl border px-4 py-3 ${friendReady ? 'border-fuchsia-500/40 bg-fuchsia-500/[0.08]' : 'border-amber-500/40 bg-amber-500/[0.08]'}`}>
+                        <p className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-fuchsia-200">
+                          <Users size={12} /> Challenge
+                        </p>
+                        {friendReady ? (
+                          <p className="text-[12px] text-slate-300 mt-1.5 leading-relaxed">
+                            <strong className="font-black text-white">{friend.name || 'A friend'}</strong> drafted this exact pod and challenged you.
+                            Same packs, same {picks.length} picks, {mode} mode — you'll see their picks and their deck once you're done.
+                          </p>
+                        ) : (
+                          <p className="text-[12px] text-amber-200/90 mt-1.5 leading-relaxed">
+                            This challenge link doesn't match the replay we have for this pod — you can still draft it, but the comparison with your friend is unavailable.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <h3 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight">
                       Draft like a mythic player
                     </h3>
@@ -438,14 +561,15 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                       </div>
                     )}
 
-                    {/* mode toggle */}
+                    {/* mode toggle — verrouillé sur le mode du défi pour que la
+                        comparaison entre les deux amis reste à armes égales. */}
                     <div className="mt-7 grid grid-cols-2 gap-2">
                       {([
                         { id: 'coached' as Mode, Icon: Eye, t: 'Coached', d: "Reveal the player's pick after each choice" },
                         { id: 'blind' as Mode, Icon: EyeOff, t: 'Blind', d: 'Full recap only at the end' },
                       ]).map(({ id, Icon, t, d }) => (
-                        <button key={id} onClick={() => { haptics.selection(); setMode(id); }}
-                          className={`text-left p-3 rounded-xl border transition-all ${mode === id ? 'bg-indigo-600/20 border-indigo-400/50' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'}`}>
+                        <button key={id} disabled={!!friend} onClick={() => { haptics.selection(); setMode(id); }}
+                          className={`text-left p-3 rounded-xl border transition-all ${mode === id ? 'bg-indigo-600/20 border-indigo-400/50' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'} ${friend && mode !== id ? 'opacity-30' : ''} ${friend ? 'cursor-default' : ''}`}>
                           <div className={`flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide ${mode === id ? 'text-indigo-200' : 'text-slate-300'}`}>
                             <Icon size={13} /> {t}
                           </div>
@@ -453,15 +577,20 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                         </button>
                       ))}
                     </div>
+                    {friend && (
+                      <p className="text-[9px] text-slate-600 mt-2 uppercase tracking-widest font-bold">Mode set by the challenge</p>
+                    )}
 
                     <button onClick={start}
                       className="mt-6 w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-black uppercase tracking-widest shadow-lg shadow-indigo-900/40 transition-all">
-                      <Swords size={16} /> Start drafting
+                      <Swords size={16} /> {friend ? 'Accept the challenge' : 'Start drafting'}
                     </button>
-                    <button onClick={shuffleOpponent} disabled={sessions.length < 2}
-                      className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300 disabled:opacity-30 transition-colors">
-                      <Shuffle size={12} /> Another opponent ({sessions.length} available)
-                    </button>
+                    {!friend && (
+                      <button onClick={shuffleOpponent} disabled={sessions.length < 2}
+                        className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300 disabled:opacity-30 transition-colors">
+                        <Shuffle size={12} /> Another opponent ({sessions.length} available)
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -506,17 +635,27 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                     {current.options.map((name) => {
                       const isYou = reveal === name;
                       const isPro = !!reveal && name === current.taken;
+                      const isFriend = !!reveal && !!currentFriendPick && name === currentFriendPick;
                       const wr = getWR(name);
+                      // Une carte peut être prise par plusieurs joueurs : on empile les
+                      // étiquettes plutôt que d'en privilégier une seule.
+                      const tags = [
+                        isYou && { t: 'You', cls: 'bg-indigo-500 text-white' },
+                        isFriend && { t: friendLabel, cls: 'bg-fuchsia-500 text-white' },
+                        isPro && { t: 'Player', cls: 'bg-amber-500 text-slate-950' },
+                      ].filter(Boolean) as { t: string; cls: string }[];
                       return (
                         <CardTile key={name} name={name} disabled={!!reveal}
                           onPick={() => onPick(name)}
-                          ring={isYou ? 'you' : isPro ? 'pro' : 'none'}
-                          dim={!!reveal && !isYou && !isPro}
+                          ring={isYou ? 'you' : isPro ? 'pro' : isFriend ? 'friend' : 'none'}
+                          dim={!!reveal && !isYou && !isPro && !isFriend}
                           badge={reveal ? (
                             <>
-                              {(isYou || isPro) && (
-                                <span className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide ${isPro ? 'bg-amber-500 text-slate-950' : 'bg-indigo-500 text-white'}`}>
-                                  {isPro ? 'Player' : 'You'}
+                              {tags.length > 0 && (
+                                <span className="absolute top-1 left-1 flex flex-col items-start gap-0.5">
+                                  {tags.map(({ t, cls }) => (
+                                    <span key={t} className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide max-w-[72px] truncate ${cls}`}>{t}</span>
+                                  ))}
                                 </span>
                               )}
                               {wr != null && (
@@ -537,11 +676,19 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
                   <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     className="flex-shrink-0 px-4 md:px-6 py-3 border-t border-slate-800 bg-slate-900/90 backdrop-blur">
-                    <div className="max-w-3xl mx-auto flex items-center gap-3">
+                    <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       {reveal === current.taken ? (
                         <span className="flex items-center gap-1.5 text-emerald-300 text-[12px] font-black uppercase tracking-wide"><Check size={16} /> Match!</span>
                       ) : (
                         <span className="flex items-center gap-1.5 text-amber-300 text-[12px] font-black uppercase tracking-wide"><Target size={16} /> The player took <span className="text-white normal-case font-bold">{current.taken}</span></span>
+                      )}
+                      {currentFriendPick && (
+                        <span className="flex items-center gap-1.5 text-fuchsia-300 text-[11px] font-black uppercase tracking-wide">
+                          <Users size={14} />
+                          {currentFriendPick === reveal
+                            ? <>{friendLabel} agreed with you</>
+                            : <>{friendLabel} took <span className="text-white normal-case font-bold">{currentFriendPick}</span></>}
+                        </span>
                       )}
                       <button onClick={advance}
                         className="ml-auto flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
@@ -555,13 +702,16 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
 
           /* ============================================ RECAP */
           ) : phase === 'recap' && recap ? (
-            <RecapView recap={recap} rankLabel={rankLabel} onRetry={restart}
-              onNew={() => { shuffleOpponent(); restart(); }} onBuild={goBuild} onClose={onClose} />
+            <RecapView recap={recap} rankLabel={rankLabel}
+              friendName={friendReady ? friendLabel : null}
+              friendDetails={friendRecap?.details ?? null}
+              onRetry={restart} onNew={friend ? null : () => { shuffleOpponent(); restart(); }}
+              onBuild={goBuild} onClose={onClose} />
 
           /* ============================================ BUILD DECK */
           ) : phase === 'build' ? (
             <BuildView
-              activeSet={activeSet} pool={pool} deck={deck} basics={basics}
+              cardMeta={cardMeta} pool={pool} deck={deck} basics={basics}
               includedSpellCount={includedSpellCount} landCount={landCount} deckTotal={deckTotal}
               getWR={getWR} onAdd={addCard} onRemove={removeCard} onBump={bumpBasic} onAuto={autoLands}
               onBack={() => setPhase('recap')} onCompare={runCompare}
@@ -572,8 +722,12 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
             <CompareView
               analyzing={analyzing} analysis={analysis} rankLabel={rankLabel}
               proDeckAvailable={!!session?.cardlist}
+              friendName={friendReady ? (friend?.name || 'Your friend') : null}
+              friendRecap={friendRecap} yourRecap={recap}
+              canShare={!!selectedId && picks.length > 0}
+              buildShareUrl={shareUrl}
               onBack={() => setPhase('build')} onRetry={restart}
-              onNew={() => { shuffleOpponent(); restart(); }} onClose={onClose}
+              onNew={friend ? null : () => { shuffleOpponent(); restart(); }} onClose={onClose}
             />
           ) : null}
         </AnimatePresence>
@@ -611,7 +765,79 @@ const StatBar: React.FC<{ label: string; you: number; pro: number; suffix?: stri
   );
 };
 
-const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void; onNew: () => void; onBuild: () => void; onClose: () => void }> = ({ recap, rankLabel, onRetry, onNew, onBuild, onClose }) => {
+/** Une cellule "carte + nom + WR" d'une colonne de la liste pick-par-pick. */
+const PickCell: React.FC<{ name: string; wr: number | null; border: string; strong?: boolean }> = ({ name, wr, border, strong }) => (
+  <span className="flex items-center gap-1.5 min-w-0 flex-1">
+    <CardImage src={getCardImage(name)} alt="" className={`w-6 h-[33px] rounded object-cover border shrink-0 ${border}`} />
+    <span className={`text-[11px] truncate ${strong ? 'font-bold text-slate-200' : 'text-slate-400'}`}>{name}</span>
+    {wr != null && <span className={`text-[9px] font-black ${wrTone(wr)} shrink-0`}>{wr.toFixed(1)}</span>}
+  </span>
+);
+
+/**
+ * Liste pick par pick. Sans défi : ton pick vs celui du joueur mythic. Avec un
+ * défi : trois colonnes (toi / l'ami / le joueur mythic) pour voir d'un coup
+ * d'œil qui a divergé et sur quoi.
+ */
+const PickByPickList: React.FC<{
+  details: PickDetail[];
+  friendName: string | null;
+  friendDetails: PickDetail[] | null;
+}> = ({ details, friendName, friendDetails }) => {
+  const threeWay = !!friendName && !!friendDetails;
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-1.5">
+        <Sparkles size={13} className="text-indigo-400" />
+        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pick by pick</h4>
+      </div>
+      {threeWay && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-slate-800/60 bg-slate-950/40 text-[9px] font-black uppercase tracking-widest">
+          <span className="w-9 shrink-0" />
+          <span className="flex-1 text-indigo-300">You</span>
+          <span className="flex-1 text-fuchsia-300 truncate">{friendName}</span>
+          <span className="flex-1 text-amber-300">Player</span>
+        </div>
+      )}
+      <div className="divide-y divide-slate-800/60 max-h-[420px] overflow-y-auto">
+        {details.map((d, i) => {
+          const friendPick = friendDetails?.[i];
+          return (
+            <div key={i} className={`flex items-center gap-2 px-4 py-2 ${d.agree ? '' : 'bg-amber-500/[0.03]'}`}>
+              <span className="w-9 text-[9px] font-black text-slate-600 tabular-nums shrink-0">P{d.pack + 1}P{d.pick + 1}</span>
+              {threeWay && friendPick ? (
+                <>
+                  <PickCell name={d.your} wr={d.yourWr} border="border-indigo-500/40" />
+                  <PickCell name={friendPick.your} wr={friendPick.yourWr} border="border-fuchsia-500/40"
+                    strong={friendPick.your === d.pro} />
+                  <PickCell name={d.pro} wr={d.proWr} border="border-amber-500/40" strong />
+                </>
+              ) : d.agree ? (
+                <span className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <Check size={14} className="text-emerald-400 shrink-0" />
+                  <CardImage src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-300 truncate">{d.your}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 flex-1 min-w-0">
+                  <PickCell name={d.your} wr={d.yourWr} border="border-indigo-500/40" />
+                  <ChevronRight size={12} className="text-slate-700 shrink-0" />
+                  <PickCell name={d.pro} wr={d.proWr} border="border-amber-500/40" strong />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const RecapView: React.FC<{
+  recap: Recap; rankLabel: string;
+  friendName: string | null; friendDetails: PickDetail[] | null;
+  onRetry: () => void; onNew: (() => void) | null; onBuild: () => void; onClose: () => void;
+}> = ({ recap, rankLabel, friendName, friendDetails, onRetry, onNew, onBuild, onClose }) => {
   const { grade } = recap;
   return (
     <motion.div key="recap" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -694,40 +920,7 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
         )}
 
         {/* pick-by-pick */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-1.5">
-            <Sparkles size={13} className="text-indigo-400" />
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pick by pick</h4>
-          </div>
-          <div className="divide-y divide-slate-800/60 max-h-[420px] overflow-y-auto">
-            {recap.details.map((d, i) => (
-              <div key={i} className={`flex items-center gap-3 px-4 py-2 ${d.agree ? '' : 'bg-amber-500/[0.03]'}`}>
-                <span className="w-9 text-[9px] font-black text-slate-600 tabular-nums shrink-0">P{d.pack + 1}P{d.pick + 1}</span>
-                {d.agree ? (
-                  <span className="flex items-center gap-1.5 flex-1 min-w-0">
-                    <Check size={14} className="text-emerald-400 shrink-0" />
-                    <CardImage src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-slate-800 shrink-0" />
-                    <span className="text-[11px] font-bold text-slate-300 truncate">{d.your}</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <CardImage src={getCardImage(d.your)} alt="" className="w-6 h-[33px] rounded object-cover border border-indigo-500/40 shrink-0" />
-                      <span className="text-[11px] text-slate-400 truncate">{d.your}</span>
-                      {d.yourWr != null && <span className={`text-[9px] font-black ${wrTone(d.yourWr)} shrink-0`}>{d.yourWr.toFixed(1)}</span>}
-                    </span>
-                    <ChevronRight size={12} className="text-slate-700 shrink-0" />
-                    <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <CardImage src={getCardImage(d.pro)} alt="" className="w-6 h-[33px] rounded object-cover border border-amber-500/40 shrink-0" />
-                      <span className="text-[11px] font-bold text-slate-200 truncate">{d.pro}</span>
-                      {d.proWr != null && <span className={`text-[9px] font-black ${wrTone(d.proWr)} shrink-0`}>{d.proWr.toFixed(1)}</span>}
-                    </span>
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        <PickByPickList details={recap.details} friendName={friendName} friendDetails={friendDetails} />
 
         {/* next step : build deck */}
         <button onClick={onBuild}
@@ -747,9 +940,11 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
           <button onClick={onRetry} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-black uppercase tracking-widest transition-colors">
             <RotateCcw size={14} /> Redraft this pod
           </button>
-          <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-black uppercase tracking-widest transition-colors">
-            <Shuffle size={14} /> New opponent
-          </button>
+          {onNew && (
+            <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-black uppercase tracking-widest transition-colors">
+              <Shuffle size={14} /> New opponent
+            </button>
+          )}
           <button onClick={onClose} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
             Done
           </button>
@@ -762,7 +957,7 @@ const RecapView: React.FC<{ recap: Recap; rankLabel: string; onRetry: () => void
 // ============================================================ BUILD VIEW
 type SortKey = 'color' | 'cmc' | 'type';
 const BuildView: React.FC<{
-  activeSet: string;
+  cardMeta: Record<string, DraftCardMeta>;
   pool: { name: string; count: number }[];
   deck: Record<string, number>;
   basics: Record<string, number>;
@@ -774,9 +969,8 @@ const BuildView: React.FC<{
   onAuto: () => void;
   onBack: () => void;
   onCompare: () => void;
-}> = ({ activeSet, pool, deck, basics, includedSpellCount, landCount, deckTotal, getWR, onAdd, onRemove, onBump, onAuto, onBack, onCompare }) => {
+}> = ({ cardMeta, pool, deck, basics, includedSpellCount, landCount, deckTotal, getWR, onAdd, onRemove, onBump, onAuto, onBack, onCompare }) => {
   const isMobile = useIsMobile();
-  const { data: cardMeta = {} } = useDraftCardMeta(activeSet);
   const [dragOver, setDragOver] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('color');
   const onTarget = deckTotal === 40;
@@ -1040,19 +1234,115 @@ const DeckBoard: React.FC<{ title: string; accent: string; analysis: DeckAnalysi
   );
 };
 
+/**
+ * Une métrique du duel sur trois colonnes : toi / l'ami / le joueur mythic.
+ * Le meilleur des deux amis est surligné ; le pro sert de référence (il n'est
+ * pas « battu », c'est l'étalon du format).
+ */
+const DuelRow: React.FC<{
+  label: string; you: number; friend: number; pro?: number | null;
+  suffix?: string; decimals?: number;
+}> = ({ label, you, friend, pro, suffix = '', decimals }) => {
+  const d = decimals ?? (suffix === '%' ? 1 : 0);
+  const youWins = you > friend + 1e-9;
+  const friendWins = friend > you + 1e-9;
+  const fmt = (v: number) => `${v.toFixed(d)}${suffix}`;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 text-[11px] text-slate-400 leading-snug">{label}</span>
+      <span className={`w-16 text-right text-[12px] font-black tabular-nums ${youWins ? 'text-emerald-300' : 'text-slate-300'}`}>{fmt(you)}</span>
+      <span className={`w-16 text-right text-[12px] font-black tabular-nums ${friendWins ? 'text-emerald-300' : 'text-slate-300'}`}>{fmt(friend)}</span>
+      <span className="w-16 text-right text-[12px] font-black tabular-nums text-amber-300/80">
+        {pro != null ? fmt(pro) : '—'}
+      </span>
+    </div>
+  );
+};
+
+/** Génère et copie le lien de défi (Web Share sur mobile si dispo). */
+const ShareChallengeCard: React.FC<{ buildShareUrl: (name: string) => string }> = ({ buildShareUrl }) => {
+  const [name, setName] = useLocalStorage<string>('limitless-draft-name', '');
+  const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [link, setLink] = useState('');
+
+  const share = async () => {
+    haptics.medium();
+    const url = buildShareUrl(name.trim() || 'A friend');
+    if (!url) { setState('error'); return; }
+    setLink(url);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Draft Practice challenge', text: 'Same packs, same picks — beat my deck.', url });
+        setState('copied');
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setState('copied');
+    } catch {
+      // Partage annulé ou clipboard refusé : on affiche le lien à copier à la main.
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.06] p-5">
+      <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-200 flex items-center gap-1.5">
+        <Share2 size={13} /> Challenge a friend
+      </h4>
+      <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+        Send a link that replays this exact pod. Your friend drafts it blind, then compares their picks and their deck to yours. Everything travels in the link — nothing is stored.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2 mt-3">
+        <input
+          value={name}
+          onChange={(e) => { setName(e.target.value.slice(0, 24)); setState('idle'); }}
+          placeholder="Your name"
+          className="flex-1 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[12px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/60"
+        />
+        <button onClick={share}
+          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+          {state === 'copied' ? <><Check size={14} /> Link copied</> : <><Share2 size={14} /> Share with a friend</>}
+        </button>
+      </div>
+      {state === 'error' && link && (
+        <div className="mt-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-300 mb-1">Copy this link manually</p>
+          <textarea readOnly value={link} rows={2}
+            onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] text-slate-400 font-mono break-all" />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CompareView: React.FC<{
   analyzing: boolean;
-  analysis: { you: DeckAnalysisResult | null; pro: DeckAnalysisResult | null } | null;
+  analysis: DeckAnalyses | null;
   rankLabel: string;
   proDeckAvailable: boolean;
-  onBack: () => void; onRetry: () => void; onNew: () => void; onClose: () => void;
-}> = ({ analyzing, analysis, rankLabel, proDeckAvailable, onBack, onRetry, onNew, onClose }) => {
+  /** Nom de l'ami quand un défi est en cours et exploitable, sinon null. */
+  friendName: string | null;
+  friendRecap: Recap | null;
+  yourRecap: Recap | null;
+  canShare: boolean;
+  buildShareUrl: (name: string) => string;
+  onBack: () => void; onRetry: () => void; onNew: (() => void) | null; onClose: () => void;
+}> = ({ analyzing, analysis, rankLabel, proDeckAvailable, friendName, friendRecap, yourRecap, canShare, buildShareUrl, onBack, onRetry, onNew, onClose }) => {
   const [showDecks, setShowDecks] = useState(false);
   const youScore = analysis?.you ? scoreDeckAnalysis(analysis.you) : null;
   const proScore = analysis?.pro ? scoreDeckAnalysis(analysis.pro) : null;
+  const friendScore = analysis?.friend ? scoreDeckAnalysis(analysis.friend) : null;
 
   const verdict = (() => {
     if (!youScore) return null;
+    // En défi, le duel qui intéresse le joueur est celui contre son ami.
+    if (friendName && friendScore) {
+      const diff = youScore.score - friendScore.score;
+      if (diff >= 3) return { t: `You beat ${friendName}`, d: `Same packs, different reads — and your deck scores ${diff} points higher. Send them the bad news.`, tone: 'text-emerald-300' };
+      if (diff >= -3) return { t: 'Too close to call', d: `You and ${friendName} came out of the same pod with decks of equal strength.`, tone: 'text-sky-300' };
+      return { t: `${friendName} edged it`, d: `Their deck scores ${-diff} points higher from the same packs — check their picks below to see where they gained.`, tone: 'text-amber-300' };
+    }
     if (!proScore) return { t: 'Your deck is locked in', d: "We couldn't score the player's deck for this replay — but yours holds up on its own.", tone: 'text-sky-300' };
     const diff = youScore.score - proScore.score;
     if (diff >= 3) return { t: 'Different path, better deck', d: 'You drafted differently from the player — and your deck scores higher. Trusting your read paid off.', tone: 'text-emerald-300' };
@@ -1068,7 +1358,9 @@ const CompareView: React.FC<{
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="text-center">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deck comparison</p>
-            <h3 className="text-xl md:text-2xl font-black text-white tracking-tight mt-1">Your deck vs {rankLabel}</h3>
+            <h3 className="text-xl md:text-2xl font-black text-white tracking-tight mt-1">
+              {friendName ? `Your deck vs ${friendName}` : `Your deck vs ${rankLabel}`}
+            </h3>
             <p className="text-[10px] text-slate-600 mt-1">Same engine as “Test my deck” — scored against trophy-deck skeletons.</p>
           </div>
 
@@ -1086,10 +1378,50 @@ const CompareView: React.FC<{
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className={`grid grid-cols-1 gap-3 ${friendName ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                 <DeckScoreCard title="You" accent="text-indigo-300" analysis={analysis?.you ?? null} score={youScore} />
+                {friendName && (
+                  <DeckScoreCard title={friendName} accent="text-fuchsia-300" analysis={analysis?.friend ?? null} score={friendScore} />
+                )}
                 <DeckScoreCard title="Player" accent="text-amber-300" analysis={analysis?.pro ?? null} score={proScore} />
               </div>
+
+              {/* Duel des drafts : mêmes packs, trois lectures différentes. */}
+              {friendName && yourRecap && friendRecap && (
+                <div className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-500/[0.05] p-5 space-y-3">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-fuchsia-200 flex items-center gap-1.5">
+                    <Users size={13} /> Draft duel · you vs {friendName}
+                  </h4>
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest pb-1 border-b border-slate-800/60">
+                    <span className="flex-1" />
+                    <span className="w-16 text-right text-indigo-300">You</span>
+                    <span className="w-16 text-right text-fuchsia-300 truncate">{friendName}</span>
+                    <span className="w-16 text-right text-amber-300/80">Player</span>
+                  </div>
+                  {/* Colonne "Player" vide ici : l'accord du joueur mythic avec
+                      lui-même vaut 100% par construction, l'afficher n'apprend rien. */}
+                  <DuelRow label="Agreement with the mythic player" you={yourRecap.agreement * 100} friend={friendRecap.agreement * 100} suffix="%" />
+                  {yourRecap.userQuality != null && friendRecap.userQuality != null && (
+                    <DuelRow label="Took the best-WR card available" you={yourRecap.userQuality * 100} friend={friendRecap.userQuality * 100}
+                      pro={yourRecap.proQuality != null ? yourRecap.proQuality * 100 : null} suffix="%" />
+                  )}
+                  {yourRecap.userAvgWr != null && friendRecap.userAvgWr != null && (
+                    <DuelRow label="Avg win rate of picks" you={yourRecap.userAvgWr} friend={friendRecap.userAvgWr} pro={yourRecap.proAvgWr} suffix="%" />
+                  )}
+                  {yourRecap.synergyAvailable && (
+                    <DuelRow label="Synergy between picks" you={yourRecap.userSynergy} friend={friendRecap.userSynergy} pro={yourRecap.proSynergy} decimals={1} />
+                  )}
+                  <p className="text-[10px] text-slate-500">
+                    Same {yourRecap.n} picks, same packs — {friendName} picked differently on {yourRecap.details.filter((d, i) => d.your !== friendRecap.details[i]?.your).length} of them.
+                  </p>
+                </div>
+              )}
+
+              {/* Rappel des choix : toi / l'ami / le joueur mythic, pick par pick. */}
+              {yourRecap && (
+                <PickByPickList details={yourRecap.details}
+                  friendName={friendName} friendDetails={friendRecap?.details ?? null} />
+              )}
 
               {(analysis?.you || analysis?.pro) && (
                 <button onClick={() => setShowDecks((v) => !v)}
@@ -1111,6 +1443,9 @@ const CompareView: React.FC<{
                 transition={{ duration: 0.25 }} className="overflow-hidden">
                 <div className="max-w-6xl mx-auto space-y-4">
                   {analysis?.you && <DeckBoard title="Your deck" accent="text-indigo-300" analysis={analysis.you} />}
+                  {friendName && analysis?.friend && (
+                    <DeckBoard title={`${friendName}'s deck`} accent="text-fuchsia-300" analysis={analysis.friend} />
+                  )}
                   {analysis?.pro && <DeckBoard title={`Player's deck`} accent="text-amber-300" analysis={analysis.pro} />}
                 </div>
               </motion.div>
@@ -1118,9 +1453,11 @@ const CompareView: React.FC<{
           </AnimatePresence>
         )}
 
-        {/* Bloc étroit : note + actions */}
+        {/* Bloc étroit : partage + note + actions */}
         {!analyzing && (
           <div className="max-w-3xl mx-auto space-y-6">
+            {canShare && <ShareChallengeCard buildShareUrl={buildShareUrl} />}
+
             {!proDeckAvailable && (
               <p className="text-[10px] text-slate-600 text-center">The player's final deck wasn't captured for this older replay. Newer replays include it.</p>
             )}
@@ -1129,9 +1466,11 @@ const CompareView: React.FC<{
               <button onClick={onBack} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
                 <ChevronLeft size={14} /> Tweak deck
               </button>
-              <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
-                <Shuffle size={14} /> New opponent
-              </button>
+              {onNew && (
+                <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+                  <Shuffle size={14} /> New opponent
+                </button>
+              )}
               <button onClick={onRetry} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
                 <RotateCcw size={14} /> Redraft
               </button>

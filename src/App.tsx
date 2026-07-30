@@ -15,7 +15,7 @@ import { useSets } from './queries/useSets';
 import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
 import { useCardImages } from './queries/useCardImages';
-import { useFormatPivots } from './queries/useFormatPivots';
+import { useFormatFlex } from './queries/useFormatFlex';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
 
@@ -25,6 +25,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { useCoachMarks } from './hooks/useCoachMarks';
 import { useUrlState } from './hooks/useUrlState';
+import { readChallengeFromUrl, clearChallengeFromUrl, type DraftChallenge } from './utils/draftChallenge';
 
 // Utils
 import { haptics } from './utils/haptics';
@@ -243,18 +244,18 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [rarityFilter, setRarityFilter] = useState<string[]>([]);
   const [colorFilters, setColorFilters] = useState<string[]>([]);
 
-  // --- Pivot cards filter (Cards tab) ---
+  // --- Flex cards filter (Cards tab) ---
   // Lazy: the cross-archetype query only runs after the first activation.
-  const [pivotActive, setPivotActive] = useState<boolean>(false);
-  const [pivotQueryEnabled, setPivotQueryEnabled] = useState<boolean>(false);
-  const { data: pivotData, isLoading: pivotLoading } = useFormatPivots(activeSet, activeFormat, pivotQueryEnabled);
-  const pivotNames = pivotData?.pivotNames;
-  const pivotScores = pivotData?.pivotScoreByName;
+  const [flexActive, setFlexActive] = useState<boolean>(false);
+  const [flexQueryEnabled, setFlexQueryEnabled] = useState<boolean>(false);
+  const { data: flexData, isLoading: flexLoading } = useFormatFlex(activeSet, activeFormat, flexQueryEnabled);
+  const flexNames = flexData?.flexNames;
+  const flexScores = flexData?.flexScoreByName;
 
-  const togglePivot = useCallback(() => {
+  const toggleFlex = useCallback(() => {
     haptics.light();
-    setPivotQueryEnabled(true);
-    setPivotActive(prev => !prev);
+    setFlexQueryEnabled(true);
+    setFlexActive(prev => !prev);
   }, []);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
@@ -316,6 +317,18 @@ export default function MTGLimitedApp(): React.ReactElement {
       }
     }
   );
+
+  // --- Défi Draft Practice reçu par lien (#dp=…) ---
+  // Lu une seule fois au chargement (le token est déjà capturé par le module,
+  // avant que useUrlState ne réécrive l'URL), puis retiré du fragment.
+  const [draftChallenge, setDraftChallenge] = useState<DraftChallenge | null>(() => readChallengeFromUrl());
+  useEffect(() => {
+    if (!draftChallenge) return;
+    if (draftChallenge.set) setActiveSet(draftChallenge.set);
+    setActiveTab('trophies');
+    clearChallengeFromUrl();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync query errors to local error state for auto-dismiss
   useEffect(() => {
@@ -386,9 +399,9 @@ export default function MTGLimitedApp(): React.ReactElement {
 
     if (debouncedSearchTerm) res = res.filter((c: Card) => c.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
 
-    if (pivotActive) {
-      if (!pivotNames) return [];   // cross-archetype data still loading — avoid flashing all cards
-      res = res.filter((c: Card) => pivotNames.has(c.name));
+    if (flexActive) {
+      if (!flexNames) return [];   // cross-archetype data still loading — avoid flashing all cards
+      res = res.filter((c: Card) => flexNames.has(c.name));
     }
 
     if (rarityFilter.length > 0) {
@@ -410,13 +423,13 @@ export default function MTGLimitedApp(): React.ReactElement {
       });
     }
 
-    // Filtre PIVOT actif : tri fixe du meilleur pivot (score de Borda le plus
-    // bas = meilleur combiné régularité + couverture) au moins bon, quel que
-    // soit le tri de colonne.
-    if (pivotActive && pivotScores) {
+    // Filtre FLEX actif : tri fixe de la meilleure carte flex (score de Borda le
+    // plus bas = meilleur combiné régularité + couverture) au moins bonne, quel
+    // que soit le tri de colonne.
+    if (flexActive && flexScores) {
       res.sort((a: Card, b: Card) => {
-        const sa = pivotScores[a.name] ?? Infinity;
-        const sb = pivotScores[b.name] ?? Infinity;
+        const sa = flexScores[a.name] ?? Infinity;
+        const sb = flexScores[b.name] ?? Infinity;
         if (sa !== sb) return sa - sb;
         return (b.gih_wr ?? 0) - (a.gih_wr ?? 0);
       });
@@ -449,12 +462,12 @@ export default function MTGLimitedApp(): React.ReactElement {
       return sortConfig.dir === 'asc' ? valA - valB : valB - valA;
     });
     return res;
-  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, pivotActive, pivotNames, pivotScores]);
+  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, flexActive, flexNames, flexScores]);
 
   // Reset lazy load when filters change
   useEffect(() => {
     setVisibleCardsCount(40);
-  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat, pivotActive, pivotNames]);
+  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat, flexActive, flexNames]);
 
 
   // Scroll to top FAB visibility
@@ -985,18 +998,18 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                       </button>
 
-                      {/* PIVOT — format pivot cards (consistent across archetypes) */}
+                      {/* FLEX — format flex cards (consistent across archetypes) */}
                       <button
-                        onClick={togglePivot}
-                        title="Format pivot cards — commons & uncommons with above-average win rate and the most consistent performance across archetypes"
-                        className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pivotActive ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/60 hover:text-amber-300'}`}
+                        onClick={toggleFlex}
+                        title="Format flex cards — commons & uncommons with above-average win rate and the most consistent performance across archetypes"
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${flexActive ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/60 hover:text-amber-300'}`}
                       >
-                        {pivotActive && pivotLoading ? (
+                        {flexActive && flexLoading ? (
                           <RefreshCw size={10} className="animate-spin" />
                         ) : (
-                          <Anchor size={10} className={pivotActive ? '' : 'text-amber-400/80'} />
+                          <Anchor size={10} className={flexActive ? '' : 'text-amber-400/80'} />
                         )}
-                        PIVOT
+                        FLEX
                       </button>
 
                       {/* Séparateur + Card Graphs button - Desktop only */}
@@ -1012,18 +1025,18 @@ export default function MTGLimitedApp(): React.ReactElement {
                   </div>
                 </div>
 
-                {/* Pivot cards info bar */}
-                {pivotActive && (
+                {/* Flex cards info bar */}
+                {flexActive && (
                   <div className="px-2 md:px-0 pt-3">
                     <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-[11px] text-amber-200/90">
                       <Anchor size={13} className="text-amber-400 flex-shrink-0" />
-                      {pivotLoading || !pivotNames ? (
-                        <span>Finding the format&rsquo;s pivot cards&hellip;</span>
+                      {flexLoading || !flexNames ? (
+                        <span>Finding the format&rsquo;s flex cards&hellip;</span>
                       ) : filteredCards.length === 0 ? (
-                        <span>No pivot cards match the current filters.</span>
+                        <span>No flex cards match the current filters.</span>
                       ) : (
                         <span>
-                          <strong className="font-bold text-amber-300">Format pivots</strong> &mdash; commons &amp; uncommons with above-average win rate that perform the most consistently across archetypes.
+                          <strong className="font-bold text-amber-300">Format flex cards</strong> &mdash; commons &amp; uncommons with above-average win rate that perform the most consistently across archetypes.
                         </span>
                       )}
                     </div>
@@ -1091,7 +1104,12 @@ export default function MTGLimitedApp(): React.ReactElement {
             {/* 5. TROPHY DECKS TAB */}
             {activeTab === 'trophies' && (
               <motion.div key="trophies-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                <TrophyDecks activeSet={activeSet} activeFormat={activeFormat} onCardSelect={handleCardSelect} onFormatChange={setActiveFormat} />
+                <TrophyDecks
+                  activeSet={activeSet} activeFormat={activeFormat}
+                  onCardSelect={handleCardSelect} onFormatChange={setActiveFormat}
+                  draftChallenge={draftChallenge}
+                  onDraftChallengeDone={() => setDraftChallenge(null)}
+                />
               </motion.div>
             )}
           </AnimatePresence>
