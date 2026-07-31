@@ -39,6 +39,8 @@ const TOP_LIMIT = 20;
 const CARD_LIMIT = 10;
 /** Lift à partir duquel une partenaire compte dans le score de "colle". */
 const GLUE_LIFT = 1.5;
+/** Nombre de meilleures partenaires moyennées pour noter une carte. */
+const HUB_TOP_N = 5;
 const FILTER_COLORS = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
 
 const formatLift = (lift: number) => `x${lift.toFixed(2)}`;
@@ -128,21 +130,31 @@ const ColorFilter: React.FC<{
       })}
     </div>
     {showScope && selected.length > 0 && (
-      <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900/60 border border-slate-800">
-        {([
-          { id: 'any' as ColorScope, label: 'Either card' },
-          { id: 'both' as ColorScope, label: 'Both cards' },
-        ]).map(({ id, label }) => (
-          <button
-            key={id}
-            onClick={() => { haptics.light(); onScope(id); }}
-            className={`px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
-              scope === id ? 'bg-slate-700/80 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900/60 border border-slate-800">
+          {([
+            { id: 'any' as ColorScope, label: 'Either card' },
+            { id: 'both' as ColorScope, label: 'Both cards' },
+          ]).map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => { haptics.light(); onScope(id); }}
+              className={`px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
+                scope === id ? 'bg-slate-700/80 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Tooltip content={
+          <div className="max-w-[260px] text-[10px] leading-relaxed space-y-1.5">
+            <p><strong className="text-slate-200">Either card</strong> — keeps a pair as soon as one of the two cards is in that colour. You see everything the colour touches, including its pairings with other colours.</p>
+            <p><strong className="text-slate-200">Both cards</strong> — keeps only pairs where both cards are in that colour. Stricter, and far more meaningful: colour is the main reason two cards share decks, so this strips out pairs that are only together because their colour pair exists.</p>
+          </div>
+        }>
+          <HelpCircle size={13} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+        </Tooltip>
       </div>
     )}
   </div>
@@ -445,9 +457,16 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
   );
 
   /**
-   * Deux lectures d'une même matrice : le meilleur lift d'une carte désigne un
-   * build-around (une partenaire précise), son nombre de partenaires solides
-   * désigne une colle d'archétype (elle en fait fonctionner beaucoup).
+   * Deux lectures d'une même matrice.
+   *
+   * À gauche, la moyenne des `HUB_TOP_N` meilleurs lifts d'une carte plutôt que
+   * son seul meilleur : classer sur le maximum ferait remonter n'importe quelle
+   * carte ayant une paire chanceuse. Les partenaires manquantes comptent pour
+   * x1.00 (= le hasard), ce qui évite d'avantager une carte à deux paires sur
+   * une carte qui en a cinq.
+   *
+   * À droite, le nombre de partenaires solides : la carte qui fait tourner tout
+   * un package plutôt qu'une combinaison précise.
    */
   const cardRanking = useMemo(() => {
     if (!pairMap) return null;
@@ -461,15 +480,17 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
           if (lift > best) { best = lift; bestPartner = partner; }
           if (lift >= GLUE_LIFT) strong++;
         }
-        return { name, best, bestPartner, strong };
+        const top = Object.values(partners).sort((a, b) => b - a).slice(0, HUB_TOP_N);
+        const avgTop = (top.reduce((s, l) => s + l, 0) + (HUB_TOP_N - top.length)) / HUB_TOP_N;
+        return { name, best, bestPartner, strong, avgTop };
       })
       .filter(r => r.best >= MIN_SIGNIFICANT_LIFT);
 
     return {
-      buildArounds: [...rows].sort((a, b) => b.best - a.best).slice(0, TOP_LIMIT),
+      hubs: [...rows].sort((a, b) => b.avgTop - a.avgTop).slice(0, TOP_LIMIT),
       glue: [...rows]
         .filter(r => r.strong > 0)
-        .sort((a, b) => b.strong - a.strong || b.best - a.best)
+        .sort((a, b) => b.strong - a.strong || b.avgTop - a.avgTop)
         .slice(0, TOP_LIMIT),
     };
   }, [pairMap, matchesColor]);
@@ -674,7 +695,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
             }`}
           >
             {mode === 'global' && topView === 'cards'
-              ? <><Blocks size={12} /> Build-arounds</>
+              ? <><Blocks size={12} /> Synergy cards</>
               : <><Trophy size={12} /> Synergy (lift)</>}
           </button>
           <button
@@ -892,7 +913,8 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
               <TopViewToggle value={topView} onChange={setTopView} />
               <ColorFilter
                 selected={colorFilters}
-                onToggle={(c) => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                /* Exclusif : une couleur à la fois, re-cliquer désélectionne. */
+                onToggle={(c) => setColorFilters(prev => prev.includes(c) ? [] : [c])}
                 scope={colorScope}
                 onScope={setColorScope}
                 showScope={topView === 'pairs'}
@@ -971,21 +993,21 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
               <div className={liftVisible ? '' : 'hidden md:block'}>
                 <ColumnHeader
                   icon={<Blocks size={12} />}
-                  label={`Top ${TOP_LIMIT} build-arounds`}
-                  help="Cards ranked by their single strongest partner. A high score means one specific card turns this one on — the payoff/enabler pattern."
+                  label={`Top ${TOP_LIMIT} synergy cards`}
+                  help={`Average of a card's ${HUB_TOP_N} best lifts — missing partners count as x1.00, i.e. pure chance. Ranking on the single best pair would let one lucky pairing carry a card; this rewards those that anchor a whole package.`}
                   accent="text-emerald-400"
                 />
                 {pairMapLoading ? (
                   <ListSkeleton />
-                ) : cardRanking?.buildArounds.length ? (
+                ) : cardRanking?.hubs.length ? (
                   <div className="space-y-2">
-                    {cardRanking.buildArounds.map((c, i) => (
+                    {cardRanking.hubs.map((c, i) => (
                       <PartnerRow
-                        key={`ba-${c.name}`}
+                        key={`hub-${c.name}`}
                         rank={i + 1}
                         partner={c.name}
-                        score={formatLift(c.best)}
-                        subtitle={`with ${c.bestPartner}`}
+                        score={formatLift(c.avgTop)}
+                        subtitle={`best ${formatLift(c.best)} with ${c.bestPartner}`}
                         tone="lift"
                         gallery={gallery}
                         onClick={() => selectPair(c.name, c.bestPartner)}
@@ -1014,7 +1036,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                         rank={i + 1}
                         partner={c.name}
                         score={`${c.strong}`}
-                        subtitle={`partners above x${GLUE_LIFT} · best ${formatLift(c.best)}`}
+                        subtitle={`partners above x${GLUE_LIFT} · top ${HUB_TOP_N} avg ${formatLift(c.avgTop)}`}
                         tone="played"
                         gallery={gallery}
                         onClick={() => { haptics.light(); setInputA(c.name); setInputB(''); }}
