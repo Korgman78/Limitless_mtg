@@ -19,6 +19,26 @@ TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 # Seuils pour filtrer les résultats (valeurs par défaut, recalculées dynamiquement)
 MIN_LIFT_SCORE = 1.2  # Ne garder que les synergies significatives (lift > 1.2)
 
+# Une paire est aussi conservée si l'une des deux cartes en entraîne l'autre au
+# moins la moitié du temps, MÊME si son lift est faible. Sans ça, les cartes
+# très jouées disparaissent de la table : leur lift plafonne à 1/P(carte), donc
+# une couleur dominante ne passe jamais le seuil de 1.2 et son "often played
+# with" (qui se lit dans la même table) devient invisible côté front.
+MIN_CONFIDENCE = 0.5
+
+# Seuils de recevabilité d'une paire.
+#
+# Ils étaient exprimés en % du corpus (2% de co-occurrence, 3% de présence).
+# À 15 000 trophy decks ça devient 300 et 451 decks : un compte ABSOLU, alors
+# que le plafond de co-occurrence d'une carte est son propre nombre de decks.
+# Une carte jouée dans 3% des decks aurait eu besoin d'un partenaire présent
+# 63% du temps à ses côtés — une interdiction de fait, quelle que soit la force
+# de la synergie. Le seuil de co-occurrence est donc désormais RELATIF à la
+# carte la plus rare de la paire, avec un plancher absolu pour la fiabilité.
+MIN_CARD_OCCURRENCE = 50      # decks minimum pour qu'une carte soit analysée
+MIN_CO_OCCURRENCE = 20        # plancher absolu de co-occurrence d'une paire
+CO_OCCURRENCE_RATIO = 0.25    # ... ou 25% des decks de la carte la plus rare
+
 # Terrains de base à exclure des calculs de synergie
 BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
 
@@ -207,10 +227,8 @@ def calculate_lift_scores(decks):
     total_decks = len(decks)
     print(f"   📊 Analyse de {total_decks} decks...")
 
-    # Seuils dynamiques basés sur la taille du dataset
-    min_co_occurrence = max(10, int(total_decks * 0.02))   # Au moins 2% des decks
-    min_card_occurrence = max(20, int(total_decks * 0.03)) # Au moins 3% des decks
-    print(f"   ⚙️ Seuils dynamiques: co_occurrence >= {min_co_occurrence}, card_occurrence >= {min_card_occurrence}")
+    print(f"   ⚙️ Seuils: card_occurrence >= {MIN_CARD_OCCURRENCE} decks, "
+          f"co_occurrence >= max({MIN_CO_OCCURRENCE}, {CO_OCCURRENCE_RATIO:.0%} de la carte la plus rare)")
 
     # Compter les occurrences de chaque carte (dans combien de decks elle apparaît)
     card_occurrence = defaultdict(int)
@@ -238,15 +256,16 @@ def calculate_lift_scores(decks):
     print(f"   🔗 {len(pair_occurrence)} paires analysées")
 
     # Filtrer les cartes avec trop peu d'occurrences
-    valid_cards = {card for card, count in card_occurrence.items() if count >= min_card_occurrence}
-    print(f"   ✅ {len(valid_cards)} cartes avec >= {min_card_occurrence} occurrences")
+    valid_cards = {card for card, count in card_occurrence.items() if count >= MIN_CARD_OCCURRENCE}
+    print(f"   ✅ {len(valid_cards)} cartes avec >= {MIN_CARD_OCCURRENCE} occurrences")
 
     # Calculer le lift pour chaque paire
     synergies = {}
 
     for (card_a, card_b), co_count in pair_occurrence.items():
-        # Skip si co-occurrence trop faible
-        if co_count < min_co_occurrence:
+        # Plancher absolu : en dessous, le ratio n'est pas fiable (et ça élague
+        # l'immense majorité des paires avant les calculs).
+        if co_count < MIN_CO_OCCURRENCE:
             continue
 
         # Skip si une des cartes n'est pas assez fréquente
@@ -256,6 +275,13 @@ def calculate_lift_scores(decks):
         # Occurrences individuelles
         count_a = card_occurrence[card_a]
         count_b = card_occurrence[card_b]
+
+        # Seuil relatif : la paire doit représenter une part significative des
+        # decks de la carte la plus rare. Sans ça, une carte de niche ne peut
+        # mathématiquement atteindre aucun seuil absolu, même avec une synergie
+        # parfaite (elle plafonne à son propre nombre de decks).
+        if co_count < CO_OCCURRENCE_RATIO * min(count_a, count_b):
+            continue
 
         # Calculer les probabilités
         p_a = count_a / total_decks
@@ -275,8 +301,11 @@ def calculate_lift_scores(decks):
         # Confidence(B→A) = P(A|B) = co_occurrence / occurrence_B
         confidence_b_to_a = co_count / count_b if count_b > 0 else 0
 
-        # Ne garder que les synergies significatives
-        if lift >= MIN_LIFT_SCORE:
+        # Deux portes d'entrée : synergie significative (lift) OU association
+        # forte dans au moins un sens (confidence). La seconde rattrape les
+        # staples, dont le lift est mécaniquement écrasé par leur popularité.
+        max_confidence = max(confidence_a_to_b, confidence_b_to_a)
+        if lift >= MIN_LIFT_SCORE or max_confidence >= MIN_CONFIDENCE:
             synergies[(card_a, card_b)] = {
                 'lift': lift,
                 'co_occurrence': co_count,
@@ -316,7 +345,10 @@ def process_synergies(set_code, formats):
 
         # Calculer les lift scores
         synergies = calculate_lift_scores(decks)
-        print(f"   🎯 {len(synergies)} synergies significatives (lift >= {MIN_LIFT_SCORE})")
+        by_lift = sum(1 for d in synergies.values() if d['lift'] >= MIN_LIFT_SCORE)
+        print(f"   🎯 {len(synergies)} paires retenues "
+              f"({by_lift} par lift >= {MIN_LIFT_SCORE}, "
+              f"{len(synergies) - by_lift} par confidence >= {MIN_CONFIDENCE:.0%})")
 
         if synergies:
             # Supprimer les anciennes synergies
@@ -376,6 +408,12 @@ def parse_arguments():
         default=None,
         help=f'Minimum lift score (défaut: {MIN_LIFT_SCORE})'
     )
+    parser.add_argument(
+        '--min-confidence', '-c',
+        type=float,
+        default=None,
+        help=f'Confidence de rattrapage des staples (défaut: {MIN_CONFIDENCE})'
+    )
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -388,6 +426,8 @@ if __name__ == "__main__":
         TARGET_FORMATS = list(args.formats)
     if args.min_lift:
         MIN_LIFT_SCORE = args.min_lift
+    if args.min_confidence:
+        MIN_CONFIDENCE = args.min_confidence
 
     print("🔗 ETL Synergies - Démarrage")
     print(f"⏰ {datetime.now(timezone.utc).isoformat()}")
@@ -409,7 +449,9 @@ if __name__ == "__main__":
         exit(0)
 
     print(f"📋 Formats: {TARGET_FORMATS}")
-    print(f"⚙️ Seuils: min_lift={MIN_LIFT_SCORE} (co_occurrence et card_occurrence sont dynamiques)")
+    print(f"⚙️ Seuils: min_lift={MIN_LIFT_SCORE} OU min_confidence={MIN_CONFIDENCE} ; "
+          f"card_occurrence >= {MIN_CARD_OCCURRENCE}, "
+          f"co_occurrence >= max({MIN_CO_OCCURRENCE}, {CO_OCCURRENCE_RATIO:.0%} de la carte la plus rare)")
 
     # Traiter chaque set
     total_saved = 0

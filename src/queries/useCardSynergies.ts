@@ -128,11 +128,15 @@ export interface TopFormatSynergiesResult {
  * Meilleures combinaisons du format : top lift (synergie pure) et top
  * "often played with" (confidence, orientée). Le tri se fait côté Postgres —
  * on ne rapatrie jamais toute la table.
+ *
+ * On ramène un *vivier* (quelques centaines de paires) et non le top 20 final :
+ * le filtre couleur du front découpe dedans, sinon filtrer sur le blanc ne
+ * laisserait que deux lignes.
  */
 export function useTopFormatSynergies(
     activeSet: string,
     activeFormat: string,
-    limit = 20,
+    limit = 300,
     enabled = true
 ) {
     return useQuery({
@@ -147,11 +151,10 @@ export function useTopFormatSynergies(
 
             // La confidence max d'une paire peut être dans l'un ou l'autre sens :
             // on récupère les meilleurs de chaque colonne puis on fusionne.
-            const overFetch = limit * 3
             const [liftRes, abRes, baRes] = await Promise.all([
                 base().order('lift_score', { ascending: false }).limit(limit),
-                base().order('confidence_a_to_b', { ascending: false }).limit(overFetch),
-                base().order('confidence_b_to_a', { ascending: false }).limit(overFetch),
+                base().order('confidence_a_to_b', { ascending: false }).limit(limit),
+                base().order('confidence_b_to_a', { ascending: false }).limit(limit),
             ])
 
             if (liftRes.error) throw liftRes.error
@@ -195,7 +198,6 @@ export function useTopFormatSynergies(
 
             const topPlayedWith = [...bestByPair.values()]
                 .sort((a, b) => b.confidence - a.confidence)
-                .slice(0, limit)
 
             return { topLift, topPlayedWith }
         },

@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Link2, Trophy, Users, HelpCircle, ArrowRight, Sparkles, ArrowLeftRight,
-  ChevronRight, LayoutList, GalleryHorizontalEnd,
+  ChevronRight, LayoutList, GalleryHorizontalEnd, Blocks, Anchor,
 } from 'lucide-react';
 import type { Card } from '../../types';
 import { RARITY_STYLES } from '../../constants';
 import { extractColors, getCardImage, normalizeRarity } from '../../utils/helpers';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useFormatSynergies, MIN_SIGNIFICANT_LIFT } from '../../queries/useDraftPractice';
 import CardImage from '../Common/CardImage';
 import { SearchAutocomplete } from '../Common/SearchAutocomplete';
 import { Tooltip } from '../Common/Tooltip';
@@ -29,9 +30,16 @@ interface CardSynergiesOverlayProps {
 type MobileTab = 'lift' | 'played';
 /** Densité des listes (desktop only) : lignes compactes ou galerie de cartes. */
 type ListLayout = 'rows' | 'gallery';
+/** Objet du classement : les paires, ou les cartes agrégées sur leurs paires. */
+type TopView = 'pairs' | 'cards';
+/** Le filtre couleur porte sur une carte de la paire, ou sur les deux. */
+type ColorScope = 'any' | 'both';
 
 const TOP_LIMIT = 20;
 const CARD_LIMIT = 10;
+/** Lift à partir duquel une partenaire compte dans le score de "colle". */
+const GLUE_LIFT = 1.5;
+const FILTER_COLORS = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
 
 const formatLift = (lift: number) => `x${lift.toFixed(2)}`;
 const formatPct = (value: number) => `${Math.round(value * 100)}%`;
@@ -83,6 +91,81 @@ const ScoreBadge: React.FC<{ value: string; tone: 'lift' | 'played'; large?: boo
   >
     {value}
   </span>
+);
+
+/**
+ * Filtre couleur des tops. Le mode "both" est le seul qui neutralise le
+ * confondant couleur : deux cartes rouges-noires se croisent surtout parce que
+ * les decks RN existent, pas parce qu'elles interagissent.
+ */
+const ColorFilter: React.FC<{
+  selected: string[];
+  onToggle: (c: string) => void;
+  scope: ColorScope;
+  onScope: (s: ColorScope) => void;
+  showScope: boolean;
+}> = ({ selected, onToggle, scope, onScope, showScope }) => (
+  <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
+      {FILTER_COLORS.map(c => {
+        const active = selected.includes(c);
+        return (
+          <button
+            key={c}
+            onClick={() => { haptics.light(); onToggle(c); }}
+            title={c === 'C' ? 'Colorless' : c}
+            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${
+              active ? 'scale-110 shadow-md border-white' : 'border-transparent opacity-50 grayscale hover:opacity-90'
+            }`}
+          >
+            {c === 'C' ? (
+              <span className="w-full h-full rounded-full bg-slate-400 flex items-center justify-center text-[8px] font-black text-slate-900">C</span>
+            ) : (
+              <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} alt={c} className="w-full h-full" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+    {showScope && selected.length > 0 && (
+      <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900/60 border border-slate-800">
+        {([
+          { id: 'any' as ColorScope, label: 'Either card' },
+          { id: 'both' as ColorScope, label: 'Both cards' },
+        ]).map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => { haptics.light(); onScope(id); }}
+            className={`px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
+              scope === id ? 'bg-slate-700/80 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+/** Bascule paires / cartes. */
+const TopViewToggle: React.FC<{ value: TopView; onChange: (v: TopView) => void }> = ({ value, onChange }) => (
+  <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900/60 border border-slate-800 w-fit">
+    {([
+      { id: 'pairs' as TopView, label: 'Pairs', Icon: Link2 },
+      { id: 'cards' as TopView, label: 'Cards', Icon: Blocks },
+    ]).map(({ id, label, Icon }) => (
+      <button
+        key={id}
+        onClick={() => { haptics.light(); onChange(id); }}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
+          value === id ? 'bg-slate-700/80 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+        }`}
+      >
+        <Icon size={12} /> {label}
+      </button>
+    ))}
+  </div>
 );
 
 /** Bascule de densité des listes — desktop uniquement. */
@@ -296,6 +379,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
   const [mobileTab, setMobileTab] = useState<MobileTab>('lift');
   const [showHelp, setShowHelp] = useState(false);
   const [listLayout, setListLayout] = useState<ListLayout>('gallery');
+  const [topView, setTopView] = useState<TopView>('pairs');
+  const [colorFilters, setColorFilters] = useState<string[]>([]);
+  const [colorScope, setColorScope] = useState<ColorScope>('any');
   const isMobile = useIsMobile(768);
 
   // Un nom saisi ne compte que s'il correspond exactement à une carte du set.
@@ -303,6 +389,32 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
     const byName = new Map(cards.map(c => [c.name.toLowerCase(), c] as const));
     return (value: string): Card | null => byName.get(value.trim().toLowerCase()) || null;
   }, [cards]);
+
+  // Couleurs par nom de carte, pour filtrer des paires dont on n'a que les noms.
+  // Une carte incolore est marquée 'C' pour rester filtrable.
+  const colorsByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of cards) {
+      const raw = Array.isArray(c.colors) ? c.colors.join('') : c.colors || '';
+      m.set(c.name, extractColors(raw) || 'C');
+    }
+    return m;
+  }, [cards]);
+
+  const matchesColor = useCallback((name: string) => {
+    if (!colorFilters.length) return true;
+    const cols = colorsByName.get(name);
+    // Carte inconnue du set courant : on ne la masque pas silencieusement.
+    if (cols == null) return true;
+    return colorFilters.some(f => cols.includes(f));
+  }, [colorFilters, colorsByName]);
+
+  const pairMatchesColor = useCallback((a: string, b: string) => {
+    if (!colorFilters.length) return true;
+    return colorScope === 'both'
+      ? matchesColor(a) && matchesColor(b)
+      : matchesColor(a) || matchesColor(b);
+  }, [colorFilters, colorScope, matchesColor]);
 
   const cardA = resolveCard(inputA);
   const cardB = resolveCard(inputB);
@@ -315,13 +427,60 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
   const { data: topData, isLoading: topLoading, isError: topError } = useTopFormatSynergies(
     activeSet,
     activeFormat,
-    TOP_LIMIT,
-    mode === 'global'
+    undefined,
+    mode === 'global' && topView === 'pairs'
   );
   const { data: cardData, isLoading: cardLoading } = useCardSynergies(
     anchor?.name || '',
     activeFormat,
     activeSet
+  );
+
+  // Le classement par carte a besoin de TOUTES les paires : chargé seulement
+  // quand l'onglet Cards est ouvert (même cache que Draft Practice).
+  const { data: pairMap, isLoading: pairMapLoading } = useFormatSynergies(
+    activeSet,
+    activeFormat,
+    mode === 'global' && topView === 'cards'
+  );
+
+  /**
+   * Deux lectures d'une même matrice : le meilleur lift d'une carte désigne un
+   * build-around (une partenaire précise), son nombre de partenaires solides
+   * désigne une colle d'archétype (elle en fait fonctionner beaucoup).
+   */
+  const cardRanking = useMemo(() => {
+    if (!pairMap) return null;
+    const rows = Object.entries(pairMap)
+      .filter(([name]) => matchesColor(name))
+      .map(([name, partners]) => {
+        let best = 0;
+        let bestPartner = '';
+        let strong = 0;
+        for (const [partner, lift] of Object.entries(partners)) {
+          if (lift > best) { best = lift; bestPartner = partner; }
+          if (lift >= GLUE_LIFT) strong++;
+        }
+        return { name, best, bestPartner, strong };
+      })
+      .filter(r => r.best >= MIN_SIGNIFICANT_LIFT);
+
+    return {
+      buildArounds: [...rows].sort((a, b) => b.best - a.best).slice(0, TOP_LIMIT),
+      glue: [...rows]
+        .filter(r => r.strong > 0)
+        .sort((a, b) => b.strong - a.strong || b.best - a.best)
+        .slice(0, TOP_LIMIT),
+    };
+  }, [pairMap, matchesColor]);
+
+  const filteredLift = useMemo(
+    () => (topData?.topLift || []).filter(p => pairMatchesColor(p.cardA, p.cardB)).slice(0, TOP_LIMIT),
+    [topData, pairMatchesColor]
+  );
+  const filteredPlayed = useMemo(
+    () => (topData?.topPlayedWith || []).filter(p => pairMatchesColor(p.from, p.to)).slice(0, TOP_LIMIT),
+    [topData, pairMatchesColor]
   );
 
   const pairEntry: CardSynergy | null = useMemo(() => {
@@ -436,7 +595,8 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 <p className="mt-1">
                   How much more often two cards appear together than pure chance would predict.
                   <strong className="text-slate-300"> x2.00</strong> means twice as often as expected — a real build-around,
-                  not just two good cards.
+                  not just two good cards. A card played in half the decks is capped near x2 by construction, so this
+                  ranking favours specific, lower-played packages.
                 </p>
               </div>
               <div>
@@ -445,6 +605,11 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   Raw co-occurrence: when the first card is in a trophy deck, the second one is there
                   <strong className="text-slate-300"> X%</strong> of the time. Great cards and staples score high here even
                   without a dedicated synergy.
+                </p>
+                <p className="mt-2 text-slate-500">
+                  Colour is the biggest driver of co-occurrence in Limited — two cards share decks partly because
+                  their colour pair exists. Filter on a colour and switch to <strong className="text-slate-400">Both cards</strong> to
+                  strip that effect out.
                 </p>
               </div>
             </div>
@@ -508,7 +673,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 : 'bg-slate-900 border-slate-800 text-slate-500'
             }`}
           >
-            <Trophy size={12} /> Synergy (lift)
+            {mode === 'global' && topView === 'cards'
+              ? <><Blocks size={12} /> Build-arounds</>
+              : <><Trophy size={12} /> Synergy (lift)</>}
           </button>
           <button
             onClick={() => { haptics.light(); setMobileTab('played'); }}
@@ -518,7 +685,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 : 'bg-slate-900 border-slate-800 text-slate-500'
             }`}
           >
-            <Users size={12} /> Often played
+            {mode === 'global' && topView === 'cards'
+              ? <><Anchor size={12} /> Glue</>
+              : <><Users size={12} /> Often played</>}
           </button>
         </div>
       )}
@@ -718,73 +887,146 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
         {/* --- GLOBAL MODE --- */}
         {mode === 'global' && (
           <>
-          <div className="hidden md:flex justify-end mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <TopViewToggle value={topView} onChange={setTopView} />
+              <ColorFilter
+                selected={colorFilters}
+                onToggle={(c) => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
+                scope={colorScope}
+                onScope={setColorScope}
+                showScope={topView === 'pairs'}
+              />
+            </div>
             <LayoutToggle value={listLayout} onChange={setListLayout} />
           </div>
-          <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-            <div className={liftVisible ? '' : 'hidden md:block'}>
-              <ColumnHeader
-                icon={<Trophy size={12} />}
-                label={`Top ${TOP_LIMIT} synergies (lift)`}
-                help="Pairs that appear together far more often than chance would predict. The format's real build-arounds."
-                accent="text-emerald-400"
-              />
-              {topLoading ? (
-                <ListSkeleton />
-              ) : topError ? (
-                <EmptyState message="Could not load synergies. Try again later." />
-              ) : topData?.topLift.length ? (
-                <div className="space-y-2">
-                  {topData.topLift.map((p, i) => (
-                    <PairRow
-                      key={`lift-${p.cardA}-${p.cardB}`}
-                      rank={i + 1}
-                      cardA={p.cardA}
-                      cardB={p.cardB}
-                      score={formatLift(p.lift)}
-                      tone="lift"
-                      gallery={gallery}
-                      onClick={() => selectPair(p.cardA, p.cardB)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState message="No synergy data for this set and format yet." />
-              )}
-            </div>
 
-            <div className={!liftVisible ? '' : 'hidden md:block'}>
-              <ColumnHeader
-                icon={<Users size={12} />}
-                label={`Top ${TOP_LIMIT} often played with`}
-                help="Read as: when the first card is in a trophy deck, the second one is there X% of the time."
-                accent="text-blue-400"
-              />
-              {topLoading ? (
-                <ListSkeleton />
-              ) : topError ? (
-                <EmptyState message="Could not load synergies. Try again later." />
-              ) : topData?.topPlayedWith.length ? (
-                <div className="space-y-2">
-                  {topData.topPlayedWith.map((p, i) => (
-                    <PairRow
-                      key={`played-${p.from}-${p.to}`}
-                      rank={i + 1}
-                      cardA={p.from}
-                      cardB={p.to}
-                      score={formatPct(p.confidence)}
-                      tone="played"
-                      directed
-                      gallery={gallery}
-                      onClick={() => selectPair(p.from, p.to)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState message="No co-occurrence data for this set and format yet." />
-              )}
+          {topView === 'pairs' ? (
+            <div className="grid md:grid-cols-2 gap-4 md:gap-6">
+              <div className={liftVisible ? '' : 'hidden md:block'}>
+                <ColumnHeader
+                  icon={<Trophy size={12} />}
+                  label={`Top ${TOP_LIMIT} synergies (lift)`}
+                  help="Pairs that appear together far more often than chance would predict. The format's real build-arounds. Very popular cards can't rank high here — their lift is capped by how often they're played."
+                  accent="text-emerald-400"
+                />
+                {topLoading ? (
+                  <ListSkeleton />
+                ) : topError ? (
+                  <EmptyState message="Could not load synergies. Try again later." />
+                ) : filteredLift.length ? (
+                  <div className="space-y-2">
+                    {filteredLift.map((p, i) => (
+                      <PairRow
+                        key={`lift-${p.cardA}-${p.cardB}`}
+                        rank={i + 1}
+                        cardA={p.cardA}
+                        cardB={p.cardB}
+                        score={formatLift(p.lift)}
+                        tone="lift"
+                        gallery={gallery}
+                        onClick={() => selectPair(p.cardA, p.cardB)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState message={colorFilters.length ? 'No synergy pair matches this colour filter.' : 'No synergy data for this set and format yet.'} />
+                )}
+              </div>
+
+              <div className={!liftVisible ? '' : 'hidden md:block'}>
+                <ColumnHeader
+                  icon={<Users size={12} />}
+                  label={`Top ${TOP_LIMIT} often played with`}
+                  help="Read as: when the first card is in a trophy deck, the second one is there X% of the time. Staples rank high here even without a dedicated synergy."
+                  accent="text-blue-400"
+                />
+                {topLoading ? (
+                  <ListSkeleton />
+                ) : topError ? (
+                  <EmptyState message="Could not load synergies. Try again later." />
+                ) : filteredPlayed.length ? (
+                  <div className="space-y-2">
+                    {filteredPlayed.map((p, i) => (
+                      <PairRow
+                        key={`played-${p.from}-${p.to}`}
+                        rank={i + 1}
+                        cardA={p.from}
+                        cardB={p.to}
+                        score={formatPct(p.confidence)}
+                        tone="played"
+                        directed
+                        gallery={gallery}
+                        onClick={() => selectPair(p.from, p.to)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState message={colorFilters.length ? 'No pair matches this colour filter.' : 'No co-occurrence data for this set and format yet.'} />
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4 md:gap-6">
+              <div className={liftVisible ? '' : 'hidden md:block'}>
+                <ColumnHeader
+                  icon={<Blocks size={12} />}
+                  label={`Top ${TOP_LIMIT} build-arounds`}
+                  help="Cards ranked by their single strongest partner. A high score means one specific card turns this one on — the payoff/enabler pattern."
+                  accent="text-emerald-400"
+                />
+                {pairMapLoading ? (
+                  <ListSkeleton />
+                ) : cardRanking?.buildArounds.length ? (
+                  <div className="space-y-2">
+                    {cardRanking.buildArounds.map((c, i) => (
+                      <PartnerRow
+                        key={`ba-${c.name}`}
+                        rank={i + 1}
+                        partner={c.name}
+                        score={formatLift(c.best)}
+                        subtitle={`with ${c.bestPartner}`}
+                        tone="lift"
+                        gallery={gallery}
+                        onClick={() => selectPair(c.name, c.bestPartner)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState message={colorFilters.length ? 'No card matches this colour filter.' : 'No synergy data for this set and format yet.'} />
+                )}
+              </div>
+
+              <div className={!liftVisible ? '' : 'hidden md:block'}>
+                <ColumnHeader
+                  icon={<Anchor size={12} />}
+                  label={`Top ${TOP_LIMIT} archetype glue`}
+                  help={`Cards ranked by how many partners they have above x${GLUE_LIFT}. High here means the card holds a whole package together rather than comboing with one specific card.`}
+                  accent="text-blue-400"
+                />
+                {pairMapLoading ? (
+                  <ListSkeleton />
+                ) : cardRanking?.glue.length ? (
+                  <div className="space-y-2">
+                    {cardRanking.glue.map((c, i) => (
+                      <PartnerRow
+                        key={`glue-${c.name}`}
+                        rank={i + 1}
+                        partner={c.name}
+                        score={`${c.strong}`}
+                        subtitle={`partners above x${GLUE_LIFT} · best ${formatLift(c.best)}`}
+                        tone="played"
+                        gallery={gallery}
+                        onClick={() => { haptics.light(); setInputA(c.name); setInputB(''); }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState message={colorFilters.length ? 'No card matches this colour filter.' : 'No synergy data for this set and format yet.'} />
+                )}
+              </div>
+            </div>
+          )}
           </>
         )}
       </div>

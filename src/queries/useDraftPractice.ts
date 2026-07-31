@@ -63,6 +63,14 @@ export function useDraftPracticeSessions(activeSet: string, activeFormat: string
 }
 
 /**
+ * Seuil de lift au-delà duquel une paire compte comme une vraie synergie.
+ * `synergy_scores` contient aussi, depuis le rattrapage "confidence" de l'ETL,
+ * des paires à faible lift (deux staples qui se croisent souvent sans se
+ * chercher) : les inclure gonflerait artificiellement toute mesure de cohésion.
+ */
+export const MIN_SIGNIFICANT_LIFT = 1.2
+
+/**
  * Charge toutes les synergies (lift par paire) d'un set/format et renvoie une
  * matrice paire→score. Sert à mesurer la *cohésion* d'un pool dans le recap
  * (synergie moyenne entre les cartes piochées, en complément du WR).
@@ -80,6 +88,7 @@ export function useFormatSynergies(activeSet: string, activeFormat: string, enab
           .select('card_a, card_b, synergy_score')
           .eq('set_code', activeSet)
           .eq('format', activeFormat)
+          .gte('synergy_score', MIN_SIGNIFICANT_LIFT)
           .order('card_a', { ascending: true })
           .range(offset, offset + PAGE - 1)
         if (error) throw error
