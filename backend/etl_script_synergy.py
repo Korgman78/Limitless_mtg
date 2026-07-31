@@ -35,9 +35,16 @@ MIN_CONFIDENCE = 0.5
 # 63% du temps à ses côtés — une interdiction de fait, quelle que soit la force
 # de la synergie. Le seuil de co-occurrence est donc désormais RELATIF à la
 # carte la plus rare de la paire, avec un plancher absolu pour la fiabilité.
+#
+# Le plancher reste toutefois un garde-fou anti-anomalie : sur un très gros
+# corpus, une paire vue 20 fois produit des lifts spectaculaires (x20) qui ne
+# décrivent souvent qu'une poignée de decks corrélés. D'où un plancher qui suit
+# légèrement la taille du corpus (0,3%), sans jamais redevenir prohibitif :
+# 45 decks pour 15 000, 20 pour les petits formats.
 MIN_CARD_OCCURRENCE = 50      # decks minimum pour qu'une carte soit analysée
 MIN_CO_OCCURRENCE = 20        # plancher absolu de co-occurrence d'une paire
-CO_OCCURRENCE_RATIO = 0.25    # ... ou 25% des decks de la carte la plus rare
+CO_OCCURRENCE_FLOOR = 0.003   # ... relevé à 0,3% du corpus s'il est plus grand
+CO_OCCURRENCE_RATIO = 0.25    # ... et au moins 25% des decks de la carte rare
 
 # Terrains de base à exclure des calculs de synergie
 BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
@@ -120,12 +127,33 @@ def get_trophy_decks(set_code, fmt):
 
     return all_decks
 
+# Ordre des ponctuations dans la collation de Postgres (ICU/DUCET), qui diffère
+# de l'ASCII : la virgule y passe AVANT l'apostrophe alors que Python fait
+# l'inverse (0x27 < 0x2C). D'où les rejets `card_order_check` sur les paires du
+# type "Hawkeye, Young Avenger" / "Hawkeye's Bow". Les rangs ci-dessous suivent
+# l'ordre DUCET ; seul leur ordre relatif compte.
+_PUNCT_RANK = {
+    ' ': 1, '_': 2, '-': 3, ',': 4, ';': 5, ':': 6, '!': 7, '?': 8, '.': 9,
+    "'": 10, '"': 11, '(': 12, ')': 13, '[': 14, ']': 15, '/': 16, '\\': 17,
+    '&': 18, '#': 19, '%': 20, '+': 21,
+}
+# Tout ce qui n'est pas ponctuation (lettres, chiffres) trie après elles.
+_ALNUM_RANK = 100
+
+
 def _order_key(name):
-    """Clé de tri reproduisant le poids primaire (insensible à la casse) de la
-    collation Postgres. Le tri ASCII de Python place les majuscules avant les
-    minuscules ('P' < 'o'), ce qui viole la contrainte `card_order_check`
-    (card_a < card_b) côté DB. casefold() aligne les deux ordres."""
-    return (name.casefold(), name)
+    """Clé de tri reproduisant le poids primaire de la collation Postgres.
+
+    Deux écarts à corriger par rapport au tri natif de Python :
+      - la casse ('P' < 'o' en ASCII) → casefold()
+      - la ponctuation, dont l'ordre ASCII ne correspond pas à celui d'ICU
+    Sans ça la contrainte `card_order_check` (card_a < card_b) est violée et la
+    ligne est rejetée à l'insert.
+    """
+    return [
+        (_PUNCT_RANK[ch], '') if ch in _PUNCT_RANK else (_ALNUM_RANK, ch)
+        for ch in name.casefold()
+    ]
 
 def save_synergies(synergies, set_code, fmt):
     """Sauvegarde les synergies dans Supabase. Retourne (saved, failed)."""
@@ -179,10 +207,26 @@ def save_synergies(synergies, set_code, fmt):
                     r = requests.post(api_url, json=[rec], headers=HEADERS_SUPABASE, timeout=30)
                     if r.status_code < 400:
                         saved += 1
-                    else:
-                        failed += 1
-                        if failed <= 5:
-                            print(f"         ❌ {rec['card_a']} + {rec['card_b']}: {r.text[:120]}")
+                        continue
+
+                    # `card_order_check` (23514) : notre clé de tri et la
+                    # collation Postgres ont divergé sur ce couple de noms. On
+                    # retente une fois dans l'autre sens plutôt que de perdre la
+                    # synergie — parfois la plus forte du set.
+                    if '23514' in r.text:
+                        swapped = dict(rec)
+                        swapped['card_a'], swapped['card_b'] = rec['card_b'], rec['card_a']
+                        swapped['confidence_a_to_b'] = rec['confidence_b_to_a']
+                        swapped['confidence_b_to_a'] = rec['confidence_a_to_b']
+                        r2 = requests.post(api_url, json=[swapped], headers=HEADERS_SUPABASE, timeout=30)
+                        if r2.status_code < 400:
+                            saved += 1
+                            print(f"         ↔️ Ordre inversé accepté: {rec['card_a']} + {rec['card_b']}")
+                            continue
+
+                    failed += 1
+                    if failed <= 5:
+                        print(f"         ❌ {rec['card_a']} + {rec['card_b']}: {r.text[:120]}")
                 except Exception as e:
                     failed += 1
                     if failed <= 5:
@@ -227,8 +271,10 @@ def calculate_lift_scores(decks):
     total_decks = len(decks)
     print(f"   📊 Analyse de {total_decks} decks...")
 
+    # Plancher de co-occurrence : absolu, relevé sur les gros corpus.
+    co_floor = max(MIN_CO_OCCURRENCE, int(total_decks * CO_OCCURRENCE_FLOOR))
     print(f"   ⚙️ Seuils: card_occurrence >= {MIN_CARD_OCCURRENCE} decks, "
-          f"co_occurrence >= max({MIN_CO_OCCURRENCE}, {CO_OCCURRENCE_RATIO:.0%} de la carte la plus rare)")
+          f"co_occurrence >= {co_floor} et >= {CO_OCCURRENCE_RATIO:.0%} de la carte la plus rare")
 
     # Compter les occurrences de chaque carte (dans combien de decks elle apparaît)
     card_occurrence = defaultdict(int)
@@ -263,9 +309,9 @@ def calculate_lift_scores(decks):
     synergies = {}
 
     for (card_a, card_b), co_count in pair_occurrence.items():
-        # Plancher absolu : en dessous, le ratio n'est pas fiable (et ça élague
+        # Plancher : en dessous, le ratio n'est pas fiable (et ça élague
         # l'immense majorité des paires avant les calculs).
-        if co_count < MIN_CO_OCCURRENCE:
+        if co_count < co_floor:
             continue
 
         # Skip si une des cartes n'est pas assez fréquente
