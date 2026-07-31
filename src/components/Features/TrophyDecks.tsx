@@ -27,6 +27,8 @@ interface TrophyDecksProps {
     onFormatChange?: (format: string) => void;
     /** Défi Draft Practice reçu par lien : ouvre l'overlay directement. */
     draftChallenge?: DraftChallenge | null;
+    /** Résultat partagé : ouvre l'overlay sur l'écran final, en lecture seule. */
+    draftResult?: DraftChallenge | null;
     /** Appelé quand l'overlay se ferme, pour retomber en mode normal. */
     onDraftChallengeDone?: () => void;
 }
@@ -63,7 +65,7 @@ const getArchetypeSurface = (colors: string | null | undefined) => {
     };
 };
 
-export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect, onFormatChange, draftChallenge = null, onDraftChallengeDone }) => {
+export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeFormat, onCardSelect, onFormatChange, draftChallenge = null, draftResult = null, onDraftChallengeDone }) => {
     const { data: skeletons = [], isLoading } = useSkeletons(activeSet, activeFormat);
     const [selection, setSelection] = useState<ArchSelection>({ archetype: null, isAlternative: false });
     const [filter, setFilter] = useState<ArchFilter>('2 colors');
@@ -75,10 +77,10 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     const [showPractice, setShowPractice] = useState(false);
     const isDraft = !activeFormat.toLowerCase().includes('sealed');
 
-    // Un lien de défi ouvre Draft Practice sans passer par le bouton.
+    // Un lien (défi ou résultat partagé) ouvre Draft Practice sans le bouton.
     useEffect(() => {
-        if (draftChallenge) setShowPractice(true);
-    }, [draftChallenge]);
+        if (draftChallenge || draftResult) setShowPractice(true);
+    }, [draftChallenge, draftResult]);
 
     // Aliases pour compatibilité avec le code existant
     const selectedArch = selection.archetype;
@@ -874,6 +876,7 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                     <DraftPracticeOverlay
                         activeSet={activeSet}
                         challenge={draftChallenge}
+                        result={draftResult}
                         onClose={() => { setShowPractice(false); onDraftChallengeDone?.(); }}
                     />
                 )}

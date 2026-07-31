@@ -70,6 +70,7 @@ const SECTIONS: GuideSection[] = [
       { b: 'Filter & sort', t: ' by colour, rarity, and by GIH / ALSA / TREND.' },
       { b: 'Search a card', t: ' by name with full-text autocomplete.' },
       { b: 'Open Card Analysis', t: ' — click any card for its detail popup: an evaluation matrix plotting its win rate against pick order, how it performs across the archetypes that play it, and the cards it’s most often played alongside and synergises with.' },
+      { b: 'Open Card Synergies', t: ' — the format’s best pairs, straight from trophy decks: the top combos by synergy (lift) next to the top “often played together”. Type one card for its 10 best partners, or two cards to score that exact pair.' },
       { b: 'Open Card Graphs', t: ' — three views in one: the WR / ALSA scatter (undervalued cards jump out), a Map where cards cluster by how often they share trophy decks, and Communities that auto-group cards into synergy packages.' },
       { b: 'Toggle FLEX', t: ' — filter to the format’s flex cards: commons & uncommons with above-average win rate that perform the most consistently across every archetype (the safe, flexible picks).' },
     ],
@@ -113,7 +114,8 @@ const SECTIONS: GuideSection[] = [
     doItems: [
       { b: 'Toggle the view', t: ' between Full Deck / Core Cards Only and Main / Alternative variants.' },
       { b: 'Open the Trophies Map', t: ' — a cluster map where each dot is a real trophy deck and distance = card similarity; highlight an archetype’s signature cards or search a card to light up every deck playing it.' },
-      { b: 'Run Draft Practice', t: ' (draft formats only) — replay the exact packs faced by a top-Mythic trophy player. Pick blind or coached, then get a card-by-card recap: how often you matched the player, your picks’ average win rate, and your pool’s synergy (cohesion) versus theirs.' },
+      { b: 'Run Draft Practice', t: ' (draft formats only) — replay the exact packs faced by a top-Mythic trophy player, blind or coached. The recap shows how close your picks were to theirs (a similarity score, not a verdict — mythic players miss picks too), your picks’ average win rate and your pool’s cohesion. Then build your deck and have it scored against the archetype’s trophy skeleton, side by side with theirs.' },
+      { b: 'Share a draft', t: ' — a Challenge link makes a friend redraft the same pod blind before comparing with you; a Share result link drops them straight onto your final screen, picks and decks included. Everything travels in the link, nothing is stored.' },
       { b: 'Test your own deck', t: ' to find the closest matching archetype, and tap the ❓ for the full methodology.' },
     ],
     proTip: '"Core Cards Only" strips the deck down to its non-negotiable picks — prioritise these when you draft the archetype.',
@@ -150,7 +152,8 @@ const GLOSSARY: { term: string; def: string }[] = [
   { term: 'Meta share', def: 'The percentage of all games played by a given archetype.' },
   { term: 'Trophy deck', def: 'A 7-win (7-X) run on Arena. These decks are the dataset behind Trophy Decks and the Trophies Map.' },
   { term: 'Core card', def: 'One of the highest-frequency pillars that defines an archetype’s skeleton — the cards you almost always run.' },
-  { term: 'Lift (synergy)', def: 'How much more often two cards appear together in trophy decks than chance would predict (lift > 1 = they go together). Averaged across a pool, it measures cohesion — used in Draft Practice and Card Graphs.' },
+  { term: 'Lift (synergy)', def: 'How much more often two cards appear together in trophy decks than chance would predict (lift > 1 = they go together). Averaged across a pool, it measures cohesion — used in Card Synergies, Draft Practice and Card Graphs.' },
+  { term: 'Often played with', def: 'Raw co-occurrence, read in one direction: when card A is in a trophy deck, card B is there X% of the time. Staples score high here even without a dedicated synergy — unlike lift.' },
 ];
 
 const GLOSSARY_ID = '__glossary';

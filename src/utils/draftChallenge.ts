@@ -31,6 +31,21 @@ const COLORS: readonly string[] = ['W', 'U', 'B', 'R', 'G'];
 
 /** Paramètre de fragment portant le défi : #dp=<payload> */
 export const CHALLENGE_PARAM = 'dp';
+/** Même payload, mais partagé en lecture seule : #dr=<payload> */
+export const RESULT_PARAM = 'dr';
+
+/**
+ * Deux usages du même token :
+ *  - `challenge` : "rejoue ce pod et bats-moi" → l'ami drafte.
+ *  - `result`    : "voilà mon draft" → le visiteur atterrit sur l'écran final,
+ *                  picks et decks déjà reconstitués, sans rien drafter.
+ */
+export type SharedDraftKind = 'challenge' | 'result';
+
+export interface SharedDraft {
+  kind: SharedDraftKind;
+  challenge: DraftChallenge;
+}
 
 export type ChallengeMode = 'blind' | 'coached';
 
@@ -188,38 +203,57 @@ export function decodeChallenge(token: string): DraftChallenge | null {
 
 // ─── URL ─────────────────────────────────────────────────────────────────────
 
-/** Lien complet à envoyer à un ami (le défi est dans le fragment). */
-export function buildChallengeUrl(challenge: DraftChallenge): string {
+const buildUrl = (param: string, challenge: DraftChallenge): string => {
   const token = encodeChallenge(challenge);
   if (!token) return '';
   const { origin, pathname } = window.location;
-  return `${origin}${pathname}#${CHALLENGE_PARAM}=${token}`;
+  return `${origin}${pathname}#${param}=${token}`;
+};
+
+/** Lien "rejoue ce pod et bats-moi" à envoyer à un ami. */
+export function buildChallengeUrl(challenge: DraftChallenge): string {
+  return buildUrl(CHALLENGE_PARAM, challenge);
 }
 
-// Le défi est lu UNE fois au chargement du module : `useUrlState` réécrit l'URL
+/** Lien "voilà mon draft" : ouvre directement l'écran final en lecture seule. */
+export function buildResultUrl(challenge: DraftChallenge): string {
+  return buildUrl(RESULT_PARAM, challenge);
+}
+
+// Le token est lu UNE fois au chargement du module : `useUrlState` réécrit l'URL
 // (replaceState sans fragment) dès le premier rendu de App et effacerait le
 // token avant qu'on ait pu le consommer.
-const initialChallenge: DraftChallenge | null = (() => {
+const initialShared: SharedDraft | null = (() => {
   if (typeof window === 'undefined') return null;
   const hash = window.location.hash.replace(/^#/, '');
   if (!hash) return null;
-  const token = new URLSearchParams(hash).get(CHALLENGE_PARAM);
-  return token ? decodeChallenge(token) : null;
+  const params = new URLSearchParams(hash);
+  for (const [param, kind] of [
+    [CHALLENGE_PARAM, 'challenge'],
+    [RESULT_PARAM, 'result'],
+  ] as const) {
+    const token = params.get(param);
+    if (!token) continue;
+    const challenge = decodeChallenge(token);
+    return challenge ? { kind, challenge } : null;
+  }
+  return null;
 })();
 
-/** Défi présent dans l'URL au chargement de la page (null sinon). */
-export function readChallengeFromUrl(): DraftChallenge | null {
-  return initialChallenge;
+/** Défi ou résultat présent dans l'URL au chargement de la page (null sinon). */
+export function readSharedDraftFromUrl(): SharedDraft | null {
+  return initialShared;
 }
 
 /** Retire le token du fragment sans recharger (après consommation). */
-export function clearChallengeFromUrl(): void {
+export function clearSharedDraftFromUrl(): void {
   if (typeof window === 'undefined') return;
   const hash = window.location.hash.replace(/^#/, '');
   if (!hash) return;
   const params = new URLSearchParams(hash);
-  if (!params.has(CHALLENGE_PARAM)) return;
+  if (!params.has(CHALLENGE_PARAM) && !params.has(RESULT_PARAM)) return;
   params.delete(CHALLENGE_PARAM);
+  params.delete(RESULT_PARAM);
   const rest = params.toString();
   window.history.replaceState(
     {},

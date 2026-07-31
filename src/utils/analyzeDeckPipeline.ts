@@ -426,9 +426,12 @@ export function scoreDeckAnalysis(a: DeckAnalysisResult): DeckScore {
   const corePresent = coreCards.filter((c) => c.present).length;
   const coreCoverage = coreTotal > 0 ? corePresent / coreTotal : null;
 
+  // La puissance des cartes pèse la moitié de la note : c'est ce qui sépare le
+  // plus nettement deux decks du même archétype. La courbe reste un garde-fou
+  // (10%) — s'en écarter un peu n'est pas rédhibitoire.
   const composite =
-    0.4 * power +
-    0.2 * curveFit +
+    0.5 * power +
+    0.1 * curveFit +
     0.15 * creatureFit +
     0.25 * (coreCoverage ?? 0.75);
 

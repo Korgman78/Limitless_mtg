@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Crown, Sparkles, Target, Check, ArrowRight, RotateCcw, Shuffle,
-  Eye, EyeOff, Loader2, Swords, Trophy, TrendingUp, ChevronRight,
+  Eye, EyeOff, Loader2, Swords, TrendingUp, ChevronRight,
   Layers, Plus, Minus, Wand2, ChevronLeft, Users, Share2,
 } from 'lucide-react';
 import { FORMAT_OPTIONS } from '../../constants';
@@ -24,7 +24,7 @@ import {
   type DraftPick, type PairMap, type DraftCardMeta,
 } from '../../queries/useDraftPractice';
 import { suggestBasicLands, BASIC_LAND_OF, MANA_COLORS, type ManaCardMeta } from '../../utils/manabase';
-import { buildChallengeUrl, type ChallengeEntrant, type DraftChallenge } from '../../utils/draftChallenge';
+import { buildChallengeUrl, buildResultUrl, type ChallengeEntrant, type DraftChallenge } from '../../utils/draftChallenge';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 interface DraftPracticeOverlayProps {
@@ -32,6 +32,12 @@ interface DraftPracticeOverlayProps {
   onClose: () => void;
   /** Défi reçu par lien : pod imposé + picks/deck de l'ami pour la comparaison. */
   challenge?: DraftChallenge | null;
+  /**
+   * Résultat partagé : mêmes données, mais on atterrit directement sur l'écran
+   * final en lecture seule. entrants[0] = celui qui partage, [1] = son ami s'il
+   * avait lui-même reçu un défi.
+   */
+  result?: DraftChallenge | null;
 }
 
 type Phase = 'intro' | 'drafting' | 'recap' | 'build' | 'compare';
@@ -79,17 +85,21 @@ interface Recap {
   userAvgWr: number | null; proAvgWr: number | null;
   userSynergy: number; proSynergy: number; synergyAvailable: boolean;
   composite: number;
-  grade: { letter: string; color: string; ring: string; label: string };
+  grade: { color: string; ring: string; label: string };
   details: PickDetail[];
-  bestPick: PickDetail | null; worstMiss: PickDetail | null;
 }
 
-const gradeFor = (c: number) => {
-  if (c >= 0.85) return { letter: 'S', color: 'text-amber-300', ring: 'from-amber-400 to-yellow-500', label: 'Mythic-level read' };
-  if (c >= 0.72) return { letter: 'A', color: 'text-emerald-300', ring: 'from-emerald-400 to-teal-500', label: 'Excellent drafting' };
-  if (c >= 0.58) return { letter: 'B', color: 'text-indigo-300', ring: 'from-indigo-400 to-purple-500', label: 'Solid instincts' };
-  if (c >= 0.42) return { letter: 'C', color: 'text-sky-300', ring: 'from-sky-400 to-indigo-500', label: 'Getting there' };
-  return { letter: 'D', color: 'text-rose-300', ring: 'from-rose-400 to-orange-500', label: 'Keep practicing' };
+// L'anneau affiche une PROXIMITÉ avec le draft du joueur mythic, pas une note :
+// il peut lui-même se tromper, et certains seats ont deux routes également
+// jouables. D'où un % de picks communs plutôt qu'une lettre, et des libellés
+// qui décrivent l'écart sans le juger. Seuils calés sur l'accord brut : matcher
+// 70% des picks d'un autre drafteur sur 45 cartes est déjà énorme.
+const gradeFor = (agreement: number) => {
+  if (agreement >= 0.7) return { color: 'text-amber-300', ring: 'from-amber-400 to-yellow-500', label: 'Nearly the same draft' };
+  if (agreement >= 0.55) return { color: 'text-emerald-300', ring: 'from-emerald-400 to-teal-500', label: 'Very similar draft' };
+  if (agreement >= 0.4) return { color: 'text-indigo-300', ring: 'from-indigo-400 to-purple-500', label: 'Fairly similar draft' };
+  if (agreement >= 0.25) return { color: 'text-sky-300', ring: 'from-sky-400 to-indigo-500', label: 'Moderately similar draft' };
+  return { color: 'text-slate-300', ring: 'from-slate-400 to-slate-500', label: 'A different route' };
 };
 
 /** Cohésion d'un pool : somme des lifts des paires significatives présentes, / nb de cartes distinctes. */
@@ -139,24 +149,13 @@ function computeRecap(picks: DraftPick[], userPicks: string[], getWR: (n: string
   const agreement = n ? matches / n : 0;
   const userQuality = userQn ? userQSum / userQn : null;
   const proQuality = proQn ? proQSum / proQn : null;
+  // Conservé pour le classement interne des sessions ; l'anneau, lui, n'affiche
+  // que l'accord brut (la qualité des picks a sa propre ligne plus bas).
   const composite = 0.5 * agreement + 0.5 * (userQuality ?? agreement);
 
   const userSynergy = poolSynergy(details.map(d => d.your), pairMap);
   const proSynergy = poolSynergy(details.map(d => d.pro), pairMap);
   const synergyAvailable = Object.keys(pairMap).length > 0;
-
-  // Highlights : meilleur pick (accord sur une carte forte) / pire raté (gros écart WR)
-  let bestPick: PickDetail | null = null, worstMiss: PickDetail | null = null;
-  for (const d of details) {
-    if (d.agree && d.proWr != null) {
-      if (!bestPick || (d.proWr) > (bestPick.proWr ?? -1)) bestPick = d;
-    }
-    if (!d.agree && d.proWr != null && d.yourWr != null) {
-      const gap = d.proWr - d.yourWr;
-      const cur = worstMiss && worstMiss.proWr != null && worstMiss.yourWr != null ? worstMiss.proWr - worstMiss.yourWr : -1;
-      if (gap > cur) worstMiss = d;
-    }
-  }
 
   return {
     n, matches, agreement, earlyMatches, earlyTotal,
@@ -164,7 +163,7 @@ function computeRecap(picks: DraftPick[], userPicks: string[], getWR: (n: string
     userAvgWr: userWrN ? userWrSum / userWrN : null,
     proAvgWr: proWrN ? proWrSum / proWrN : null,
     userSynergy, proSynergy, synergyAvailable,
-    composite, grade: gradeFor(composite), details, bestPick, worstMiss,
+    composite, grade: gradeFor(agreement), details,
   };
 }
 
@@ -204,7 +203,7 @@ const CardTile: React.FC<{
 );
 
 // ============================================================ MAIN COMPONENT
-export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, onClose, challenge = null }) => {
+export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ activeSet, onClose, challenge = null, result = null }) => {
   const { data: sessions = [], isLoading: listLoading } = useDraftPracticeSessions(activeSet, PRACTICE_FORMAT);
   const { data: cardsData } = useCards(activeSet, PRACTICE_FORMAT, 'Global');
   const { data: pairMap = {} } = useFormatSynergies(activeSet, PRACTICE_FORMAT);
@@ -219,14 +218,24 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data: session, isLoading: sessionLoading, isError: sessionError } = useDraftPracticeSession(selectedId);
-  // Lien de défi dont le pod n'est plus (ou pas encore) en base : le replay est
+
+  // Résultat partagé en cours de consultation. En état local : cliquer sur
+  // "Draft this pod yourself" le convertit en défi et rend la main au joueur.
+  const [shared, setShared] = useState<DraftChallenge | null>(result);
+  const [localChallenge, setLocalChallenge] = useState<DraftChallenge | null>(null);
+  const activeChallenge = challenge ?? localChallenge;
+  const sharedOwner = shared?.entrants[0] ?? null;
+  const viewingShared = !!shared && !!sharedOwner;
+  const sharedName = sharedOwner?.name?.trim() || 'A friend';
+
+  // Lien dont le pod n'est plus (ou pas encore) en base : le replay est
   // introuvable, on le dit au lieu d'afficher un écran vide.
-  const challengePodMissing = !!challenge && !sessionLoading && (sessionError || !session);
+  const linkPodMissing = (!!challenge || !!shared) && !sessionLoading && (sessionError || !session);
 
   const [phase, setPhase] = useState<Phase>('intro');
   // Un défi impose son mode : sinon le % d'accord avec le joueur mythic ne serait
   // pas comparable entre les deux amis.
-  const [mode, setMode] = useState<Mode>(challenge?.mode ?? 'coached');
+  const [mode, setMode] = useState<Mode>(challenge?.mode ?? result?.mode ?? 'coached');
   const [idx, setIdx] = useState(0);
   const [userPicks, setUserPicks] = useState<string[]>([]);
   const [reveal, setReveal] = useState<string | null>(null); // coached: carte choisie en attente de "Next"
@@ -244,20 +253,21 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
 
   const formatLabel = FORMAT_OPTIONS.find(o => o.value === PRACTICE_FORMAT)?.label || PRACTICE_FORMAT;
 
-  // Défi reçu : le pod est imposé, pas de tirage aléatoire ni de shuffle.
+  // Lien reçu (défi ou résultat) : le pod est imposé, pas de tirage aléatoire.
   useEffect(() => {
-    if (challenge?.aggregateId) setSelectedId(challenge.aggregateId);
-  }, [challenge]);
+    const id = challenge?.aggregateId || result?.aggregateId;
+    if (id) setSelectedId(id);
+  }, [challenge, result]);
 
   // Choisit (ou re-valide) une session quand la liste dispo change
   useEffect(() => {
-    if (challenge || !sessions.length) return;
+    if (activeChallenge || shared || !sessions.length) return;
     setSelectedId(prev =>
       prev && sessions.some(s => s.aggregate_id === prev)
         ? prev
         : sessions[Math.floor(Math.random() * sessions.length)].aggregate_id
     );
-  }, [sessions, challenge]);
+  }, [sessions, activeChallenge, shared]);
 
   // Reset complet UNIQUEMENT quand le set change réellement (pas au montage). Le
   // format est épinglé sur PRACTICE_FORMAT, donc basculer PD↔TD dans l'app ne
@@ -383,7 +393,9 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
   // ----------------------------------------------------------------- défi 1v1
   // Un défi n'est exploitable que si sa séquence de picks colle à celle du pod
   // (même replay, même longueur) — sinon le lien vient d'une version différente.
-  const friend = challenge?.entrants[0] ?? null;
+  // En consultation d'un résultat partagé, "l'ami" est celui que le partageur
+  // affrontait (s'il y en avait un) ; sinon c'est l'auteur du défi reçu.
+  const friend = (shared ? shared.entrants[1] : activeChallenge?.entrants[0]) ?? null;
   const friendReady = !!friend && picks.length > 0 && friend.pickIdx.length === picks.length;
 
   const friendPicks = useMemo(
@@ -425,15 +437,24 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
     return { name, pickIdx, inDeck, basics };
   }, [deck, basics, picks, userPicks]);
 
+  const sharePayload = useCallback((name: string): DraftChallenge | null => {
+    if (!selectedId) return null;
+    // Le résultat embarque aussi l'ami s'il y en a un : le destinataire voit le
+    // duel complet, pas seulement le draft du partageur.
+    const entrants = [buildMyEntrant(name), ...(friendReady && friend ? [friend] : [])];
+    return { set: activeSet, aggregateId: selectedId, mode, entrants };
+  }, [activeSet, selectedId, mode, buildMyEntrant, friendReady, friend]);
+
   const shareUrl = useCallback((name: string) => {
-    if (!selectedId) return '';
-    return buildChallengeUrl({
-      set: activeSet,
-      aggregateId: selectedId,
-      mode,
-      entrants: [buildMyEntrant(name)],
-    });
-  }, [activeSet, selectedId, mode, buildMyEntrant]);
+    const payload = sharePayload(name);
+    // Un défi ne transporte que le partageur : l'ami doit drafter, pas comparer.
+    return payload ? buildChallengeUrl({ ...payload, entrants: payload.entrants.slice(0, 1) }) : '';
+  }, [sharePayload]);
+
+  const resultUrl = useCallback((name: string) => {
+    const payload = sharePayload(name);
+    return payload ? buildResultUrl(payload) : '';
+  }, [sharePayload]);
 
   const runCompare = async () => {
     haptics.medium();
@@ -459,6 +480,44 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
       setAnalyzing(false);
     }
   };
+  // ------------------------------------------------ résultat partagé (lecture)
+  // Le lien ne transporte que des index : on reconstitue picks, deck et terres
+  // à partir du replay, puis on atterrit directement sur l'écran final.
+  const hydratedRef = useRef(false);
+  const autoAnalysisRef = useRef(false);
+  const [sharedMismatch, setSharedMismatch] = useState(false);
+
+  useEffect(() => {
+    if (!shared || !sharedOwner || hydratedRef.current || !picks.length) return;
+    if (sharedOwner.pickIdx.length !== picks.length) { setSharedMismatch(true); return; }
+    hydratedRef.current = true;
+    const names = picks.map((p, i) => p.options[sharedOwner.pickIdx[i]] ?? p.options[0]);
+    const nextDeck: Record<string, number> = {};
+    names.forEach((n, i) => { if (sharedOwner.inDeck[i] && n) nextDeck[n] = (nextDeck[n] || 0) + 1; });
+    setUserPicks(names);
+    setDeck(nextDeck);
+    setBasics({ W: 0, U: 0, B: 0, R: 0, G: 0, ...sharedOwner.basics });
+    setPhase('compare');
+  }, [shared, sharedOwner, picks]);
+
+  // Scoring lancé une fois l'état reconstitué (runCompare lit deck/basics).
+  useEffect(() => {
+    if (!viewingShared || phase !== 'compare' || autoAnalysisRef.current) return;
+    autoAnalysisRef.current = true;
+    runCompare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingShared, phase]);
+
+  /** "Draft this pod yourself" : le partageur devient l'adversaire du visiteur. */
+  const takeOverSharedPod = () => {
+    if (!shared || !sharedOwner) return;
+    haptics.medium();
+    setLocalChallenge({ ...shared, entrants: [sharedOwner] });
+    setMode(shared.mode);
+    setShared(null);
+    restart();
+  };
+
   const rankLabel = meta?.rank || (meta?.mythic_rank ? `Mythic #${meta.mythic_rank}` : 'Mythic');
 
   // -------------------------------------------------------------- shell
@@ -495,25 +554,30 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
       <div className="relative flex-1 overflow-hidden">
         <AnimatePresence mode="wait">
           {/* ============================================ LOADING / EMPTY */}
-          {(listLoading || (selectedId && sessionLoading && phase === 'intro')) ? (
+          {/* Un résultat partagé reste en "chargement" jusqu'à sa reconstitution :
+              sinon l'intro clignote une frame avant le saut vers l'écran final. */}
+          {(listLoading || (selectedId && sessionLoading && phase === 'intro')
+            || (viewingShared && phase === 'intro' && !sharedMismatch)) ? (
             <motion.div key="loading" className="absolute inset-0 flex flex-col items-center justify-center gap-4">
               <Loader2 className="animate-spin text-indigo-400" size={40} strokeWidth={1.4} />
               <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Loading mythic drafts…</p>
             </motion.div>
-          ) : challengePodMissing ? (
+          ) : (linkPodMissing || sharedMismatch) ? (
             <motion.div key="challenge-missing" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-8">
               <Users size={44} className="text-slate-800" />
-              <p className="text-sm font-bold text-slate-400">This challenge replay isn't available.</p>
+              <p className="text-sm font-bold text-slate-400">This shared replay isn't available.</p>
               <p className="text-[11px] text-slate-600 max-w-sm">
-                The pod behind that link isn't in the database for {activeSet} — it may have been shared from another set, or the replay is no longer seeded. Start a fresh draft instead.
+                {sharedMismatch
+                  ? `That link doesn't match the replay we have for this pod — it was probably shared from a different version. Start a fresh draft instead.`
+                  : `The pod behind that link isn't in the database for ${activeSet} — it may have been shared from another set, or the replay is no longer seeded. Start a fresh draft instead.`}
               </p>
               <button onClick={onClose}
                 className="mt-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
                 Close
               </button>
             </motion.div>
-          ) : (!listLoading && sessions.length === 0) ? (
+          ) : (!listLoading && sessions.length === 0 && !activeChallenge && !shared) ? (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-8">
               <Crown size={44} className="text-slate-800" />
@@ -724,8 +788,10 @@ export const DraftPracticeOverlay: React.FC<DraftPracticeOverlayProps> = ({ acti
               proDeckAvailable={!!session?.cardlist}
               friendName={friendReady ? (friend?.name || 'Your friend') : null}
               friendRecap={friendRecap} yourRecap={recap}
-              canShare={!!selectedId && picks.length > 0}
-              buildShareUrl={shareUrl}
+              canShare={!viewingShared && !!selectedId && picks.length > 0}
+              buildShareUrl={shareUrl} buildResultUrl={resultUrl}
+              sharedView={viewingShared} youName={viewingShared ? sharedName : 'You'}
+              onTakeOver={takeOverSharedPod}
               onBack={() => setPhase('build')} onRetry={restart}
               onNew={friend ? null : () => { shuffleOpponent(); restart(); }} onClose={onClose}
             />
@@ -783,7 +849,9 @@ const PickByPickList: React.FC<{
   details: PickDetail[];
   friendName: string | null;
   friendDetails: PickDetail[] | null;
-}> = ({ details, friendName, friendDetails }) => {
+  /** "You" par défaut ; le nom du partageur en consultation d'un résultat. */
+  youName?: string;
+}> = ({ details, friendName, friendDetails, youName = 'You' }) => {
   const threeWay = !!friendName && !!friendDetails;
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden">
@@ -794,7 +862,7 @@ const PickByPickList: React.FC<{
       {threeWay && (
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-slate-800/60 bg-slate-950/40 text-[9px] font-black uppercase tracking-widest">
           <span className="w-9 shrink-0" />
-          <span className="flex-1 text-indigo-300">You</span>
+          <span className="flex-1 text-indigo-300 truncate">{youName}</span>
           <span className="flex-1 text-fuchsia-300 truncate">{friendName}</span>
           <span className="flex-1 text-amber-300">Player</span>
         </div>
@@ -849,15 +917,18 @@ const RecapView: React.FC<{
           <p className="relative text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">vs {rankLabel}</p>
           <motion.div initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 16 }}
             className={`relative mx-auto w-28 h-28 rounded-full grid place-items-center bg-gradient-to-br ${grade.ring} shadow-2xl`}>
-            <span className="text-6xl font-black text-slate-950">{grade.letter}</span>
+            <div className="flex flex-col items-center leading-none text-slate-950">
+              <span className="text-4xl font-black tabular-nums">
+                {Math.round(recap.agreement * 100)}<span className="text-2xl">%</span>
+              </span>
+              <span className="mt-1 text-[8px] font-black uppercase tracking-widest opacity-70">Similarity</span>
+            </div>
           </motion.div>
           <p className={`relative mt-4 text-lg font-black ${grade.color}`}>{grade.label}</p>
+          <p className="relative mt-1 text-[10px] text-slate-600 max-w-xs mx-auto leading-relaxed">
+            Share of picks you made the same way — not a verdict on your draft. Mythic players miss picks too, and some seats have more than one good route.
+          </p>
           <div className="relative mt-4 flex items-center justify-center gap-6">
-            <div>
-              <p className="text-3xl font-black text-white tabular-nums">{Math.round(recap.agreement * 100)}%</p>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Agreement</p>
-            </div>
-            <div className="w-px h-10 bg-slate-800" />
             <div>
               <p className="text-3xl font-black text-white tabular-nums">{recap.matches}<span className="text-slate-600 text-lg">/{recap.n}</span></p>
               <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Same picks</p>
@@ -890,32 +961,6 @@ const RecapView: React.FC<{
             <p className="text-[10px] text-slate-600 leading-snug">
               <span className="text-slate-400 font-bold">Win rate</span> = raw card power. <span className="text-slate-400 font-bold">Synergy</span> = how often your cards appear together in trophy decks — your pool's cohesion.
             </p>
-          </div>
-        )}
-
-        {/* highlights */}
-        {(recap.bestPick || recap.worstMiss) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {recap.bestPick && (
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 flex items-center gap-3">
-                <CardImage src={getCardImage(recap.bestPick.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-emerald-500/30" />
-                <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300 flex items-center gap-1"><Trophy size={11} /> Nailed it</p>
-                  <p className="text-[12px] font-bold text-slate-200 truncate">{recap.bestPick.pro}</p>
-                  <p className="text-[10px] text-slate-500">P{recap.bestPick.pack + 1}P{recap.bestPick.pick + 1} · matched the player on a {recap.bestPick.proWr?.toFixed(1)}% card</p>
-                </div>
-              </div>
-            )}
-            {recap.worstMiss && (
-              <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.05] p-4 flex items-center gap-3">
-                <CardImage src={getCardImage(recap.worstMiss.pro)} alt="" className="w-11 h-[60px] rounded object-cover border border-rose-500/30" />
-                <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-300 flex items-center gap-1"><Target size={11} /> Biggest miss</p>
-                  <p className="text-[12px] font-bold text-slate-200 truncate">Player took {recap.worstMiss.pro}</p>
-                  <p className="text-[10px] text-slate-500">You took {recap.worstMiss.your} · {((recap.worstMiss.proWr ?? 0) - (recap.worstMiss.yourWr ?? 0)).toFixed(1)}% WR gap</p>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -1235,7 +1280,7 @@ const DeckScoreCard: React.FC<{ title: string; accent: string; analysis: DeckAna
           <HelpDot title="Deck score /100">
             <p>Weighted blend of the four metrics below, scored against the trophy-deck skeleton of <strong className="text-slate-200">{analysis.matchedArchetype}</strong>:</p>
             <p className="text-slate-400">
-              40% card power · 25% core coverage · 20% curve fit · 15% creature balance
+              50% card power · 25% core coverage · 15% creature balance · 10% curve fit
             </p>
             <p className="text-slate-500">Same engine as “Test my deck”. 55+ is a solid deck, 72+ is trophy-grade.</p>
           </HelpDot>
@@ -1243,13 +1288,13 @@ const DeckScoreCard: React.FC<{ title: string; accent: string; analysis: DeckAna
       </div>
       <div className="space-y-2.5">
         <MetricRow label="Avg win rate" value={score.avgWr != null ? `${score.avgWr.toFixed(1)}%` : '—'} pct={score.avgWr != null ? (score.avgWr - 50) * 10 : 0} tone={scoreTone(score.score)}
-          helpTitle="Avg win rate · 40%"
+          helpTitle="Avg win rate · 50%"
           help={<>
             <p>Average 17Lands GIH win rate of your non-land cards, read inside your archetype when available, global otherwise.</p>
             <p className="text-slate-400">Scaled 50% → 0 and 60% → 100 before weighting. Raw card power, synergies excluded.</p>
           </>} />
         <MetricRow label="Curve fit" value={`${Math.round(score.curveFit * 100)}%`} pct={score.curveFit * 100}
-          helpTitle="Curve fit · 20%"
+          helpTitle="Curve fit · 10%"
           help={<>
             <p>How close your mana curve is to the average curve of trophy decks in this archetype.</p>
             <p className="text-slate-400">Sum of the gaps slot by slot: 0 card off = 100%, 12 cards off or more = 0%.</p>
@@ -1340,52 +1385,75 @@ const DuelRow: React.FC<{
   );
 };
 
-/** Génère et copie le lien de défi (Web Share sur mobile si dispo). */
-const ShareChallengeCard: React.FC<{ buildShareUrl: (name: string) => string }> = ({ buildShareUrl }) => {
+/**
+ * Génère et copie les deux liens de partage (Web Share sur mobile si dispo) :
+ * le défi (l'ami redrafte le pod) et le résultat (l'ami atterrit sur l'écran
+ * final, picks et decks déjà reconstitués).
+ */
+type ShareKind = 'challenge' | 'result';
+
+const ShareCard: React.FC<{
+  buildShareUrl: (name: string) => string;
+  buildResultUrl: (name: string) => string;
+}> = ({ buildShareUrl, buildResultUrl }) => {
   const [name, setName] = useLocalStorage<string>('limitless-draft-name', '');
-  const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [done, setDone] = useState<ShareKind | null>(null);
+  const [failed, setFailed] = useState(false);
   const [link, setLink] = useState('');
 
-  const share = async () => {
+  const share = async (kind: ShareKind) => {
     haptics.medium();
-    const url = buildShareUrl(name.trim() || 'A friend');
-    if (!url) { setState('error'); return; }
+    const who = name.trim() || 'A friend';
+    const url = kind === 'challenge' ? buildShareUrl(who) : buildResultUrl(who);
+    setDone(null);
+    if (!url) { setFailed(true); return; }
     setLink(url);
+    const payload = kind === 'challenge'
+      ? { title: 'Draft Practice challenge', text: 'Same packs, same picks — beat my deck.' }
+      : { title: 'My Draft Practice result', text: 'Here is how my draft of this pod turned out.' };
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Draft Practice challenge', text: 'Same packs, same picks — beat my deck.', url });
-        setState('copied');
-        return;
+        await navigator.share({ ...payload, url });
+      } else {
+        await navigator.clipboard.writeText(url);
       }
-      await navigator.clipboard.writeText(url);
-      setState('copied');
+      setFailed(false);
+      setDone(kind);
     } catch {
       // Partage annulé ou clipboard refusé : on affiche le lien à copier à la main.
-      setState('error');
+      setFailed(true);
     }
   };
 
   return (
     <div className="rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.06] p-5">
       <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-200 flex items-center gap-1.5">
-        <Share2 size={13} /> Challenge a friend
+        <Share2 size={13} /> Share this draft
       </h4>
       <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-        Send a link that replays this exact pod. Your friend drafts it blind, then compares their picks and their deck to yours. Everything travels in the link — nothing is stored.
+        Everything travels in the link — nothing is stored.
       </p>
-      <div className="flex flex-col sm:flex-row gap-2 mt-3">
-        <input
-          value={name}
-          onChange={(e) => { setName(e.target.value.slice(0, 24)); setState('idle'); }}
-          placeholder="Your name"
-          className="flex-1 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[12px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/60"
-        />
-        <button onClick={share}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
-          {state === 'copied' ? <><Check size={14} /> Link copied</> : <><Share2 size={14} /> Share with a friend</>}
+      <input
+        value={name}
+        onChange={(e) => { setName(e.target.value.slice(0, 24)); setDone(null); setFailed(false); }}
+        placeholder="Your name"
+        className="w-full mt-3 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[12px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/60"
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+        <button onClick={() => share('challenge')}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+          {done === 'challenge' ? <><Check size={14} /> Link copied</> : <><Swords size={14} /> Challenge a friend</>}
+        </button>
+        <button onClick={() => share('result')}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+          {done === 'result' ? <><Check size={14} /> Link copied</> : <><Share2 size={14} /> Share result</>}
         </button>
       </div>
-      {state === 'error' && link && (
+      <p className="text-[10px] text-slate-500 mt-2.5 leading-relaxed">
+        <span className="font-bold text-indigo-300">Challenge</span> — they redraft the same pod blind, then compare with you.{' '}
+        <span className="font-bold text-emerald-300">Result</span> — they land straight on this final screen: your picks, your deck and the player's.
+      </p>
+      {failed && link && (
         <div className="mt-3">
           <p className="text-[10px] font-bold uppercase tracking-widest text-amber-300 mb-1">Copy this link manually</p>
           <textarea readOnly value={link} rows={2}
@@ -1408,16 +1476,22 @@ const CompareView: React.FC<{
   yourRecap: Recap | null;
   canShare: boolean;
   buildShareUrl: (name: string) => string;
+  buildResultUrl: (name: string) => string;
+  /** Consultation d'un résultat partagé : lecture seule, "You" devient un nom. */
+  sharedView?: boolean;
+  youName?: string;
+  onTakeOver?: () => void;
   onBack: () => void; onRetry: () => void; onNew: (() => void) | null; onClose: () => void;
-}> = ({ analyzing, analysis, rankLabel, proDeckAvailable, friendName, friendRecap, yourRecap, canShare, buildShareUrl, onBack, onRetry, onNew, onClose }) => {
+}> = ({ analyzing, analysis, rankLabel, proDeckAvailable, friendName, friendRecap, yourRecap, canShare, buildShareUrl, buildResultUrl, sharedView = false, youName = 'You', onTakeOver, onBack, onRetry, onNew, onClose }) => {
   const [showDecks, setShowDecks] = useState(false);
   const youScore = analysis?.you ? scoreDeckAnalysis(analysis.you) : null;
   const proScore = analysis?.pro ? scoreDeckAnalysis(analysis.pro) : null;
   const friendScore = analysis?.friend ? scoreDeckAnalysis(analysis.friend) : null;
 
-  // Pas de verdict en mode défi : les trois scores et le duel parlent d'eux-mêmes.
+  // Pas de verdict en mode défi (les trois scores et le duel parlent d'eux-mêmes)
+  // ni en lecture d'un résultat partagé (il s'adresserait au mauvais joueur).
   const verdict = (() => {
-    if (!youScore || friendName) return null;
+    if (!youScore || friendName || sharedView) return null;
     if (!proScore) return { t: 'Your deck is locked in', d: "We couldn't score the player's deck for this replay — but yours holds up on its own.", tone: 'text-sky-300' };
     const diff = youScore.score - proScore.score;
     if (diff >= 3) return { t: 'Different path, better deck', d: 'You drafted differently from the player — and your deck scores higher. Trusting your read paid off.', tone: 'text-emerald-300' };
@@ -1431,10 +1505,31 @@ const CompareView: React.FC<{
       <div className="px-4 md:px-6 py-8 space-y-6">
         {/* Bloc étroit : titre + verdict + scores */}
         <div className="max-w-3xl mx-auto space-y-6">
+          {sharedView && (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-200 flex items-center gap-1.5">
+                  <Share2 size={13} /> Shared result
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  <strong className="font-black text-white">{youName}</strong> drafted this pod and shared the outcome. Same packs are waiting for you.
+                </p>
+              </div>
+              {onTakeOver && (
+                <button onClick={onTakeOver}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all flex-shrink-0">
+                  <Swords size={14} /> Draft this pod
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="text-center">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deck comparison</p>
             <h3 className="text-xl md:text-2xl font-black text-white tracking-tight mt-1">
-              {friendName ? `Your deck vs ${friendName}` : `Your deck vs ${rankLabel}`}
+              {sharedView
+                ? (friendName ? `${youName} vs ${friendName}` : `${youName}'s deck vs ${rankLabel}`)
+                : (friendName ? `Your deck vs ${friendName}` : `Your deck vs ${rankLabel}`)}
             </h3>
             <p className="text-[10px] text-slate-600 mt-1">Same engine as “Test my deck” — scored against trophy-deck skeletons.</p>
           </div>
@@ -1454,7 +1549,7 @@ const CompareView: React.FC<{
               )}
 
               <div className={`grid grid-cols-1 gap-3 ${friendName ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-                <DeckScoreCard title="You" accent="text-indigo-300" analysis={analysis?.you ?? null} score={youScore} />
+                <DeckScoreCard title={youName} accent="text-indigo-300" analysis={analysis?.you ?? null} score={youScore} />
                 {friendName && (
                   <DeckScoreCard title={friendName} accent="text-fuchsia-300" analysis={analysis?.friend ?? null} score={friendScore} />
                 )}
@@ -1465,11 +1560,11 @@ const CompareView: React.FC<{
               {friendName && yourRecap && friendRecap && (
                 <div className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-500/[0.05] p-5 space-y-3">
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-fuchsia-200 flex items-center gap-1.5">
-                    <Users size={13} /> Draft duel · you vs {friendName}
+                    <Users size={13} /> Draft duel · {sharedView ? youName : 'you'} vs {friendName}
                   </h4>
                   <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest pb-1 border-b border-slate-800/60">
                     <span className="flex-1" />
-                    <span className="w-16 text-right text-indigo-300">You</span>
+                    <span className="w-16 text-right text-indigo-300 truncate">{youName}</span>
                     <span className="w-16 text-right text-fuchsia-300 truncate">{friendName}</span>
                     <span className="w-16 text-right text-amber-300/80">Player</span>
                   </div>
@@ -1494,7 +1589,7 @@ const CompareView: React.FC<{
 
               {/* Rappel des choix : toi / l'ami / le joueur mythic, pick par pick. */}
               {yourRecap && (
-                <PickByPickList details={yourRecap.details}
+                <PickByPickList details={yourRecap.details} youName={youName}
                   friendName={friendName} friendDetails={friendRecap?.details ?? null} />
               )}
 
@@ -1517,7 +1612,7 @@ const CompareView: React.FC<{
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.25 }} className="overflow-hidden">
                 <div className="max-w-6xl mx-auto space-y-4">
-                  {analysis?.you && <DeckBoard title="Your deck" accent="text-indigo-300" analysis={analysis.you} />}
+                  {analysis?.you && <DeckBoard title={sharedView ? `${youName}'s deck` : 'Your deck'} accent="text-indigo-300" analysis={analysis.you} />}
                   {friendName && analysis?.friend && (
                     <DeckBoard title={`${friendName}'s deck`} accent="text-fuchsia-300" analysis={analysis.friend} />
                   )}
@@ -1531,28 +1626,43 @@ const CompareView: React.FC<{
         {/* Bloc étroit : partage + note + actions */}
         {!analyzing && (
           <div className="max-w-3xl mx-auto space-y-6">
-            {canShare && <ShareChallengeCard buildShareUrl={buildShareUrl} />}
+            {canShare && <ShareCard buildShareUrl={buildShareUrl} buildResultUrl={buildResultUrl} />}
 
             {!proDeckAvailable && (
               <p className="text-[10px] text-slate-600 text-center">The player's final deck wasn't captured for this older replay. Newer replays include it.</p>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-3 pb-4">
-              <button onClick={onBack} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
-                <ChevronLeft size={14} /> Tweak deck
-              </button>
-              {onNew && (
-                <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
-                  <Shuffle size={14} /> New opponent
+            {/* En lecture d'un résultat partagé, rien n'est modifiable : on ne
+                propose que de drafter le pod à son tour, ou de fermer. */}
+            {sharedView ? (
+              <div className="flex flex-col sm:flex-row gap-3 pb-4">
+                {onTakeOver && (
+                  <button onClick={onTakeOver} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+                    <Swords size={14} /> Draft this pod yourself
+                  </button>
+                )}
+                <button onClick={onClose} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                  Done
                 </button>
-              )}
-              <button onClick={onRetry} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
-                <RotateCcw size={14} /> Redraft
-              </button>
-              <button onClick={onClose} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
-                Done
-              </button>
-            </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-3 pb-4">
+                <button onClick={onBack} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                  <ChevronLeft size={14} /> Tweak deck
+                </button>
+                {onNew && (
+                  <button onClick={onNew} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-black uppercase tracking-widest transition-all">
+                    <Shuffle size={14} /> New opponent
+                  </button>
+                )}
+                <button onClick={onRetry} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                  <RotateCcw size={14} /> Redraft
+                </button>
+                <button onClick={onClose} className="flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-black uppercase tracking-widest transition-colors">
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

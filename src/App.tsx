@@ -25,7 +25,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { useCoachMarks } from './hooks/useCoachMarks';
 import { useUrlState } from './hooks/useUrlState';
-import { readChallengeFromUrl, clearChallengeFromUrl, type DraftChallenge } from './utils/draftChallenge';
+import { readSharedDraftFromUrl, clearSharedDraftFromUrl, type SharedDraft } from './utils/draftChallenge';
 
 // Utils
 import { haptics } from './utils/haptics';
@@ -319,15 +319,15 @@ export default function MTGLimitedApp(): React.ReactElement {
     }
   );
 
-  // --- Défi Draft Practice reçu par lien (#dp=…) ---
+  // --- Draft Practice reçu par lien : défi (#dp=…) ou résultat (#dr=…) ---
   // Lu une seule fois au chargement (le token est déjà capturé par le module,
   // avant que useUrlState ne réécrive l'URL), puis retiré du fragment.
-  const [draftChallenge, setDraftChallenge] = useState<DraftChallenge | null>(() => readChallengeFromUrl());
+  const [sharedDraft, setSharedDraft] = useState<SharedDraft | null>(() => readSharedDraftFromUrl());
   useEffect(() => {
-    if (!draftChallenge) return;
-    if (draftChallenge.set) setActiveSet(draftChallenge.set);
+    if (!sharedDraft) return;
+    if (sharedDraft.challenge.set) setActiveSet(sharedDraft.challenge.set);
     setActiveTab('trophies');
-    clearChallengeFromUrl();
+    clearSharedDraftFromUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1109,8 +1109,9 @@ export default function MTGLimitedApp(): React.ReactElement {
                 <TrophyDecks
                   activeSet={activeSet} activeFormat={activeFormat}
                   onCardSelect={handleCardSelect} onFormatChange={setActiveFormat}
-                  draftChallenge={draftChallenge}
-                  onDraftChallengeDone={() => setDraftChallenge(null)}
+                  draftChallenge={sharedDraft?.kind === 'challenge' ? sharedDraft.challenge : null}
+                  draftResult={sharedDraft?.kind === 'result' ? sharedDraft.challenge : null}
+                  onDraftChallengeDone={() => setSharedDraft(null)}
                 />
               </motion.div>
             )}
