@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Network, Trophy, Activity, BookOpen, Anchor
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Network, Trophy, Activity, BookOpen, Anchor, Link2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,7 +37,7 @@ import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardI
 import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper, CardImage } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
-import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, SwipeableOverlay, GuideOverlay } from './components/Overlays';
+import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, CardSynergiesOverlay, SwipeableOverlay, GuideOverlay } from './components/Overlays';
 import { FormatComparison, PressReview, FormatBlueprint, TrophyDecks } from './components/Features';
 import { MetagamePulsePopup } from './components/Features/MetagamePulse/MetagamePulsePopup';
 import { SearchAutocomplete } from './components/Common';
@@ -260,6 +260,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
+  const [showSynergies, setShowSynergies] = useState<boolean>(false);
   const [showPulse, setShowPulse] = useState<boolean>(false);
   const [showGuide, setShowGuide] = useState<boolean>(false);
   const [pendingCardView, setPendingCardView] = useState<{ cardName: string; format: string } | null>(null);
@@ -577,6 +578,7 @@ export default function MTGLimitedApp(): React.ReactElement {
   const handleCloseError = useCallback(() => setError(null), []);
   const handleCloseDeck = useCallback(() => setSelectedDeck(null), []);
   const handleCloseMatrix = useCallback(() => setShowMatrixView(false), []);
+  const handleCloseSynergies = useCallback(() => setShowSynergies(false), []);
   const handleCloseCard = useCallback(() => setSelectedCard(null), []);
   // Enhanced handleCardSelect to handle both full Card objects and partial objects (from TrophyDecks)
   const handleCardSelect = useCallback((card: any) => {
@@ -619,6 +621,7 @@ export default function MTGLimitedApp(): React.ReactElement {
         {error && <ErrorBanner key="error-banner" message={error} onDismiss={handleCloseError} />}
         {selectedDeck && <ArchetypeDashboard key="deck-overlay" deck={selectedDeck} activeFormat={activeFormat} activeSet={activeSet} globalMeanWR={globalMeanWR} totalGames={totalGames} onClose={handleCloseDeck} onCardClick={handleCardSelect} />}
         {showMatrixView && <MatrixViewOverlay key="matrix-overlay" cards={cards} decks={decks} activeSet={activeSet} activeFormat={activeFormat} archetypeFilter={archetypeFilter} globalMeanWR={globalMeanWR} onClose={handleCloseMatrix} onCardSelect={handleCardSelect} />}
+        {showSynergies && <CardSynergiesOverlay key="synergies-overlay" cards={globalCards.length ? globalCards : cards} activeSet={activeSet} activeFormat={activeFormat} onClose={handleCloseSynergies} onCardSelect={handleCardSelect} />}
         {selectedCard && <CardDetailOverlay key="card-overlay" card={selectedCard} activeFormat={activeFormat} activeSet={activeSet} decks={decks} cards={cards} globalMeanWR={globalMeanWR} onClose={handleCloseCard} onCardSelect={handleCardSelect} />}
         {showGuide && (
           <GuideOverlay
@@ -894,6 +897,24 @@ export default function MTGLimitedApp(): React.ReactElement {
                 transition={{ duration: 0.2 }}
                 className="flex flex-col min-h-full">
                 <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
+                  {/* LIGNE 0: Points d'entrée (Synergies / Graphs) */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { haptics.light(); setShowSynergies(true); }}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 md:py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white border border-white/10 shadow-lg shadow-teal-500/20 hover:shadow-teal-500/40 md:hover:scale-105 transition-all"
+                    >
+                      <Link2 size={12} />
+                      CARD SYNERGIES
+                    </button>
+                    <button
+                      onClick={() => { haptics.light(); setShowMatrixView(true); }}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 md:py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border border-white/10 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 md:hover:scale-105 transition-all"
+                    >
+                      <Network size={12} />
+                      CARD GRAPHS
+                    </button>
+                  </div>
+
                   {/* LIGNE 1: Archetype + Search */}
                   <div className="flex gap-2">
                     <div className="relative flex-1 md:max-w-xs">
@@ -923,48 +944,39 @@ export default function MTGLimitedApp(): React.ReactElement {
                   <div className="flex flex-col md:flex-row md:items-center gap-2 pb-1">
 
                     {/* Colors & Rarities (Merged row on Mobile) */}
-                    <div className="flex items-center gap-1 md:gap-2 w-full md:w-auto">
+                    <div className="flex items-center justify-between md:justify-start gap-2 w-full md:w-auto">
                       {/* Colors */}
-                      <div className="flex items-center gap-0.5 md:gap-1 p-0.5 md:p-1 bg-slate-900 rounded-full border border-slate-800">
+                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-full border border-slate-800">
                         {['W', 'U', 'B', 'R', 'G'].map(c => (
                           <button key={c} onClick={() => setColorFilters(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                            className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all relative ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 hover:opacity-100 grayscale'}`}
                             style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
                             <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
                           </button>
                         ))}
-                        <div className="w-[1px] h-3 md:h-4 bg-slate-700 mx-0.5 md:mx-1"></div>
+                        <div className="w-[1px] h-4 bg-slate-700 mx-0.5 md:mx-1"></div>
                         <button onClick={() => setColorFilters(prev => prev.includes('M') ? prev.filter(x => x !== 'M') : [...prev, 'M'])}
-                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
+                          className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
                         <button onClick={() => setColorFilters(prev => prev.includes('C') ? prev.filter(x => x !== 'C') : [...prev, 'C'])}
-                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[7px] md:text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
+                          className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 shadow-sm transition-all ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
                       </div>
 
                       {/* Séparateur */}
-                      <div className="w-[1px] h-5 md:h-6 bg-slate-800"></div>
+                      <div className="hidden md:block w-[1px] h-6 bg-slate-800"></div>
 
                       {/* Rarities */}
-                      <div className="flex items-center gap-0.5 md:gap-1 p-0.5 md:p-1 bg-slate-900 rounded-lg border border-slate-800">
+                      <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-lg border border-slate-800">
                         {['M', 'R', 'U', 'C'].map((r) => {
                           const isActive = rarityFilter.includes(r);
                           return (
                             <button key={r} onClick={() => setRarityFilter(prev => prev.includes(r) ? prev.filter(item => item !== r) : [...prev, r])}
-                              className={`w-5 h-5 md:w-7 md:h-7 rounded flex items-center justify-center text-[9px] md:text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>
+                              className={`w-6 h-6 md:w-7 md:h-7 rounded flex items-center justify-center text-[10px] font-black transition-all border ${isActive ? `${RARITY_STYLES[r]} border-white/40 scale-105 shadow-lg` : 'bg-slate-800 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>
                               {r}
                             </button>
                           );
                         })}
                         {rarityFilter.length > 0 && <button onClick={() => setRarityFilter([])} className="p-0.5 md:p-1 text-slate-500 hover:text-white transition-colors"><X size={12} /></button>}
                       </div>
-
-                      {/* Card Graphs button - Mobile only (pushed to right) */}
-                      <button
-                        onClick={() => { haptics.light(); setShowMatrixView(true); }}
-                        className="md:hidden ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white border border-indigo-400/30 shadow-lg shadow-indigo-500/20"
-                      >
-                        <Network size={10} />
-                        GRAPHS
-                      </button>
                     </div>
 
                     <div className="hidden md:block w-[1px] h-6 bg-slate-800 mx-2"></div>
@@ -1010,16 +1022,6 @@ export default function MTGLimitedApp(): React.ReactElement {
                           <Anchor size={10} className={flexActive ? '' : 'text-amber-400/80'} />
                         )}
                         FLEX
-                      </button>
-
-                      {/* Séparateur + Card Graphs button - Desktop only */}
-                      <div className="hidden md:block w-[1px] h-6 bg-slate-700 mx-1"></div>
-                      <button
-                        onClick={() => { haptics.light(); setShowMatrixView(true); }}
-                        className="hidden md:flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border border-white/10 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-105 transition-all"
-                      >
-                        <Network size={12} />
-                        CARD GRAPHS
                       </button>
                     </div>
                   </div>

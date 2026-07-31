@@ -766,8 +766,9 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
 
   // React Query for synergy data
   const { data: synergyData, isLoading: synergyLoading } = useCardSynergies(card.name, activeFormat, activeSet);
-  const topConfidence = synergyData?.topConfidence || [];
-  const topSynergy = synergyData?.topSynergy || [];
+  // Le hook renvoie les listes complètes triées : on n'affiche ici que le podium.
+  const topConfidence = (synergyData?.topConfidence || []).slice(0, 3);
+  const topSynergy = (synergyData?.topSynergy || []).slice(0, 3);
 
   // Flex status — same cached query as the Cards-tab FLEX filter
   const { data: flexData } = useFormatFlex(activeSet, activeFormat, true);

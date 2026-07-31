@@ -34,4 +34,6 @@ export const queryKeys = {
     ['draftPractice', aggregateId] as const,
   formatSynergies: (set: string, format: string) =>
     ['formatSynergies', set, format] as const,
+  topFormatSynergies: (set: string, format: string, limit: number) =>
+    ['topFormatSynergies', set, format, limit] as const,
 }
