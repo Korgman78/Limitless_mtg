@@ -164,17 +164,18 @@ Fait dans le code (commit du 2026-08-03) :
   2026-07-31) : les synergies MSH n'étaient plus recalculées depuis. Remis sur
   `["MSH", "HOB"]`.
 
-À faire le 2026-08-10 depuis Supabase (aucun commit nécessaire) :
-```sql
-insert into sets (code, name, active, start_date)
-values ('HOB', 'The Hobbit', true, '2026-08-10')
-on conflict (code) do update set active = true;
+Ligne créée le 2026-08-03, inactive, avec `start_date = 2026-08-12` — un jour de
+décalage volontaire sur la sortie Arena (08-10) pour écarter les winrates de J1,
+toujours bruitées. Ça ne coûte aucun trophy deck : leur scrap ne lit ni
+`start_date` ni `active`, il prend les dernières 24 h en dur.
 
-update sets set active = false where code = 'MSH';
+Reste donc **un seul UPDATE** le jour J, faisable depuis un téléphone :
+```sql
+update sets set active = true where code = 'HOB';
 ```
-> La ligne HOB peut être créée dès maintenant avec `active = false` ; il ne reste
-> alors que les deux `update` à faire le jour J. `start_date` = **date Arena
-> (08-10)**, pas la date papier (08-14).
+> **MSH reste actif**, comme les 11 autres sets consultables. `active` signifie
+> « visible dans l'app », pas « en cours d'exploitation » — cf. la section sur le
+> ciblage : c'est `TARGET_SET_CODES` qui porte l'info « ce set est vivant ».
 
 **Spoiler complet dès le 2026-08-03** : HOB est un mini-set de **193 cartes**
 (70C / 55U / 53R / 15M), numérotées 1→193 sans aucun trou ; les numéros 194→321
@@ -183,13 +184,23 @@ base fait 277 cartes sur MSH et 286 sur TLA. Le test de complétude fiable est l
 **contiguïté des collector numbers**, pas le volume : un spoiler partiel laisse
 des trous.
 
-Reste PC-dépendant (Phase 1, faisable dès maintenant vu que le spoiler est
-complet) :
-`populate_card_list.py` → `enrich_card_tags.py` → `corrections/correct_hob_tags.py`
-(à écrire, modèle `correct_sos_tags.py`).
-Sans ces étapes, `card_list` est vide pour HOB : les tags, les skeletons
-d'archétypes, l'analyse de deck et l'optimiseur Sealed sortiront dégradés, mais
-le metagame, les cartes, les trophy decks et les synergies fonctionnent sans eux.
+Phase 1 exécutée le 2026-08-03 : `card_list` peuplée (193 cartes, 193 `image_url`)
+puis `enrich_card_tags.py` (26 removal, 22 producteurs de mana, 50 support tags).
+
+**À faire au retour du PC (2026-08-14), rien n'étant bloquant d'ici là :**
+- [ ] `corrections/correct_hob_tags.py` (à écrire, modèle `correct_sos_tags.py`).
+  Faux positif identifié : le cycle de bicolores — *Elvenking's Halls*,
+  *Goblin-town*, *Iron Hills*, *Lake-town*, *Mirkwood* — est tagué `is_removal`,
+  soit 5 des 26 removal du set. Ce sont des terrains qui se sacrifient pour poser
+  deux marqueurs +1/+1, la règle les attrape sur « Sacrifice this land … target ».
+- [ ] `scryfall_enrichment.py` — débloqué dès le 1er `daily_etl` sur HOB, puisqu'il
+  enrichit des lignes `card_stats` existantes et ne sait pas en créer.
+- [ ] `populate_arena_ids.py HOB` — seulement si tu utilises l'overlay Arena ou le
+  mapping des logs MTGA du sealed optimizer ; le front web ne lit jamais `arena_id`.
+- [ ] Retirer `MSH` des 5 ciblages ETL une fois qu'il ne sort plus de trophy decks.
+  Ça supprime 93 appels 17Lands/jour à vide, et surtout ça fige son
+  `win_rate_history` : `daily_etl` continue sinon d'y empiler des valeurs
+  identiques, qui aplatissent la sparkline en trois semaines.
 
 ---
 
