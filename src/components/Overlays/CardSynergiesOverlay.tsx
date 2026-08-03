@@ -12,6 +12,12 @@ import { useFormatSynergies, MIN_SIGNIFICANT_LIFT } from '../../queries/useDraft
 import CardImage from '../Common/CardImage';
 import { SearchAutocomplete } from '../Common/SearchAutocomplete';
 import { Tooltip } from '../Common/Tooltip';
+import {
+  Skeleton,
+  SynergyListSkeleton,
+  SynergyPairStatsSkeleton,
+  SynergyPairCompactSkeleton,
+} from '../Common/Skeleton';
 import { haptics } from '../../utils/haptics';
 import {
   useCardSynergies,
@@ -270,14 +276,6 @@ const PartnerRow: React.FC<{
   </button>
 );
 
-const ListSkeleton: React.FC<{ rows?: number }> = ({ rows = 6 }) => (
-  <div className="space-y-2">
-    {Array.from({ length: rows }).map((_, i) => (
-      <div key={i} className="h-[3.25rem] rounded-xl bg-slate-900/60 border border-slate-800/50 animate-pulse" />
-    ))}
-  </div>
-);
-
 const EmptyState: React.FC<{ message: string }> = ({ message }) => (
   <div className="p-6 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
     {message}
@@ -341,25 +339,34 @@ const CardHero: React.FC<{ card: Card; onOpen?: () => void }> = ({ card, onOpen 
   );
 };
 
-/** Médaillon central : le lift de la paire, ou un état muet si aucune donnée. */
-const LiftMedallion: React.FC<{ lift: number | null }> = ({ lift }) => (
+/**
+ * Médaillon central : le lift de la paire, ou un état muet si aucune donnée.
+ * Tant que la requête tourne on affiche un squelette : annoncer "No data" avant
+ * la réponse ferait clignoter un faux négatif sur une paire qui a un lift.
+ */
+const LiftMedallion: React.FC<{ lift: number | null; loading?: boolean }> = ({ lift, loading = false }) => (
   <motion.div
     initial={{ scale: 0.8, opacity: 0 }}
     animate={{ scale: 1, opacity: 1 }}
     transition={{ type: 'spring', stiffness: 260, damping: 20 }}
     className="relative flex-shrink-0"
   >
-    {lift !== null && (
+    {!loading && lift !== null && (
       <div className="absolute inset-0 rounded-full bg-emerald-500/25 blur-2xl" />
     )}
     <div
       className={`relative w-28 h-28 lg:w-32 lg:h-32 rounded-full flex flex-col items-center justify-center border-2 backdrop-blur ${
-        lift !== null
+        !loading && lift !== null
           ? 'bg-gradient-to-br from-emerald-500/20 to-teal-600/10 border-emerald-400/50'
           : 'bg-slate-900/80 border-slate-700'
       }`}
     >
-      {lift !== null ? (
+      {loading ? (
+        <div className="flex flex-col items-center gap-2">
+          <Skeleton className="h-7 w-16 rounded" />
+          <Skeleton className="h-2 w-10 rounded" />
+        </div>
+      ) : lift !== null ? (
         <>
           <Sparkles size={14} className="text-emerald-400 mb-0.5" />
           <span className="text-2xl lg:text-3xl font-black text-emerald-300 tabular-nums leading-none">
@@ -740,9 +747,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
 
                   {/* Liaison + médaillon, centrés sur la hauteur des cartes */}
                   <div className="flex items-center flex-1 min-w-[60px] max-w-[260px] h-[15.4rem] lg:h-[18.2rem]">
-                    <div className={`h-[2px] flex-1 bg-gradient-to-r from-transparent ${pairEntry ? 'to-emerald-500/60' : 'to-slate-700'}`} />
-                    <LiftMedallion lift={pairEntry ? pairEntry.lift_score : null} />
-                    <div className={`h-[2px] flex-1 bg-gradient-to-l from-transparent ${pairEntry ? 'to-emerald-500/60' : 'to-slate-700'}`} />
+                    <div className={`h-[2px] flex-1 bg-gradient-to-r from-transparent ${pairEntry && !cardLoading ? 'to-emerald-500/60' : 'to-slate-700'}`} />
+                    <LiftMedallion lift={pairEntry ? pairEntry.lift_score : null} loading={cardLoading} />
+                    <div className={`h-[2px] flex-1 bg-gradient-to-l from-transparent ${pairEntry && !cardLoading ? 'to-emerald-500/60' : 'to-slate-700'}`} />
                   </div>
 
                   <CardHero card={partner} onOpen={() => onCardSelect?.(partner)} />
@@ -750,7 +757,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
 
                 {/* Bandeau de stats sous la vitrine */}
                 {cardLoading ? (
-                  <div className="relative mt-8 h-24 rounded-xl bg-slate-900/60 border border-slate-800 animate-pulse" />
+                  <div className="relative mt-8">
+                    <SynergyPairStatsSkeleton />
+                  </div>
                 ) : pairEntry ? (
                   <div className="relative mt-8 grid grid-cols-3 gap-3">
                     <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-center">
@@ -785,7 +794,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                     }`}>
                       <Sparkles size={16} className={pairEntry ? 'text-emerald-400' : 'text-slate-600'} />
                     </div>
-                    {pairEntry && (
+                    {cardLoading ? (
+                      <Skeleton className="h-5 w-12 rounded" />
+                    ) : pairEntry && (
                       <span className="text-lg font-black text-emerald-400 tabular-nums">
                         {formatLift(pairEntry.lift_score)}
                       </span>
@@ -802,7 +813,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 </div>
 
                 {cardLoading ? (
-                  <ListSkeleton rows={3} />
+                  <SynergyPairCompactSkeleton />
                 ) : pairEntry ? (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
@@ -852,7 +863,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-emerald-400"
                 />
                 {cardLoading ? (
-                  <ListSkeleton rows={5} />
+                  <SynergyListSkeleton rows={CARD_LIMIT / 2} gallery={gallery} />
                 ) : cardData?.topSynergy.length ? (
                   <div className="space-y-2">
                     {cardData.topSynergy.slice(0, CARD_LIMIT).map((s, i) => (
@@ -881,7 +892,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-blue-400"
                 />
                 {cardLoading ? (
-                  <ListSkeleton rows={5} />
+                  <SynergyListSkeleton rows={CARD_LIMIT / 2} gallery={gallery} />
                 ) : cardData?.topConfidence.length ? (
                   <div className="space-y-2">
                     {cardData.topConfidence.slice(0, CARD_LIMIT).map((s, i) => (
@@ -933,7 +944,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-emerald-400"
                 />
                 {topLoading ? (
-                  <ListSkeleton />
+                  <SynergyListSkeleton rows={gallery ? 4 : 6} thumbs={2} gallery={gallery} />
                 ) : topError ? (
                   <EmptyState message="Could not load synergies. Try again later." />
                 ) : filteredLift.length ? (
@@ -964,7 +975,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-blue-400"
                 />
                 {topLoading ? (
-                  <ListSkeleton />
+                  <SynergyListSkeleton rows={gallery ? 4 : 6} thumbs={2} gallery={gallery} />
                 ) : topError ? (
                   <EmptyState message="Could not load synergies. Try again later." />
                 ) : filteredPlayed.length ? (
@@ -998,7 +1009,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-emerald-400"
                 />
                 {pairMapLoading ? (
-                  <ListSkeleton />
+                  <SynergyListSkeleton rows={gallery ? 4 : 6} gallery={gallery} />
                 ) : cardRanking?.hubs.length ? (
                   <div className="space-y-2">
                     {cardRanking.hubs.map((c, i) => (
@@ -1027,7 +1038,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   accent="text-blue-400"
                 />
                 {pairMapLoading ? (
-                  <ListSkeleton />
+                  <SynergyListSkeleton rows={gallery ? 4 : 6} gallery={gallery} />
                 ) : cardRanking?.glue.length ? (
                   <div className="space-y-2">
                     {cardRanking.glue.map((c, i) => (

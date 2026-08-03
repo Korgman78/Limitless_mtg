@@ -84,6 +84,90 @@ export const ArticleSkeleton: React.FC = () => (
   </div>
 );
 
+// --- Skeletons de l'explorateur de synergies (onglet Cards) ---
+
+/**
+ * Reprend la géométrie de PairRow / PartnerRow : rang, vignette(s), deux lignes
+ * de texte, badge de score. `thumbs` vaut 2 pour les listes de paires (les deux
+ * cartes sont affichées), 1 pour les listes de partenaires.
+ */
+export const SynergyRowSkeleton: React.FC<{ thumbs?: 1 | 2; gallery?: boolean }> = ({
+  thumbs = 1,
+  gallery = false,
+}) => (
+  <div
+    className={`w-full flex items-center rounded-xl bg-slate-900/50 border border-slate-800/70 ${
+      gallery ? 'gap-3 p-3' : 'gap-2 p-2'
+    }`}
+  >
+    <Skeleton className={`flex-shrink-0 rounded ${gallery ? 'w-5 h-4' : 'w-4 h-3'}`} />
+    {Array.from({ length: thumbs }).map((_, i) => (
+      <Skeleton
+        key={i}
+        className={`flex-shrink-0 rounded ${gallery ? 'w-[4.5rem] lg:w-24 aspect-[488/680]' : 'w-8 h-11'}`}
+      />
+    ))}
+    <div className="flex-1 min-w-0 space-y-2">
+      <Skeleton className={`rounded ${gallery ? 'h-4 w-2/3' : 'h-3 w-3/4'}`} />
+      <Skeleton className={`rounded ${gallery ? 'h-3.5 w-1/2' : 'h-2.5 w-1/2'}`} />
+    </div>
+    <Skeleton className={`flex-shrink-0 rounded-lg ${gallery ? 'h-8 w-16' : 'h-6 w-12'}`} />
+  </div>
+);
+
+export const SynergyListSkeleton: React.FC<{ rows?: number; thumbs?: 1 | 2; gallery?: boolean }> = ({
+  rows = 6,
+  thumbs = 1,
+  gallery = false,
+}) => (
+  <div className="space-y-2">
+    {Array.from({ length: rows }).map((_, i) => (
+      <SynergyRowSkeleton key={i} thumbs={thumbs} gallery={gallery} />
+    ))}
+  </div>
+);
+
+/** Bandeau de stats sous la vitrine desktop : decks communs + deux confidences. */
+export const SynergyPairStatsSkeleton: React.FC = () => (
+  <div className="grid grid-cols-3 gap-3">
+    {[0, 1, 2].map(i => (
+      <div key={i} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Skeleton className="h-2.5 w-24 rounded" />
+          <Skeleton className="h-4 w-10 rounded" />
+        </div>
+        <Skeleton className="h-6 w-16 rounded" />
+        <Skeleton className="h-2 w-2/3 rounded" />
+      </div>
+    ))}
+  </div>
+);
+
+/** Version mobile compacte : deux tuiles chiffrées, puis les deux confidences. */
+export const SynergyPairCompactSkeleton: React.FC = () => (
+  <div className="space-y-3">
+    <div className="grid grid-cols-2 gap-3">
+      {[0, 1].map(i => (
+        <div key={i} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+          <Skeleton className="h-2.5 w-20 rounded" />
+          <Skeleton className="h-5 w-14 rounded" />
+          <Skeleton className="h-2 w-24 rounded" />
+        </div>
+      ))}
+    </div>
+    {[0, 1].map(i => (
+      <div key={i} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Skeleton className="h-3 w-1/2 rounded" />
+          <Skeleton className="h-4 w-10 rounded" />
+        </div>
+        <Skeleton className="h-1.5 w-full rounded-full" />
+        <Skeleton className="h-2 w-3/4 rounded" />
+      </div>
+    ))}
+  </div>
+);
+
 // Skeleton pour CardDetailOverlay
 export const CardDetailSkeleton: React.FC = () => (
   <div className="p-6 pt-16 space-y-6 overflow-y-auto h-full">
