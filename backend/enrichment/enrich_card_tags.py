@@ -10,7 +10,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "MSH"
+TARGET_SET = "HOB"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent

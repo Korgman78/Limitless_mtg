@@ -10,7 +10,9 @@ from pathlib import Path
 # ==============================================================================
 
 # ✅ VARIABLE DE CIBLAGE
-TARGET_SET = "MSH"
+# ⚠️ Dépend de `card_stats` : ne pas lancer avant le 1er run de etl_script.py
+# sur HOB (donc pas avant l'activation du set + la sortie Arena).
+TARGET_SET = "HOB"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent

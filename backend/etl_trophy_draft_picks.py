@@ -47,7 +47,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = ["MSH"]  # [] = tous les sets actifs
+TARGET_SET_CODES = ["MSH", "HOB"]  # [] = tous les sets actifs
 # Premier Draft uniquement : le Trad Draft ne se joue pas en classé, donc 17Lands
 # n'expose aucune séquence de picks classée pour ce format (rien à ingérer). La
 # feature Draft Practice s'appuie donc toujours sur les picks Premier Draft, même

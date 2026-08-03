@@ -16,7 +16,11 @@ INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
 
 # ✅ VARIABLE DE CIBLAGE (liste de codes, ou liste vide pour tous les sets actifs)
-TARGET_SET_CODES = ["MSH"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
+# ⚠️ Ce script croise TARGET_SET_CODES avec les sets `active=true` de Supabase :
+# un set listé ici mais inactif est ignoré (warning). HOB reste donc inerte
+# jusqu'au passage en actif ; comme chaque run refetch toute la fenêtre depuis
+# `start_date`, le 1er run après activation rattrape l'historique complet.
+TARGET_SET_CODES = ["MSH", "HOB"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 

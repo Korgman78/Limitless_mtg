@@ -12,6 +12,29 @@ Heroes**, sortie Arena le 2026-06-23.
   basculer à chaque nouveau set.
 - Les UMAP (`trophy_map.yml`, `card_map.yml`) ciblent **tous les sets actifs**
   (`TARGET_SET_CODES = []`) → automatiques, rien à faire.
+- ⚠️ **Tous les scripts ne réagissent pas pareil au flag `active`** — c'est ce qui
+  décide de ce qui se passe si on cible un set avant de l'activer :
+
+  | Script | Ciblage | Set inactif ? |
+  |---|---|---|
+  | `etl_script.py` (daily_etl) | `TARGET_SET_CODES` ∩ **sets actifs** | **ignoré** (warning « sets non trouvés ») |
+  | `etl_script_trophydecks.py` | `TARGET_SET_CODES` seul | traité quand même |
+  | `etl_script_synergy.py` | `TARGET_SET_CODES` seul | traité quand même |
+  | `calculate_archetypal_decks.py` | `TARGET_SET_CODES` seul | traité quand même |
+  | `etl_trophy_draft_picks.py` | `TARGET_SET_CODES` sinon actifs | traité quand même |
+  | UMAP trophy/card map | sets actifs (`[]`) | ignoré |
+
+  Conséquence pratique : **cibler un set avant sa sortie ne casse rien**, et c'est
+  même nécessaire pour les trophy decks. Les scripts non gated tournent à vide
+  (17Lands renvoie des listes vides) ; `etl_script.py` attend l'activation, ce
+  qui est sans perte puisqu'il refetch toute la fenêtre depuis `start_date` à
+  chaque run — le 1er run après activation rattrape tout l'historique.
+- **Ce qui est rattrapable et ce qui ne l'est pas.** `etl_script.py` (metagame,
+  cartes, player-level) est *self-healing* : il relit toute la période à chaque
+  run. Les **trophy decks** ne le sont pas — le scrap ne voit que les dernières
+  24 h, une journée manquée se rejoue seulement à la main
+  (`python backend/etl_script_trophydecks.py --date YYYY-MM-DD`). D'où la règle :
+  **ajouter le set au ciblage trophy decks AVANT la sortie Arena.**
 - **17Lands n'a aucune donnée tant que le set n'est pas jouable sur Arena.** Tout
   ce qui dépend de 17Lands reste vide avant le lancement (c'est normal).
 
@@ -30,6 +53,11 @@ Heroes**, sortie Arena le 2026-06-23.
 - [ ] **(Recommandé) Embargo** : ajouter le code à `EMBARGOED_SETS` dans
   `src/constants.ts` → set scrappé mais **masqué en prod** le temps que les
   données se remplissent. Commit + déploiement Vercel.
+  - *Variante sans PC* : créer la ligne avec **`active = false`** et la basculer à
+    `true` le jour J depuis l'interface Supabase. Même effet de masquage, mais le
+    levier est en base au lieu d'être dans le code — pas de commit ni de déploiement
+    à faire depuis un téléphone. Contrepartie : `etl_script.py` et les UMAP ne
+    couvrent pas le set tant qu'il est inactif (sans perte, cf. tableau plus haut).
 - [ ] **Formats** : les 4 standards (`PremierDraft`, `TradDraft`, `Sealed`,
   `ArenaDirect_Sealed`) sont déjà dans `FORMAT_OPTIONS`. Rien à faire sauf format
   inédit.
@@ -111,8 +139,64 @@ dépendent PAS de 17Lands, donc faisables dès que le spoiler est sur Scryfall.
 
 ---
 
+## Cas concret — HOB (The Hobbit), sortie Arena 2026-08-10
+
+Onboarding préparé le 2026-08-03, avec une contrainte : **pas de PC disponible le
+jour de la sortie**. Le levier du jour J est donc en base, pas dans le code.
+
+Vérifications faites le 2026-08-03 :
+- Code **`HOB`** confirmé des deux côtés — Scryfall (`arena_code: hob`,
+  « The Hobbit », 2026-08-14 en papier) et 17Lands (présent dans
+  `https://www.17lands.com/data/expansions`, `card_ratings` renvoie `[]`, normal
+  avant la sortie).
+- **Pas de bonus sheet à rattacher.** Les sets enfants sont `thob` (tokens) et
+  `hoc` « The Hobbit Eternal » (`set_type: eternal`, `booster: false`) : hors
+  boosters de draft, donc hors périmètre. `fetch_bonus_sheet_codes` ne retient que
+  `masterpiece`/`bonus`, ce qui est le bon comportement ici (même schéma que
+  `tle` pour TLA).
+
+Fait dans le code (commit du 2026-08-03) :
+- `HOB` ajouté à côté de `MSH` dans les 5 ciblages ETL (`etl_script`,
+  `etl_script_trophydecks`, `etl_script_synergy`, `calculate_archetypal_decks`,
+  `etl_trophy_draft_picks`).
+- `TARGET_SET = "HOB"` dans les 4 scripts manuels de Phase 1/2.
+- ⚠️ `etl_script_synergy.py` était resté sur `["SOS"]` (calibrage des seuils du
+  2026-07-31) : les synergies MSH n'étaient plus recalculées depuis. Remis sur
+  `["MSH", "HOB"]`.
+
+À faire le 2026-08-10 depuis Supabase (aucun commit nécessaire) :
+```sql
+insert into sets (code, name, active, start_date)
+values ('HOB', 'The Hobbit', true, '2026-08-10')
+on conflict (code) do update set active = true;
+
+update sets set active = false where code = 'MSH';
+```
+> La ligne HOB peut être créée dès maintenant avec `active = false` ; il ne reste
+> alors que les deux `update` à faire le jour J. `start_date` = **date Arena
+> (08-10)**, pas la date papier (08-14).
+
+**Spoiler complet dès le 2026-08-03** : HOB est un mini-set de **193 cartes**
+(70C / 55U / 53R / 15M), numérotées 1→193 sans aucun trou ; les numéros 194→321
+sont des traitements alternatifs des mêmes cartes. Pour comparaison, le run de
+base fait 277 cartes sur MSH et 286 sur TLA. Le test de complétude fiable est la
+**contiguïté des collector numbers**, pas le volume : un spoiler partiel laisse
+des trous.
+
+Reste PC-dépendant (Phase 1, faisable dès maintenant vu que le spoiler est
+complet) :
+`populate_card_list.py` → `enrich_card_tags.py` → `corrections/correct_hob_tags.py`
+(à écrire, modèle `correct_sos_tags.py`).
+Sans ces étapes, `card_list` est vide pour HOB : les tags, les skeletons
+d'archétypes, l'analyse de deck et l'optimiseur Sealed sortiront dégradés, mais
+le metagame, les cartes, les trophy decks et les synergies fonctionnent sans eux.
+
+---
+
 ## Gotchas
 - **Code 17Lands ≠ Scryfall** possible → vérifier avant tout (sinon scrap vide).
+- **Set enfant `eternal`** (ex. `hoc` pour HOB, `tle` pour TLA) : ce n'est PAS une
+  bonus sheet de draft (`booster: false`) → à ne pas ajouter à `card_list`.
 - **Scryfall exige un User-Agent custom** depuis 2024 : sans lui l'API renvoie
   `400` et les scripts ressortent « 0 carte » silencieusement. Déjà géré
   (`HEADERS_SCRYFALL`) dans `populate_card_list.py`, `scryfall_enrichment.py`,

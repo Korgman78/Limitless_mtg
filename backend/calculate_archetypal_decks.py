@@ -13,7 +13,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET_CODES = ["MSH"]
+TARGET_SET_CODES = ["MSH", "HOB"]
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 
 # --- ENVIRONNEMENT ---

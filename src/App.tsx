@@ -233,6 +233,17 @@ export default function MTGLimitedApp(): React.ReactElement {
   const globalMeanWRForBlueprint = globalCardsData?.globalMeanWR || 55.0;
   const loading = cardsLoading;
 
+  // Le set actif est persisté en localStorage : quand un set passe inactif côté
+  // Supabase (rotation de format), les visiteurs de retour gardent un code absent
+  // de la liste. Le <select> retombe alors visuellement sur la 1re option pendant
+  // que les requêtes continuent d'interroger l'ancien set — on réaligne sur le
+  // set le plus récent.
+  useEffect(() => {
+    if (!availableSets.length) return;
+    if (availableSets.some(s => s.code === activeSet)) return;
+    setActiveSet(availableSets[0].code);
+  }, [availableSets, activeSet, setActiveSet]);
+
   // Combine errors from all queries
   const queryError = setsError || decksError || cardsError;
 
