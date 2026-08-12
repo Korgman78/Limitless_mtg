@@ -20,7 +20,7 @@ END_DATE = date.today().strftime("%Y-%m-%d")
 # un set listé ici mais inactif est ignoré (warning). HOB reste donc inerte
 # jusqu'au passage en actif ; comme chaque run refetch toute la fenêtre depuis
 # `start_date`, le 1er run après activation rattrape l'historique complet.
-TARGET_SET_CODES = ["MSH", "HOB"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
+TARGET_SET_CODES = ["HOB"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 
