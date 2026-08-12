@@ -16,7 +16,7 @@ from pathlib import Path
 # tels quels. C'est voulu — le scrap ne voit que les dernières 24 h, donc HOB doit
 # être ciblé AVANT la sortie Arena (2026-08-10) sous peine de perdre les premiers
 # jours de trophy decks, qui ne sont pas rattrapables sans replay manuel `--date`.
-TARGET_SET_CODES = ["MSH", "HOB"]  # Ex: ["FDN", "DSK"] ou [] pour tous les sets actifs
+TARGET_SET_CODES = ["HOB"]  # Ex: ["FDN", "DSK"] ou [] pour tous les sets actifs
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]  # Formats à scraper
 
 # Date cible (None = dernières 24h, ou "YYYY-MM-DD" pour une date spécifique)
