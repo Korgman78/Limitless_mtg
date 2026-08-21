@@ -6,7 +6,7 @@ Journal d'entraînement Limited, en trois onglets :
   versions), matchs joués et commentaires qualitatifs. Le sélecteur d'extension
   et la création d'entrée vivent ici.
 - **Stats** — win rate global et son évolution, filtres format/extension,
-  archétypes affrontés, cartes les plus jouées et écarts 17Lands.
+  archétypes affrontés, cartes les plus jouées.
 - **Rapport hebdo** — synthèse IA hebdomadaire du journal.
 
 Projet **indépendant de Limitless** — front séparé, port séparé — mais qui
@@ -196,6 +196,20 @@ reste du pool drafté — le collecteur l'écrit depuis `CourseDeck.Sideboard`.
 Le rendu est propre au diary : le panneau vit dans une carte d'événement, pas
 dans une modale plein écran comme Test my deck. Seule la présentation diffère,
 les seuils (55 solide, 72 trophée) et les pondérations sont ceux de Limitless.
+
+## Cartes les plus jouées
+
+Cartes présentes dans le deck construit, sur au moins 2 événements — en dessous,
+« mon WR » vaudrait simplement le score de l'unique événement, identique pour
+toutes les cartes du deck. Top 10.
+
+La section porte **son propre filtre de format**, indépendant de celui du haut :
+le GIH d'une même carte varie fortement d'un format à l'autre (58,7 % en
+PremierDraft/BG contre 66 % en TradDraft/BG sur HOB), les mélanger produirait un
+chiffre sans signification.
+
+Le GIH 17Lands est affiché pour référence, sans écart calculé : c'est un taux en
+partie quand la carte est en main, là où le WR du journal est un taux en match.
 
 ## Trophées et BO3
 

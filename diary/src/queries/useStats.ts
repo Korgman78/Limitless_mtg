@@ -28,8 +28,6 @@ export interface CardStat {
   winRate: number
   /** GIH WR 17Lands pour ce set/format, ou null si absent. */
   gihWr: number | null
-  /** winRate - gihWr, ou null. Métriques différentes : à lire comme un signal. */
-  delta: number | null
 }
 
 export interface DiaryStats {
@@ -178,15 +176,13 @@ export function useStats() {
         .map(([name, agg]) => {
           const games = agg.wins + agg.losses
           const winRate = games ? (agg.wins / games) * 100 : 0
-          const gihWr = lookupGih(gihBySetFormat, agg.key)
           return {
             name,
             events: agg.events,
             wins: agg.wins,
             losses: agg.losses,
             winRate,
-            gihWr,
-            delta: gihWr == null ? null : winRate - gihWr,
+            gihWr: lookupGih(gihBySetFormat, agg.key),
           }
         })
         .sort((a, b) => b.events - a.events || b.winRate - a.winRate)

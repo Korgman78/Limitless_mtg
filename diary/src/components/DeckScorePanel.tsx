@@ -14,7 +14,7 @@ interface Props {
 const tone = (s: number) =>
   s >= 72 ? 'text-emerald-300' : s >= 55 ? 'text-sky-300' : 'text-amber-300'
 const stroke = (s: number) => (s >= 72 ? '#34d399' : s >= 55 ? '#38bdf8' : '#fbbf24')
-const band = (s: number) => (s >= 72 ? 'Trophy-grade' : s >= 55 ? 'Solid' : 'Needs work')
+const band = (s: number) => (s >= 72 ? 'Deck-grade' : s >= 55 ? 'Solid' : 'Needs work')
 
 export function DeckScorePanel({ setCode, format, decklistRaw }: Props) {
   const { data, isLoading, error } = useDeckScore(setCode, format, decklistRaw, true)
