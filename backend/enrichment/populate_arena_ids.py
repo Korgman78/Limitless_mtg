@@ -103,6 +103,63 @@ def update_arena_ids(set_code: str, cards_17lands: list):
     print(f"\n✅ Résultat: {updated} mises à jour, {errors} erreurs")
 
 # ==============================================================================
+# 4. SECONDE PASSE : CARTES RECTO-VERSO
+# ==============================================================================
+
+def update_split_cards(set_code: str, cards_17lands: list):
+    """
+    17lands ne nomme que la face avant des cartes recto-verso / split :
+    "Smaug, the Great Calamity" la ou card_list stocke
+    "Smaug, the Great Calamity // Spew Flame". La passe principale, qui matche
+    sur le nom exact, les rate donc toutes.
+
+    On rattrape ici en reliant la face avant de chaque nom restant.
+    """
+    by_front_name = {
+        c["name"]: c["mtga_id"]
+        for c in cards_17lands
+        if c.get("name") and c.get("mtga_id")
+    }
+
+    url = (
+        f"{SUPABASE_URL}/rest/v1/card_list"
+        f"?set_code=eq.{set_code}&arena_id=is.null&select=card_name"
+    )
+    resp = requests.get(url, headers=HEADERS_SUPABASE)
+    if resp.status_code >= 400:
+        print(f"[WARN] Lecture des cartes restantes impossible: {resp.text}")
+        return
+
+    remaining = [r["card_name"] for r in resp.json() if " // " in r.get("card_name", "")]
+    if not remaining:
+        return
+
+    print(f"[2e passe] {len(remaining)} cartes recto-verso a relier...")
+
+    matched = 0
+    for card_name in remaining:
+        front_face = card_name.split(" // ")[0].strip()
+        arena_id = by_front_name.get(front_face)
+
+        if not arena_id:
+            print(f"  [MISS] {card_name} (face avant absente de 17lands)")
+            continue
+
+        patch_url = (
+            f"{SUPABASE_URL}/rest/v1/card_list"
+            f"?card_name=eq.{requests.utils.quote(card_name)}&set_code=eq.{set_code}"
+        )
+        patch = requests.patch(patch_url, json={"arena_id": arena_id}, headers=HEADERS_SUPABASE)
+
+        if patch.status_code >= 400:
+            print(f"  [ERR] {card_name}: {patch.text}")
+        else:
+            matched += 1
+
+    print(f"[2e passe] {matched}/{len(remaining)} reliees via la face avant")
+
+
+# ==============================================================================
 # MAIN
 # ==============================================================================
 
@@ -121,5 +178,8 @@ if __name__ == "__main__":
 
     # 2. Mettre à jour card_list
     update_arena_ids(target, cards_17lands)
+
+    # 3. Rattraper les cartes recto-verso, nommees differemment par 17lands
+    update_split_cards(target, cards_17lands)
 
     print(f"\n✨ Terminé en {round(time.time() - start_time, 2)}s.")

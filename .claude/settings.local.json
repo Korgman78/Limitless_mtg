@@ -122,7 +122,13 @@
       "Read(//c/Program Files \\\\\\(x86\\\\\\)/Microsoft/Edge/Application/**)",
       "Bash(env)",
       "PowerShell(npx tsc --noEmit -p tsconfig.app.json)",
-      "PowerShell(git push *)"
+      "PowerShell(git push *)",
+      "PowerShell(Start-Process \"http://localhost:5199/\")",
+      "Bash(PYTHONIOENCODING=utf-8 venv/Scripts/python.exe C:/Users/rapha/AppData/Local/Temp/claude/C--Users-rapha-mtg-front-new/f72c2822-f19f-473d-b1a9-31d524f63a57/scratchpad/dryrun.py)",
+      "Bash(PYTHONIOENCODING=utf-8 venv/Scripts/python.exe C:/Users/rapha/AppData/Local/Temp/claude/C--Users-rapha-mtg-front-new/f72c2822-f19f-473d-b1a9-31d524f63a57/scratchpad/compare.py)",
+      "Bash(PYTHONIOENCODING=utf-8 venv/Scripts/python.exe C:/Users/rapha/AppData/Local/Temp/claude/C--Users-rapha-mtg-front-new/f72c2822-f19f-473d-b1a9-31d524f63a57/scratchpad/dry2.py)",
+      "Bash(PYTHONUTF8=1 venv/Scripts/python.exe backend/populate_card_list.py)",
+      "Bash(PYTHONUTF8=1 venv/Scripts/python.exe backend/enrichment/enrich_card_tags.py)"
     ]
   }
 }

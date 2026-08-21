@@ -1,0 +1,6 @@
+{
+  "name": "diary-sync",
+  "private": true,
+  "//": "Le diary est en type:module pour Vite. Ce sous-dossier est du CommonJS : il est partage avec arena-overlay (Electron), qui charge en require().",
+  "type": "commonjs"
+}
