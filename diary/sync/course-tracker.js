@@ -46,10 +46,25 @@ function readScore(course) {
 }
 
 /** [{cardId, quantity}] -> liste plate d'arenaId, quantites conservees. */
-function deckEntries(course) {
-  return (course?.CourseDeck?.MainDeck || [])
+function readEntries(list) {
+  return (list || [])
     .filter((entry) => entry?.cardId && entry?.quantity)
     .map((entry) => ({ arenaId: entry.cardId, qty: entry.quantity }));
+}
+
+function deckEntries(course) {
+  return readEntries(course?.CourseDeck?.MainDeck);
+}
+
+/**
+ * Reserve : en Limited, c'est le reste du pool drafte.
+ *
+ * Indispensable pour les suggestions d'ajout de "Test my deck", qui ne piochent
+ * QUE dans `sideboardCards`. Sans cette section l'analyse ne propose jamais rien
+ * a ajouter, faute de candidats.
+ */
+function sideboardEntries(course) {
+  return readEntries(course?.CourseDeck?.Sideboard);
 }
 
 /**
@@ -91,19 +106,28 @@ function findMatchingCourse(courses, pickedArenaIds) {
  * absents de card_list) sont omises plutot que d'inventer un nom.
  */
 async function toMtgaExport(course, resolveName) {
-  const lines = ['Deck'];
+  const lines = [];
   let skipped = 0;
   let resolved = 0;
 
-  for (const entry of deckEntries(course)) {
-    const name = await resolveName(entry.arenaId);
-    if (name) {
-      lines.push(`${entry.qty} ${name}`);
-      resolved += entry.qty;
-    } else {
-      skipped += entry.qty;
+  const section = async (header, entries) => {
+    if (!entries.length) return;
+    if (lines.length) lines.push('');
+    lines.push(header);
+
+    for (const entry of entries) {
+      const name = await resolveName(entry.arenaId);
+      if (name) {
+        lines.push(`${entry.qty} ${name}`);
+        resolved += entry.qty;
+      } else {
+        skipped += entry.qty;
+      }
     }
-  }
+  };
+
+  await section('Deck', deckEntries(course));
+  await section('Sideboard', sideboardEntries(course));
 
   return { text: lines.join(NEWLINE), skipped, resolved };
 }
@@ -114,6 +138,7 @@ module.exports = {
   isLimitedCourse,
   readScore,
   deckEntries,
+  sideboardEntries,
   poolOverlap,
   findMatchingCourse,
   toMtgaExport,

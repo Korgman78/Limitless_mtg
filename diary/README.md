@@ -188,6 +188,11 @@ Note sur 100 : 50 % puissance des cartes, 25 % couverture des core cards, 15 %
 équilibre créatures, 10 % adéquation de courbe. Les suggestions de coupes et
 d'ajouts viennent de `lowSynergyCards` / `potentialAdds` du même résultat.
 
+**Le deck enregistré doit contenir sa réserve.** `potentialAdds` ne pioche que
+dans `parsedDeck.sideboardCards` : sans section `Sideboard`, l'analyse n'a aucun
+candidat et ne propose jamais rien à ajouter. En Limited la réserve, c'est le
+reste du pool drafté — le collecteur l'écrit depuis `CourseDeck.Sideboard`.
+
 Le rendu est propre au diary : le panneau vit dans une carte d'événement, pas
 dans une modale plein écran comme Test my deck. Seule la présentation diffère,
 les seuils (55 solide, 72 trophée) et les pondérations sont ceux de Limitless.
