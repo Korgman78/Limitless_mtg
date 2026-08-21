@@ -162,6 +162,10 @@ de traiter l'écart 17Lands comme une mesure.
   siège — le log ne relie aucun match à un draft autrement.
 - Vérification croisée sur un log réel : les couleurs déduites des cartes
   correspondent aux terrains de base joués (UB/UB, BR/BR, WR/WR…).
+- Les **terrains de base n'existent dans aucun `card_list`** : leur arena_id
+  dépend de l'illustration possédée par le joueur. Le log est la seule source
+  qui les identifie, via `subtypes` sur les objets de jeu — d'où
+  `readBasicLandIds()`. Sans ça un deck s'enregistre amputé de ses 17 terrains.
 - Le log vit dans `%USERPROFILE%\AppData\LocalLow\...` sur les builds Steam et
   standalone.
 

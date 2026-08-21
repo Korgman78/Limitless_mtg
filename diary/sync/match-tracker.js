@@ -30,6 +30,28 @@ const WUBRG = 'WUBRG';
 /** En dessous, le rattachement n'est pas fiable : mieux vaut ne pas relier. */
 const MATCH_THRESHOLD = 0.6;
 
+/**
+ * Recense les arenaId des terrains de base croises en jeu, par nom.
+ *
+ * Les cinq terrains de base sont ABSENTS de card_list, quel que soit le set :
+ * leur arenaId depend de l'illustration possedee par le joueur. Le log est la
+ * seule source qui les identifie, via `subtypes` sur les objets de jeu. Sans ce
+ * recensement, un deck s'enregistre ampute de ses terrains.
+ */
+function readBasicLandIds(payload, target) {
+  for (const message of payload?.greToClientEvent?.greToClientMessages ?? []) {
+    for (const object of message?.gameStateMessage?.gameObjects ?? []) {
+      if (!object.grpId) continue;
+      for (const subtype of object.subtypes ?? []) {
+        if (BASIC_TO_COLOR[subtype]) {
+          target.set(object.grpId, subtype.replace('SubType_', ''));
+        }
+      }
+    }
+  }
+}
+
+
 /** Etat mutable d'un suivi de matchs, a conserver entre les lignes. */
 function createMatchTracker() {
   return { current: null, completed: [] };
@@ -179,6 +201,7 @@ function resolveMatch(match, pools, cardMeta) {
 
 module.exports = {
   MATCH_THRESHOLD,
+  readBasicLandIds,
   createMatchTracker,
   feedParsedLine,
   resolveMatch,

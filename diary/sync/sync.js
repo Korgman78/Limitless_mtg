@@ -19,7 +19,11 @@ const fs = require('fs');
 const path = require('path');
 
 const DiaryCollector = require('./diary-collector');
-const { createMatchTracker, feedParsedLine } = require('./match-tracker');
+const {
+  createMatchTracker,
+  feedParsedLine,
+  readBasicLandIds,
+} = require('./match-tracker');
 const LogParser = require('./log-parser');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -116,10 +120,15 @@ async function main() {
     return nameCache.get(code).get(arenaId)?.name ?? null;
   };
 
+  // Rempli au fil du scan ; le deck n'est ecrit qu'a la vidange de la file,
+  // donc la table est complete au moment ou le collecteur en a besoin.
+  const basicLandIds = new Map();
+
   const collector = new DiaryCollector({
     supabaseUrl: url,
     supabaseKey: key,
     resolveCardName,
+    basicLandIds,
   });
 
   // Le parser emet en synchrone alors que le collecteur ecrit en asynchrone :
@@ -190,6 +199,8 @@ async function main() {
     } catch {
       return;
     }
+
+    readBasicLandIds(payload, basicLandIds);
 
     const finished = feedParsedLine(matchTracker, payload);
     if (finished) {

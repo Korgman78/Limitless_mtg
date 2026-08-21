@@ -15,10 +15,15 @@ const { resolveMatch } = require('./match-tracker');
  * il ne doit jamais interrompre l'overlay.
  */
 class DiaryCollector {
-  constructor({ supabaseUrl, supabaseKey, resolveCardName }) {
+  constructor({ supabaseUrl, supabaseKey, resolveCardName, basicLandIds }) {
     this.supabaseUrl = supabaseUrl;
     this.supabaseKey = supabaseKey;
     this.resolveCardName = resolveCardName;
+
+    // arenaId -> nom de terrain de base, alimente depuis le log. Ces cartes
+    // n'existent dans aucun card_list : sans ce repli, un deck s'enregistre
+    // ampute de ses terrains.
+    this.basicLandIds = basicLandIds ?? new Map();
 
     this.enabled = Boolean(supabaseUrl && supabaseKey);
     this.eventId = null;
@@ -196,7 +201,7 @@ class DiaryCollector {
 
       const { text, skipped, resolved } = await toMtgaExport(
         matched.course,
-        (arenaId) => this.resolveCardName(arenaId),
+        (arenaId) => this.resolveDeckCard(arenaId),
       );
 
       if (resolved > 0 && text !== this.lastDeckText) {
@@ -206,6 +211,12 @@ class DiaryCollector {
     } catch (err) {
       console.error('[Diary] Mise a jour course impossible:', err.message);
     }
+  }
+
+  /** Nom d'une carte du deck : card_list d'abord, terrains de base ensuite. */
+  async resolveDeckCard(arenaId) {
+    const name = await this.resolveCardName(arenaId);
+    return name ?? this.basicLandIds.get(arenaId) ?? null;
   }
 
   /**
