@@ -124,6 +124,7 @@ export function EventCard({
           <DeckPanel
             versions={event.deckVersions}
             setCode={event.set_code}
+            format={event.format}
             onAddVersion={(label, raw) =>
               onAddDeckVersion(
                 event.id,

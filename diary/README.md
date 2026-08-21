@@ -108,6 +108,7 @@ diary/
         ├── PickPanel.tsx      # revue de picks pack par pack
         ├── NewEventForm.tsx   # création (deck + pool sealed)
         ├── DeckPanel.tsx      # deck + bascule entre versions
+        ├── DeckScorePanel.tsx # score et suggestions, moteur "Test my deck"
         └── NotesEditor.tsx    # sections qualitatives, save au blur
 ```
 
@@ -175,6 +176,21 @@ Validées avec `validate_palette.js` contre la surface `#0f172a` :
 série `#3987e5`, écarts `#34d399` / `#f43f5e` (CVD deutan ΔE 12.0). L'écart
 porte toujours son signe et une flèche — la couleur ne véhicule jamais seule
 l'information.
+
+## Score du deck
+
+Bouton **« Voir le score du deck »** dans le panneau deck. Il appelle
+`analyzeDeckText` puis `scoreDeckAnalysis` de
+`src/utils/analyzeDeckPipeline.ts` — le moteur exact de « Test my deck », via
+l'edge function `deck-analysis`. Rien n'est recalculé côté diary.
+
+Note sur 100 : 50 % puissance des cartes, 25 % couverture des core cards, 15 %
+équilibre créatures, 10 % adéquation de courbe. Les suggestions de coupes et
+d'ajouts viennent de `lowSynergyCards` / `potentialAdds` du même résultat.
+
+Le rendu est propre au diary : le panneau vit dans une carte d'événement, pas
+dans une modale plein écran comme Test my deck. Seule la présentation diffère,
+les seuils (55 solide, 72 trophée) et les pondérations sont ceux de Limitless.
 
 ## Trophées et BO3
 

@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Gauge, Plus, X } from 'lucide-react'
 import { parseMtgaDeck } from '@limitless/utils/deckAnalysisCore'
 import { CmcStack, type SkeletonCard } from '@limitless/components/Features/CmcStack'
 import { useCardMeta } from '../queries/useCardMeta'
+import { DeckScorePanel } from './DeckScorePanel'
 import type { DiaryDeckVersion } from '../types'
 
 interface Props {
   versions: DiaryDeckVersion[]
   setCode: string
+  format: string
   onAddVersion: (label: string, decklistRaw: string) => Promise<void>
 }
 
@@ -18,9 +20,10 @@ const MAX_CMC_COLUMN = 7
  * inconnues du set (terrains de base) sont regroupées à part plutôt qu'écartées
  * silencieusement.
  */
-export function DeckPanel({ versions, setCode, onAddVersion }: Props) {
+export function DeckPanel({ versions, setCode, format, onAddVersion }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [showScore, setShowScore] = useState(false)
   const { data: cardMeta } = useCardMeta(setCode)
 
   const selected =
@@ -107,9 +110,25 @@ export function DeckPanel({ versions, setCode, onAddVersion }: Props) {
           <span className="text-[11px] text-slate-600">{total} cartes</span>
         )}
 
+        {selected && (
+          <button
+            onClick={() => setShowScore((v) => !v)}
+            className={`ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+              showScore
+                ? 'bg-slate-700 text-slate-100'
+                : 'border border-slate-700 text-slate-300 hover:border-slate-500'
+            }`}
+          >
+            <Gauge size={12} />
+            {showScore ? 'Masquer le score' : 'Voir le score du deck'}
+          </button>
+        )}
+
         <button
           onClick={() => setAdding((v) => !v)}
-          className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 hover:text-slate-300"
+          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 hover:text-slate-300 ${
+            selected ? '' : 'ml-auto'
+          }`}
         >
           {adding ? <X size={12} /> : <Plus size={12} />}
           {adding ? 'Annuler' : 'Nouvelle version'}
@@ -146,6 +165,14 @@ export function DeckPanel({ versions, setCode, onAddVersion }: Props) {
               <CmcStack cmc={0} label="Lands" cards={lands} onCardSelect={() => {}} />
             )}
           </div>
+
+          {showScore && (
+            <DeckScorePanel
+              setCode={setCode}
+              format={format}
+              decklistRaw={selected.decklist_raw}
+            />
+          )}
 
           {unknown.length > 0 && (
             <p className="mt-1 text-[11px] text-slate-600">
