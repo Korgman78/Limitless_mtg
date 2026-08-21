@@ -1,32 +1,20 @@
 @echo off
-REM Lance le MTG Training Diary et ouvre le navigateur.
-REM Garder cette fenetre ouverte tant que l'app est utilisee.
-cd /d "%~dp0diary"
+title MTG Training Diary
+cd /d "%~dp0"
 
-where node >nul 2>&1
+REM Verifie Node et la configuration, les installe/demande si besoin.
+call diary\setup.bat
 if errorlevel 1 (
-  echo.
-  echo   Node.js est introuvable. Installe-le depuis https://nodejs.org
-  echo.
   pause
   exit /b 1
 )
 
-if not exist ".env" (
-  echo.
-  echo   Fichier diary\.env manquant.
-  echo   Copie diary\.env.example vers diary\.env et renseigne :
-  echo     VITE_SUPABASE_URL
-  echo     VITE_SUPABASE_KEY
-  echo.
-  pause
-  exit /b 1
-)
-
-REM Premiere utilisation sur ce poste : installe les dependances du front.
-if not exist "node_modules" (
+REM Premiere utilisation : dependances du front.
+if not exist "diary\node_modules" (
   echo Premiere utilisation, installation des dependances...
+  pushd diary
   call npm install
+  popd
   if errorlevel 1 (
     echo Echec de l'installation.
     pause
@@ -34,4 +22,16 @@ if not exist "node_modules" (
   )
 )
 
-npm run dev
+REM Rattrape ce qui a ete joue depuis la derniere fois, avant d'ouvrir l'app.
+echo.
+echo Lecture du Player.log d'Arena...
+node diary\sync\sync.js
+echo.
+
+REM Puis surveille le log en continu, dans sa propre fenetre : les drafts et
+REM matchs joues pendant que l'app est ouverte remontent tout seuls.
+start "Diary - synchro Arena" /min cmd /c "node diary\sync\sync.js --watch"
+
+pushd diary
+call npm run dev
+popd

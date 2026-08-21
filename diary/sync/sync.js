@@ -10,7 +10,9 @@
  * L'ecriture est idempotente : draft_id unique sur les evenements, contrainte
  * unique (event_id, pack, pick) sur les picks. Relancer ne duplique rien.
  *
- * Usage :  node diary/sync/sync.js [chemin/vers/Player.log]
+ * Usage :
+ *   node diary/sync/sync.js [log]           rejeu unique, puis sortie
+ *   node diary/sync/sync.js --watch [log]   rejeu puis surveillance continue
  */
 
 const fs = require('fs');
@@ -94,7 +96,9 @@ async function loadCardMeta(url, key, setCode) {
 
 async function main() {
   const { url, key } = readEnv();
-  const logPath = findLogPath(process.argv[2]);
+  const args = process.argv.slice(2);
+  const watch = args.includes('--watch');
+  const logPath = findLogPath(args.find((a) => !a.startsWith('--')));
 
   console.log(`Log   : ${logPath}`);
   const content = fs.readFileSync(logPath, 'utf8');
@@ -154,31 +158,37 @@ async function main() {
     return nameCache.get(code);
   };
 
+  // Execute les taches en attente, dans l'ordre du log.
+  const drain = async () => {
+    while (queue.length) {
+      const task = queue.shift();
+      await task();
+    }
+  };
+
   // Le parser est bavard : on le tait pendant le rejeu, on garde nos traces.
   const chatty = console.log;
   console.log = () => {};
 
-  for (const line of lines) {
-    parser.parseLine(line);
-
-    // Filtre bon marche avant le JSON.parse : ces messages sont volumineux et
-    // representent la majorite du fichier.
+  // Filtre bon marche avant le JSON.parse : ces messages sont volumineux et
+  // representent la majorite du fichier.
+  const feedMatchLine = (line) => {
     if (
       !line.includes('reservedPlayers') &&
       !line.includes('finalMatchResult') &&
       !line.includes('gameObjects')
     ) {
-      continue;
+      return;
     }
 
     const brace = line.indexOf('{');
-    if (brace < 0) continue;
+    if (brace < 0) return;
 
     let payload;
     try {
       payload = JSON.parse(line.slice(brace));
     } catch {
-      continue;
+      return;
     }
 
     const finished = feedParsedLine(matchTracker, payload);
@@ -187,14 +197,52 @@ async function main() {
         collector.onMatchComplete(finished, await metaForEvent(finished.eventName)),
       );
     }
+  };
+
+  for (const line of lines) {
+    parser.parseLine(line);
+    feedMatchLine(line);
   }
 
   console.log = chatty;
 
-  console.log(`Taches : ${queue.length}\n`);
-  for (const task of queue) await task();
+  console.log(`Taches : ${queue.length}`);
+  await drain();
 
-  console.log('\nSynchro terminee.');
+  if (!watch) {
+    console.log('Synchro terminee.');
+    return;
+  }
+
+  // --- Surveillance continue -----------------------------------------------
+  // Le rejeu ci-dessus a deja tout rattrape ; seules les nouvelles lignes sont
+  // traitees ensuite. parser.start() se positionne en fin de fichier et gere la
+  // troncature quand Arena redemarre.
+  console.log('Surveillance du log active. Ferme cette fenetre pour arreter.');
+
+  parser.on('raw-line', feedMatchLine);
+
+  // Les taches arrivent en continu : on vide la file peu apres chaque rafale,
+  // sans jamais lancer deux vidanges en parallele.
+  let draining = false;
+  const scheduleDrain = () => {
+    if (draining) return;
+    draining = true;
+    setTimeout(async () => {
+      try {
+        await drain();
+      } finally {
+        draining = false;
+      }
+    }, 500);
+  };
+
+  for (const event of ['draft-start', 'pack-opened', 'card-picked', 'courses-update']) {
+    parser.on(event, scheduleDrain);
+  }
+  parser.on('raw-line', scheduleDrain);
+
+  parser.start();
 }
 
 main().catch((err) => {

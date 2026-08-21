@@ -97,6 +97,10 @@ class LogParser extends EventEmitter {
 
     for (const line of lines) {
       this.parseLine(line);
+      // Les matchs vivent dans des messages que parseLine ne regarde pas.
+      // Cet evenement permet a la synchro de les suivre en direct, avec la
+      // meme logique qu'en rejeu complet.
+      this.emit('raw-line', line);
     }
   }
 

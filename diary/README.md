@@ -18,23 +18,30 @@ logique pure de Limitless via l'alias Vite `@limitless`.
 **Une seule fois, sur le projet Supabase** : exécuter `sql/001_diary_schema.sql`
 puis `sql/002_matches.sql` dans le SQL Editor.
 
-**Sur chaque poste** :
+**Sur un nouveau poste** : cloner le dépôt, double-cliquer sur `diary.bat`.
 
-1. Installer [Node.js](https://nodejs.org) s'il n'y est pas.
-2. Cloner le dépôt.
-3. Copier `diary/.env.example` vers `diary/.env` et y mettre
-   `VITE_SUPABASE_URL` et `VITE_SUPABASE_KEY` (mêmes valeurs que Limitless).
-   Ce fichier est gitignoré : il ne voyage pas avec le dépôt, c'est voulu.
-4. Double-cliquer sur `diary.bat` — il installe les dépendances au premier
-   lancement, puis ouvre l'app.
+Il prend en charge le reste tout seul, une seule fois :
 
-Les deux `.bat` vérifient Node et le `.env` et expliquent quoi faire s'il
-manque quelque chose.
+- **Node absent** → il propose de l'installer via `winget` (livré avec
+  Windows 11). Il faut relancer le `.bat` après, le temps que le PATH soit à jour.
+- **Pas de config** → il demande l'URL Supabase et la clé anon, puis écrit
+  `diary/.env`. Ce fichier est gitignoré : il ne voyage jamais avec le dépôt,
+  c'est voulu.
+- **Dépendances manquantes** → `npm install` automatique.
 
-**`diary-sync.bat` n'a besoin de rien d'autre que Node** : ni `npm install`,
-ni l'overlay. Tout ce qu'il lui faut est versionné dans `sync/`, et il
-n'utilise que des modules natifs (le `fetch` global de Node, `chokidar` chargé
-uniquement par l'overlay). Un poste peut donc se contenter de collecter.
+Ensuite, chaque double-clic sur `diary.bat` :
+
+1. relit le `Player.log` pour rattraper ce qui a été joué depuis la dernière fois,
+2. lance une surveillance continue dans une fenêtre réduite — les drafts et
+   matchs joués pendant que l'app est ouverte remontent tout seuls,
+3. ouvre le journal dans le navigateur.
+
+Le `Player.log` est trouvé automatiquement, y compris sur la version Steam.
+
+`diary-sync.bat` fait la synchro seule, sans ouvrir l'app. Il **n'a besoin que
+de Node** : ni `npm install`, ni l'overlay. Tout ce qu'il lui faut est versionné
+dans `sync/` et n'utilise que des modules natifs (`fetch` global, `chokidar`
+chargé uniquement par le watcher).
 
 ## Lancement
 
@@ -177,6 +184,9 @@ le WR en parties. Un 2-1 en matchs peut cacher un 5-4 en parties.
 
 - Le pool sealed se colle à la main : Arena ne le logue pas de façon exploitable.
 - Pas de mode hors-ligne, la base est distante.
+- Node reste un prérequis, même si `diary.bat` sait l'installer. Pour s'en
+  affranchir complètement il faudrait un exécutable autonome (Node SEA), publié
+  en Release GitHub — non fait.
 - Un match dont le draft est sorti de la fenêtre du log n'est rattaché à rien :
   en dessous de 60 % de recouvrement on préfère l'ignorer plutôt que de
   l'attribuer au mauvais événement.
