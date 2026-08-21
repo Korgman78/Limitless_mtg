@@ -5,8 +5,9 @@ Journal d'entraînement Limited, en trois onglets :
 - **Diary** — une entrée par draft/sealed : score, phase de pick, deck (avec
   versions), matchs joués et commentaires qualitatifs. Le sélecteur d'extension
   et la création d'entrée vivent ici.
-- **Stats** — win rate global et son évolution, filtres format/extension,
-  archétypes affrontés, cartes les plus jouées.
+- **Stats** — win rate et son évolution, trophées et trophy rate, puis une
+  zone « analyse par format » : archétypes joués, archétypes affrontés, table
+  de matchups et cartes les plus jouées.
 - **Rapport hebdo** — synthèse IA hebdomadaire du journal.
 
 Projet **indépendant de Limitless** — front séparé, port séparé — mais qui
@@ -196,6 +197,33 @@ reste du pool drafté — le collecteur l'écrit depuis `CourseDeck.Sideboard`.
 Le rendu est propre au diary : le panneau vit dans une carte d'événement, pas
 dans une modale plein écran comme Test my deck. Seule la présentation diffère,
 les seuils (55 solide, 72 trophée) et les pondérations sont ceux de Limitless.
+
+## Archétypes : deux règles, volontairement différentes
+
+Un archétype se déduit des cartes, jamais des terrains — une bicolore pose
+volontiers un terrain de sa couleur de splash.
+
+**Adversaire** (`sync/match-tracker.js`) : on ne voit qu'un échantillon de son
+deck au fil des parties. Une couleur y est principale à partir de **4 cartes
+vues** ; en dessous c'est un splash. Seuil absolu, parce que voir 4 cartes d'une
+couleur est déjà un signal fort.
+
+**Ton deck** (`src/utils/archetype.ts`) : on a la liste complète, le même seuil
+absolu y désignerait un splash comme couleur principale. Vérifié sur un cas
+réel : deux cartes bicolores UW en deux exemplaires faisaient passer un deck UB
+pour du WUB, alors que sa base de mana ne comportait aucun Plains. La règle est
+donc **relative** — les deux couleurs dominantes, plus une troisième seulement
+si elle atteint 80 % du compte de la deuxième.
+
+Les deux fichiers se citent mutuellement : toucher l'un sans l'autre rendrait la
+table de matchups incohérente.
+
+## Analyse par format
+
+Archétypes joués, archétypes affrontés, matchups et cartes partagent **un seul
+sélecteur de format**, distinct du filtre général. Un WR ne se compare pas d'un
+format à l'autre : sur HOB, la même carte est à 58,7 % en PremierDraft/BG et
+66 % en TradDraft/BG.
 
 ## Cartes les plus jouées
 

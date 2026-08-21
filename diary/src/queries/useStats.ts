@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../supabase'
 import { parseMtgaDeck } from '@limitless/utils/deckAnalysisCore'
+import { deduceArchetype } from '../utils/archetype'
 
 export interface StatEvent {
   id: string
@@ -17,6 +18,10 @@ export interface StatEvent {
   gamesLost: number
   /** Archétypes affrontés, ex ['UB', 'RG']. */
   opponentColors: string[]
+  /** Archétype joué, déduit des cartes du deck construit. Null si pas de deck. */
+  archetype: string | null
+  /** Un élément par match, pour la table de matchups. */
+  matchups: { opponent: string | null; won: boolean }[]
 }
 
 export interface CardStat {
@@ -60,7 +65,12 @@ interface RawEvent {
   losses: number
   diary_deck_versions: { version_no: number; decklist_raw: string }[] | null
   diary_matches:
-    | { games_won: number; games_lost: number; opponent_colors: string | null }[]
+    | {
+        games_won: number
+        games_lost: number
+        opponent_colors: string | null
+        won: boolean | null
+      }[]
     | null
 }
 
@@ -79,7 +89,7 @@ export function useStats() {
         .select(
           'id, set_code, format, event_type, played_at, wins, losses,' +
             ' diary_deck_versions(version_no, decklist_raw),' +
-            ' diary_matches(games_won, games_lost, opponent_colors)',
+            ' diary_matches(games_won, games_lost, opponent_colors, won)',
         )
         .is('deleted_at', null)
         .order('played_at')
@@ -91,13 +101,14 @@ export function useStats() {
       // Métadonnées de cartes : sert à écarter les terrains du décompte.
       const setCodes = [...new Set(rows.map((r) => r.set_code))]
       const landNames = new Set<string>()
+      const cardColors = new Map<string, { colors: string | null; type: string | null }>()
       const gihBySetFormat = new Map<string, number>()
 
       if (setCodes.length) {
         const [metaRes, statsRes] = await Promise.all([
           supabase
             .from('card_list')
-            .select('card_name, card_type')
+            .select('card_name, card_type, colors')
             .in('set_code', setCodes),
           supabase
             .from('card_stats')
@@ -107,10 +118,11 @@ export function useStats() {
         ])
 
         for (const row of metaRes.data ?? []) {
-          const type = ((row as Record<string, unknown>).card_type as string) ?? ''
-          if (type.toLowerCase().includes('land')) {
-            landNames.add((row as Record<string, unknown>).card_name as string)
-          }
+          const r = row as Record<string, unknown>
+          const name = r.card_name as string
+          const type = (r.card_type as string) ?? ''
+          if (type.toLowerCase().includes('land')) landNames.add(name)
+          cardColors.set(name, { colors: (r.colors as string) ?? null, type })
         }
 
         for (const row of statsRes.data ?? []) {
@@ -129,11 +141,18 @@ export function useStats() {
           (a, b) => b.version_no - a.version_no,
         )[0]
 
-        const cards = latest
-          ? parseMtgaDeck(latest.decklist_raw)
-              .mainCards.map((c) => c.name)
-              .filter((name) => !landNames.has(name))
-          : []
+        const mainCards = latest ? parseMtgaDeck(latest.decklist_raw).mainCards : []
+        const cards = mainCards
+          .map((c) => c.name)
+          .filter((name) => !landNames.has(name))
+
+        const archetype = deduceArchetype(
+          mainCards.map((c) => ({
+            colors: cardColors.get(c.name)?.colors ?? null,
+            type: cardColors.get(c.name)?.type ?? null,
+            qty: c.qty,
+          })),
+        )
 
         const matches = row.diary_matches ?? []
 
@@ -143,6 +162,11 @@ export function useStats() {
           opponentColors: matches
             .map((m) => m.opponent_colors)
             .filter((c): c is string => Boolean(c)),
+          archetype,
+          matchups: matches.map((m) => ({
+            opponent: m.opponent_colors,
+            won: Boolean(m.won),
+          })),
           id: row.id,
           setCode: row.set_code,
           format: row.format,

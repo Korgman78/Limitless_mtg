@@ -123,21 +123,38 @@ function feedParsedLine(tracker, payload) {
   return null;
 }
 
-/** Couleurs dominantes d'un siege, ordre WUBRG. */
-function deduceColors(match, seat, cardMeta) {
+/**
+ * Couleurs principales d'un siege, ordre WUBRG.
+ *
+ * Regle : une couleur est PRINCIPALE a partir de 4 cartes vues, en dessous
+ * c'est un splash. Prendre simplement les deux couleurs les plus frequentes
+ * promouvait un splash au rang de couleur principale des qu'on ne voyait que
+ * deux couleurs — un BR avec une carte verte ressortait en "BR" ou pire en
+ * "BG" selon l'ordre de tri.
+ *
+ * Les terrains sont exclus du compte : ils ne disent pas ce que le deck joue
+ * vraiment, une bicolore posant volontiers un terrain de sa couleur de splash.
+ */
+const MAIN_COLOR_MIN_CARDS = 4;
+
+function countColors(match, seat, cardMeta) {
   const counts = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   let resolved = 0;
 
   for (const arenaId of match.cards[seat] ?? []) {
     const meta = cardMeta?.get(arenaId);
     if (!meta?.colors) continue;
-    // Les terrains fausseraient le compte : une bicolore joue des terrains
-    // des deux couleurs mais aussi, parfois, d'une troisieme en splash.
     if ((meta.type || '').toLowerCase().includes('land')) continue;
 
     resolved += 1;
     for (const color of meta.colors.replace(/[^WUBRG]/g, '')) counts[color] += 1;
   }
+
+  return { counts, resolved };
+}
+
+function deduceColors(match, seat, cardMeta) {
+  const { counts, resolved } = countColors(match, seat, cardMeta);
 
   const ranked = Object.entries(counts)
     .filter(([, n]) => n > 0)
@@ -145,13 +162,26 @@ function deduceColors(match, seat, cardMeta) {
 
   // Trop peu de cartes revelees : les terrains de base restent le meilleur
   // indice disponible, sinon on assume l'inconnu plutot que d'inventer.
-  if (resolved < 4) {
+  if (resolved < MAIN_COLOR_MIN_CARDS) {
     const fromBasics = [...(match.basics[seat] ?? [])];
     if (fromBasics.length >= 2) return sortColors(fromBasics.slice(0, 2));
     return null;
   }
 
-  return sortColors(ranked.slice(0, 2).map(([color]) => color));
+  const main = ranked.filter(([, n]) => n >= MAIN_COLOR_MIN_CARDS);
+
+  // Une seule couleur franchit le seuil : soit c'est une mono, soit on n'a pas
+  // assez vu la seconde. On complete avec la suivante pour rester lisible.
+  if (main.length === 0) return sortColors(ranked.slice(0, 2).map(([c]) => c));
+  if (main.length === 1 && ranked.length > 1) {
+    const second = ranked.find(([c]) => c !== main[0][0]);
+    // La seconde n'est retenue que si elle pese vraiment : moitie du seuil.
+    if (second && second[1] >= MAIN_COLOR_MIN_CARDS / 2) {
+      return sortColors([main[0][0], second[0]]);
+    }
+  }
+
+  return sortColors(main.map(([c]) => c));
 }
 
 function sortColors(colors) {
@@ -201,6 +231,8 @@ function resolveMatch(match, pools, cardMeta) {
 
 module.exports = {
   MATCH_THRESHOLD,
+  MAIN_COLOR_MIN_CARDS,
+  countColors,
   readBasicLandIds,
   createMatchTracker,
   feedParsedLine,
