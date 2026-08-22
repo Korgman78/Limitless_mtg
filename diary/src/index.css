@@ -2,10 +2,166 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-950 text-slate-200 antialiased;
+@layer base {
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    /* Papier quadrillé : deux hairlines croisées, à peine visibles. Elles
+       donnent l'échelle au reste — sans elles les cartes flottent. */
+    background-image:
+      linear-gradient(to right, rgba(20, 19, 16, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(20, 19, 16, 0.045) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+
+  textarea {
+    field-sizing: content;
+  }
+
+  /* Les chiffres de Fraunces sont proportionnels par défaut : on force les
+     chiffres tabulaires, sinon les scores dansent d'une ligne à l'autre. */
+  .font-display {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    @apply bg-brand text-ink;
+  }
 }
 
-textarea {
-  field-sizing: content;
+/*
+ * Les classes ci-dessous sont volontairement écrites à plat plutôt qu'en
+ * chaînant `@apply` de l'une sur l'autre : Tailwind résout mal les composants
+ * qui s'appliquent entre eux, et un build cassé coûte plus cher que quelques
+ * déclarations répétées.
+ */
+@layer components {
+  /* ── Surfaces ───────────────────────────────────────────────────────────── */
+
+  /** Le bloc de base : bordure pleine, coins ronds, ombre dure (0 flou). */
+  .brut {
+    @apply rounded-card border-2 border-ink shadow-brut;
+  }
+
+  .card {
+    @apply rounded-card border-2 border-ink bg-paper-raised shadow-brut;
+  }
+
+  /** Carte héros : le lavis menthe, seule grande surface colorée de l'écran. */
+  .card-tint {
+    @apply rounded-card border-2 border-ink bg-brand-soft shadow-brut;
+  }
+
+  /** Bloc creusé dans une carte : pas d'ombre, fond en retrait. */
+  .well {
+    @apply rounded-xl border-2 border-ink/15 bg-paper-sunk;
+  }
+
+  /**
+   * Plaque sombre. Les visuels de cartes Magic sont conçus pour du fond noir —
+   * les poser sur du crème les délave. On assume donc une insertion sombre,
+   * bordée comme le reste pour rester dans le langage.
+   */
+  .plate {
+    @apply rounded-xl border-2 border-ink bg-plate;
+  }
+
+  /* ── Typographie ────────────────────────────────────────────────────────── */
+
+  /** Micro-label : le liant de tout le style. Toujours en capitales espacées. */
+  .micro {
+    @apply text-[10px] font-extrabold uppercase leading-none tracking-micro;
+  }
+
+  .h-card {
+    @apply font-display text-lg font-bold leading-none text-ink;
+  }
+
+  /* ── Boutons ────────────────────────────────────────────────────────────── */
+
+  /* L'enfoncement au clic : le bouton rejoint son ombre. Effet tactile qui
+     dispense de tout hover sophistiqué. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-ink
+           bg-brand px-4 py-2 text-sm font-bold text-ink shadow-brut-sm transition
+           hover:brightness-105 active:translate-x-[2px] active:translate-y-[2px]
+           active:shadow-none disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-ink
+           bg-paper-raised px-4 py-2 text-sm font-bold text-ink shadow-brut-sm transition
+           hover:bg-paper active:translate-x-[2px] active:translate-y-[2px]
+           active:shadow-none disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-ink
+           bg-loss px-4 py-2 text-sm font-bold text-white shadow-brut-sm transition
+           hover:brightness-105 active:translate-x-[2px] active:translate-y-[2px]
+           active:shadow-none disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  /** Action tertiaire, sans cadre. */
+  .btn-bare {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold
+           text-ink-soft transition hover:bg-ink/5 hover:text-ink
+           disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  /** Carré d'icône (chevrons, navigation). */
+  .btn-icon {
+    @apply inline-flex items-center justify-center rounded-lg border-2 border-ink
+           bg-paper-raised p-1.5 text-ink transition
+           active:translate-x-[1px] active:translate-y-[1px]
+           disabled:pointer-events-none disabled:opacity-30;
+  }
+
+  /* ── Pastilles ──────────────────────────────────────────────────────────── */
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-2
+           border-ink px-2.5 py-1 text-[11px] font-bold leading-none;
+  }
+
+  .pill-ink {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-2
+           border-ink bg-ink px-2.5 py-1 text-[11px] font-bold leading-none text-paper;
+  }
+
+  .pill-brand {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-2
+           border-ink bg-brand px-2.5 py-1 text-[11px] font-bold leading-none text-ink;
+  }
+
+  .pill-soft {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-2
+           border-ink bg-paper-raised px-2.5 py-1 text-[11px] font-bold leading-none text-ink;
+  }
+
+  /* ── Navigation ─────────────────────────────────────────────────────────── */
+
+  .nav-item {
+    @apply flex w-full items-center gap-2.5 rounded-xl border-2 border-ink
+           bg-paper-raised px-3 py-2.5 text-sm font-bold text-ink transition
+           hover:-translate-y-[1px] hover:shadow-brut-sm;
+  }
+
+  .nav-item-active {
+    @apply flex w-full items-center gap-2.5 rounded-xl border-2 border-ink
+           bg-brand px-3 py-2.5 text-sm font-bold text-ink shadow-brut-sm;
+  }
+
+  /* ── Champs de formulaire ───────────────────────────────────────────────── */
+
+  .field {
+    @apply w-full rounded-xl border-2 border-ink bg-paper-raised px-3 py-2 text-sm
+           text-ink outline-none transition
+           placeholder:text-ink-faint focus:shadow-brut-sm;
+  }
+
+  .field-mono {
+    @apply w-full rounded-xl border-2 border-ink bg-paper-raised px-3 py-2 font-mono
+           text-xs text-ink outline-none transition
+           placeholder:text-ink-faint focus:shadow-brut-sm;
+  }
 }

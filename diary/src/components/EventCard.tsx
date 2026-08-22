@@ -44,8 +44,8 @@ export function EventCard({
   })
 
   return (
-    <article className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-      <header className="flex items-center gap-4 p-4">
+    <article className="card overflow-hidden">
+      <header className="flex items-center gap-3.5 p-3.5">
         <Score
           wins={event.wins}
           losses={event.losses}
@@ -55,21 +55,19 @@ export function EventCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-medium text-slate-200">
+            <span className="font-display text-base font-bold leading-none">
               {FORMAT_LABELS[event.format] ?? event.format}
             </span>
-            <span className="text-xs text-slate-500">{date}</span>
+            <span className="micro text-ink-faint">{date}</span>
             {event.source === 'overlay' && (
-              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-400">
-                overlay
-              </span>
+              <span className="pill-brand">overlay</span>
             )}
           </div>
 
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-ink-soft">
             {event.event_type === 'draft' && (
               <span className="flex items-center gap-1">
-                <Sparkles size={11} />
+                <Sparkles size={11} strokeWidth={2.5} />
                 {event.pickCount > 0
                   ? `${event.pickCount} picks`
                   : 'phase de pick non importée'}
@@ -77,14 +75,14 @@ export function EventCard({
             )}
             {event.event_type === 'sealed' && (
               <span className="flex items-center gap-1">
-                <Sparkles size={11} />
+                <Sparkles size={11} strokeWidth={2.5} />
                 {event.poolCards.length > 0
                   ? `pool de ${event.poolCards.reduce((n, c) => n + c.qty, 0)} cartes`
                   : 'pool non chargé'}
               </span>
             )}
             <span className="flex items-center gap-1">
-              <Layers size={11} />
+              <Layers size={11} strokeWidth={2.5} />
               {event.deckVersions.length > 0
                 ? `${event.deckVersions.length} version${event.deckVersions.length > 1 ? 's' : ''}`
                 : 'aucun deck'}
@@ -95,7 +93,15 @@ export function EventCard({
                 {event.matches.reduce((n, m) => n + m.games_lost, 0)} en parties
               </span>
             )}
-            <span className={filledNotes === 0 ? 'text-amber-500/80' : ''}>
+            {/* Les sections vides sont la seule alerte de la carte : elles
+                signalent un événement joué mais jamais débriefé. */}
+            <span
+              className={
+                filledNotes === 0
+                  ? 'rounded-full bg-warn-soft px-2 py-0.5 text-ink'
+                  : undefined
+              }
+            >
               {filledNotes}/{sections.length} sections commentées
             </span>
           </div>
@@ -103,18 +109,19 @@ export function EventCard({
 
         <button
           onClick={() => setOpen((v) => !v)}
-          className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+          className="btn-icon shrink-0"
           aria-label={open ? 'Replier' : 'Déplier'}
         >
           <ChevronDown
-            size={18}
+            size={16}
+            strokeWidth={2.5}
             className={`transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </button>
       </header>
 
       {open && (
-        <div className="space-y-4 border-t border-slate-800 p-4">
+        <div className="space-y-4 border-t-2 border-dashed border-ink/25 p-3.5">
           <MatchesPanel matches={event.matches} format={event.format} />
 
           {event.event_type === 'draft' && (
@@ -143,27 +150,20 @@ export function EventCard({
 
           <div className="flex justify-end pt-1">
             {confirmDelete ? (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400">Retirer cet événement du journal ?</span>
-                <button
-                  onClick={() => onDelete(event.id)}
-                  className="rounded-md bg-red-900/60 px-2.5 py-1 font-medium text-red-200"
-                >
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span className="text-xs font-bold text-ink-soft">
+                  Retirer cet événement du journal ?
+                </span>
+                <button onClick={() => onDelete(event.id)} className="btn-danger px-3 py-1.5 text-xs">
                   Confirmer
                 </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-2 py-1 text-slate-500 hover:text-slate-300"
-                >
+                <button onClick={() => setConfirmDelete(false)} className="btn-bare">
                   Annuler
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1.5 text-xs text-slate-600 transition hover:text-red-400"
-              >
-                <Trash2 size={12} />
+              <button onClick={() => setConfirmDelete(true)} className="btn-bare hover:text-loss">
+                <Trash2 size={12} strokeWidth={2.5} />
                 Supprimer
               </button>
             )}
@@ -189,18 +189,18 @@ function Score({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ wins, losses })
 
-  // Palette calquée sur les grades de Limitless : violet pour le trophée,
-  // dégradé vert → rouge ensuite. Le ton se calcule EN PROPORTION du seuil du
-  // format : un 3-0 en Traditional est un trophée, pas un score moyen.
+  // Le ton se calcule EN PROPORTION du seuil du format : un 3-0 en Traditional
+  // est un trophée, pas un score moyen. Sur papier, ce sont des aplats pleins
+  // bordés d'encre — le chiffre reste lisible dans tous les cas.
   const ratio = trophyAt > 0 ? wins / trophyAt : 0
   const tone =
     ratio >= 1
-      ? 'border-purple-500 bg-purple-500/15 text-purple-300'
+      ? 'bg-trophy text-white'
       : ratio >= 0.66
-        ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300'
+        ? 'bg-brand text-ink'
         : ratio >= 0.4
-          ? 'border-yellow-500 bg-yellow-500/15 text-yellow-300'
-          : 'border-red-800 bg-red-900/20 text-red-300'
+          ? 'bg-warn text-ink'
+          : 'bg-loss-soft text-ink'
 
   const commit = async () => {
     setEditing(false)
@@ -211,7 +211,7 @@ function Score({
 
   if (editing) {
     return (
-      <div className="flex h-12 w-14 shrink-0 items-center gap-0.5 rounded-lg border border-slate-600 bg-slate-900 px-1">
+      <div className="flex h-14 w-16 shrink-0 items-center gap-0.5 rounded-xl border-2 border-ink bg-paper-raised px-1 shadow-brut-sm">
         {(['wins', 'losses'] as const).map((field) => (
           <input
             key={field}
@@ -236,7 +236,7 @@ function Score({
                 void commit()
               }
             }}
-            className="w-full bg-transparent text-center text-base font-bold tabular-nums text-slate-100 focus:outline-none"
+            className="w-full bg-transparent text-center font-display text-lg font-black tabular-nums text-ink focus:outline-none"
           />
         ))}
       </div>
@@ -250,7 +250,7 @@ function Score({
         setEditing(true)
       }}
       title="Modifier le score"
-      className={`flex h-12 w-14 shrink-0 items-center justify-center rounded-lg border text-lg font-bold tabular-nums transition hover:brightness-125 ${tone}`}
+      className={`flex h-14 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-ink font-display text-xl font-black shadow-brut-sm transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${tone}`}
     >
       {wins}-{losses}
     </button>

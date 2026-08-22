@@ -1,7 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { CalendarDays, Sparkles } from 'lucide-react'
 import { useWeeklyReports } from '../queries/useWeeklyReports'
+import { ErrorBox } from './ui'
+
+interface Props {
+  weekId: string | null
+  /** Remonte la semaine retenue par défaut : la plus récente. */
+  onWeekResolved: (id: string) => void
+}
 
 /**
  * Synthèses hebdomadaires produites par l'IA à partir du journal : bilan de
@@ -11,91 +18,76 @@ import { useWeeklyReports } from '../queries/useWeeklyReports'
  * La génération vit dans `backend/etl_diary_weekly.py`, déclenchée par un cron
  * GitHub Actions — la clé Gemini reste dans les secrets du dépôt et ne touche
  * jamais le navigateur.
+ *
+ * Le choix de la semaine est dans la barre latérale.
  */
-export function WeeklyReportView() {
+export function WeeklyReportView({ weekId, onWeekResolved }: Props) {
   const { data: reports, isLoading, error } = useWeeklyReports()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // Sélectionne le rapport le plus récent dès qu'il arrive.
   useEffect(() => {
-    if (!selectedId && reports?.length) setSelectedId(reports[0].id)
-  }, [reports, selectedId])
+    if (!weekId && reports?.length) onWeekResolved(reports[0].id)
+  }, [reports, weekId, onWeekResolved])
 
   if (isLoading) {
-    return <p className="py-12 text-center text-sm text-slate-600">Chargement des rapports…</p>
-  }
-
-  if (error) {
     return (
-      <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
-        {String(error)}
-      </div>
+      <p className="py-12 text-center text-sm font-bold text-ink-faint">
+        Chargement des rapports…
+      </p>
     )
   }
 
+  if (error) return <ErrorBox error={error} />
   if (!reports?.length) return <EmptyState />
 
-  const selected = reports.find((r) => r.id === selectedId) ?? reports[0]
+  const selected = reports.find((r) => r.id === weekId) ?? reports[0]
 
   return (
-    <div className="grid gap-5 md:grid-cols-[180px_1fr]">
-      {/* Sélecteur de semaine */}
-      <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-        {reports.map((report) => (
-          <button
-            key={report.id}
-            onClick={() => setSelectedId(report.id)}
-            className={`shrink-0 rounded-lg px-3 py-2 text-left text-sm transition md:shrink ${
-              selected.id === report.id
-                ? 'bg-slate-800 text-slate-100'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <span className="block font-medium">{formatWeek(report.week_start)}</span>
-            <span className="block text-[11px] text-slate-600">
-              {report.event_count} event{report.event_count > 1 ? 's' : ''}
-            </span>
-          </button>
-        ))}
-      </nav>
+    <article className="card p-5 sm:p-6">
+      <header className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 border-b-2 border-dashed border-ink/25 pb-4">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-brand-soft">
+          <CalendarDays size={15} strokeWidth={2.5} />
+        </span>
+        <h2 className="font-display text-2xl font-black leading-none">
+          Semaine du {formatWeek(selected.week_start)}
+        </h2>
+        <span className="pill-soft ml-auto">
+          {selected.event_count} événement{selected.event_count > 1 ? 's' : ''}
+        </span>
+        <span className="micro w-full text-ink-faint">
+          Généré le{' '}
+          {new Date(selected.generated_at).toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: 'long',
+          })}
+        </span>
+      </header>
 
-      <article className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-        <header className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-800 pb-3">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-100">
-            <CalendarDays size={16} className="text-slate-500" />
-            Semaine du {formatWeek(selected.week_start)}
-          </h2>
-          <span className="text-[11px] text-slate-600">
-            généré le{' '}
-            {new Date(selected.generated_at).toLocaleDateString('fr-FR', {
-              day: '2-digit',
-              month: 'long',
-            })}
-          </span>
-        </header>
-
-        {/* prose-invert : le rendu markdown hérite du thème sombre */}
-        <div className="prose prose-invert prose-sm max-w-none prose-headings:text-slate-200 prose-strong:text-slate-100 prose-li:marker:text-slate-600">
-          <ReactMarkdown>{selected.body_md}</ReactMarkdown>
-        </div>
-      </article>
-    </div>
+      {/* Rendu markdown sur papier : titres en serif, listes puces vertes. */}
+      <div className="prose prose-sm max-w-none prose-headings:font-display prose-headings:font-black prose-headings:text-ink prose-p:text-ink-soft prose-strong:text-ink prose-li:text-ink-soft prose-li:marker:text-brand-ink prose-code:rounded prose-code:border-2 prose-code:border-ink prose-code:bg-paper-sunk prose-code:px-1 prose-code:py-0.5 prose-code:font-semibold prose-code:before:content-none prose-code:after:content-none">
+        <ReactMarkdown>{selected.body_md}</ReactMarkdown>
+      </div>
+    </article>
   )
 }
 
 function EmptyState() {
   return (
-    <div className="rounded-xl border border-dashed border-slate-800 px-6 py-14 text-center">
-      <Sparkles size={22} className="mx-auto mb-3 text-slate-700" />
-      <p className="text-slate-400">Aucun rapport pour l'instant.</p>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-slate-600">
+    <div className="card border-dashed px-6 py-14 text-center shadow-none">
+      <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-xl border-2 border-ink bg-brand-soft">
+        <Sparkles size={18} strokeWidth={2.5} />
+      </span>
+      <p className="font-display text-xl font-bold">Aucun rapport pour l'instant.</p>
+      <p className="mx-auto mt-3 max-w-lg text-sm font-semibold leading-relaxed text-ink-soft">
         La synthèse est produite chaque lundi par{' '}
-        <code className="text-slate-500">backend/etl_diary_weekly.py</code>, via un cron
-        GitHub Actions. Pour en générer une tout de suite, lance le workflow
-        <span className="text-slate-500"> Diary Weekly Report </span>
-        à la main depuis l'onglet Actions du dépôt.
+        <code className="rounded border-2 border-ink bg-paper-sunk px-1.5 py-0.5 text-xs">
+          backend/etl_diary_weekly.py
+        </code>
+        , via un cron GitHub Actions. Pour en générer une tout de suite, lance le
+        workflow <strong className="text-ink">Diary Weekly Report</strong> à la main
+        depuis l'onglet Actions du dépôt.
       </p>
-      <p className="mx-auto mt-2 max-w-lg text-xs text-slate-700">
+      <p className="mx-auto mt-2 max-w-lg text-xs font-semibold text-ink-faint">
         Il faut au moins un événement joué dans la semaine couverte.
       </p>
     </div>

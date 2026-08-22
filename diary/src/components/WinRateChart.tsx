@@ -12,14 +12,18 @@ interface Props {
   points: ChartPoint[]
 }
 
-// Palette validée contre la surface #0f172a (voir validate_palette.js).
-const SERIES = '#3987e5'
-const GRID = '#2c2c2a'
-const MUTED = '#898781'
+// Palette papier : la courbe est tracée à l'encre, le vert ne sert qu'au
+// remplissage et aux marqueurs. Une ligne verte sur crème perdrait en lisibilité
+// ce qu'elle gagnerait en cohérence.
+const INK = '#141310'
+const AREA = '#DFF3E7'
+const MARK = '#10B981'
+const MUTED = '#6E6A5E'
+const GRID = 'rgba(20,19,16,0.12)'
 
 const W = 720
-const H = 200
-const PAD = { top: 14, right: 46, bottom: 26, left: 34 }
+const H = 210
+const PAD = { top: 16, right: 50, bottom: 28, left: 36 }
 
 /**
  * Évolution du win rate cumulé. Une seule série : pas de légende, le titre la
@@ -29,7 +33,7 @@ const PAD = { top: 14, right: 46, bottom: 26, left: 34 }
 export function WinRateChart({ points }: Props) {
   const [hover, setHover] = useState<number | null>(null)
 
-  const { path, coords, yTicks, min, max } = useMemo(() => {
+  const { path, area, coords, yTicks, min, max } = useMemo(() => {
     const values = points.map((p) => p.value)
     // Bande resserrée autour des données, mais toujours 50 % inclus pour que la
     // ligne de référence garde du sens.
@@ -45,11 +49,13 @@ export function WinRateChart({ points }: Props) {
 
     const coords = points.map((p, i) => ({ x: x(i), y: y(p.value), ...p }))
     const path = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x},${c.y}`).join(' ')
+    const base = PAD.top + plotH
+    const area = `${path} L${coords[coords.length - 1].x},${base} L${coords[0].x},${base} Z`
 
     const ticks: { v: number; y: number }[] = []
     for (let v = lo; v <= hi; v += 10) ticks.push({ v, y: y(v) })
 
-    return { path, coords, yTicks: ticks, min: lo, max: hi }
+    return { path, area, coords, yTicks: ticks, min: lo, max: hi }
   }, [points])
 
   if (!points.length) return null
@@ -71,7 +77,7 @@ export function WinRateChart({ points }: Props) {
         aria-label="Évolution du win rate cumulé"
         onMouseLeave={() => setHover(null)}
       >
-        {/* Grille : hairlines pleines, une nuance au-dessus de la surface */}
+        {/* Grille : hairlines, une nuance au-dessus du papier */}
         {yTicks.map((tick) => (
           <g key={tick.v}>
             <line
@@ -87,6 +93,7 @@ export function WinRateChart({ points }: Props) {
               y={tick.y + 3}
               textAnchor="end"
               fontSize={9}
+              fontWeight={700}
               fill={MUTED}
               className="tabular-nums"
             >
@@ -104,6 +111,7 @@ export function WinRateChart({ points }: Props) {
               y={H - 8}
               textAnchor={i === 0 ? 'start' : i === coords.length - 1 ? 'end' : 'middle'}
               fontSize={9}
+              fontWeight={700}
               fill={MUTED}
             >
               {c.label}
@@ -111,42 +119,52 @@ export function WinRateChart({ points }: Props) {
           ) : null,
         )}
 
+        <path d={area} fill={AREA} />
+
         {/* Seuil 50 % : un seuil se dessine en pointillés, pas la grille */}
         <line
           x1={PAD.left}
           x2={W - PAD.right}
           y1={y50}
           y2={y50}
-          stroke={MUTED}
-          strokeWidth={1}
-          strokeDasharray="4 4"
+          stroke={INK}
+          strokeWidth={1.5}
+          strokeDasharray="5 5"
+          opacity={0.55}
         />
-        <text x={W - PAD.right + 4} y={y50 + 3} fontSize={9} fill={MUTED}>
+        <text x={W - PAD.right + 5} y={y50 + 3} fontSize={9} fontWeight={700} fill={MUTED}>
           50%
         </text>
 
-        <path d={path} fill="none" stroke={SERIES} strokeWidth={2} strokeLinejoin="round" />
+        <path
+          d={path}
+          fill="none"
+          stroke={INK}
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
 
-        {/* Marqueurs : anneau de surface pour les décoller de la ligne */}
+        {/* Marqueurs : cerclés d'encre, comme tout le reste de l'interface */}
         {coords.map((c, i) => (
           <circle
             key={i}
             cx={c.x}
             cy={c.y}
-            r={hover === i ? 5 : 3.5}
-            fill={SERIES}
-            stroke="#0f172a"
+            r={hover === i ? 5.5 : 4}
+            fill={MARK}
+            stroke={INK}
             strokeWidth={2}
           />
         ))}
 
         {/* Étiquette directe sur le point final uniquement */}
         <text
-          x={last.x + 8}
-          y={last.y + 3}
-          fontSize={11}
-          fontWeight={700}
-          fill={SERIES}
+          x={last.x + 9}
+          y={last.y + 4}
+          fontSize={12}
+          fontWeight={800}
+          fill={INK}
           className="tabular-nums"
         >
           {last.value.toFixed(1)}%
@@ -171,21 +189,24 @@ export function WinRateChart({ points }: Props) {
             x2={active.x}
             y1={PAD.top}
             y2={PAD.top + plotH}
-            stroke={MUTED}
+            stroke={INK}
             strokeWidth={1}
-            opacity={0.5}
+            opacity={0.4}
           />
         )}
       </svg>
 
-      <figcaption className="mt-1 flex h-4 items-center justify-center text-[11px] text-slate-500">
+      <figcaption className="mt-1 flex h-4 items-center justify-center text-[11px] font-semibold text-ink-soft">
         {active ? (
           <span>
-            <span className="text-slate-300">{active.label}</span> · {active.detail} ·
-            cumulé <span className="tabular-nums text-slate-300">{active.value.toFixed(1)}%</span>
+            <span className="font-extrabold text-ink">{active.label}</span> ·{' '}
+            {active.detail} · cumulé{' '}
+            <span className="font-extrabold tabular-nums text-ink">
+              {active.value.toFixed(1)}%
+            </span>
           </span>
         ) : (
-          <span className="text-slate-600">
+          <span className="text-ink-faint">
             Survole un point pour le détail de l'événement
           </span>
         )}

@@ -1,3 +1,4 @@
+import { Swords } from 'lucide-react'
 import { ManaIcons } from '@limitless/components/Common/ManaIcons'
 import { isBestOfThree } from '../constants'
 import type { DiaryMatch } from '../types'
@@ -15,9 +16,12 @@ interface Props {
 export function MatchesPanel({ matches, format }: Props) {
   if (matches.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-        <p className="text-sm text-slate-600">
-          Aucun match importé — lance <code className="text-slate-500">diary-sync.bat</code>{' '}
+      <div className="well p-3.5">
+        <p className="text-sm font-semibold text-ink-soft">
+          Aucun match importé — lance{' '}
+          <code className="rounded border-2 border-ink bg-paper-raised px-1.5 py-0.5 text-xs">
+            diary-sync.bat
+          </code>{' '}
           après ta session.
         </p>
       </div>
@@ -30,48 +34,44 @@ export function MatchesPanel({ matches, format }: Props) {
   const matchesWon = matches.filter((m) => m.won).length
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-      <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Matchs
+    <section className="well p-3.5">
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised">
+          <Swords size={13} strokeWidth={2.5} />
         </span>
-        <span className="text-xs text-slate-500">
-          <span className="tabular-nums text-slate-300">
-            {matchesWon}–{matches.length - matchesWon}
-          </span>{' '}
-          en matchs
+        <h3 className="h-card">Matchs</h3>
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <span className="pill-soft">
+            {matchesWon}–{matches.length - matchesWon} en matchs
+          </span>
           {bo3 && (
-            <>
-              {' · '}
-              <span className="tabular-nums text-slate-300">
-                {gamesWon}–{gamesLost}
-              </span>{' '}
-              en parties
-            </>
+            <span className="pill-soft">
+              {gamesWon}–{gamesLost} en parties
+            </span>
           )}
-        </span>
+        </div>
       </div>
 
-      <ul className="space-y-1">
+      <ul className="space-y-1.5">
         {matches.map((match, i) => (
           <li
             key={match.id}
-            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 odd:bg-slate-950/40"
+            className="flex items-center gap-2.5 rounded-lg border-2 border-ink bg-paper-raised px-2.5 py-1.5"
           >
-            <span className="w-4 shrink-0 text-[11px] tabular-nums text-slate-600">
+            <span className="micro w-4 shrink-0 text-ink-faint">
               {match.match_number ?? i + 1}
             </span>
 
             {/* Le résultat est porté par un mot, pas seulement par la couleur */}
             <span
-              className={`w-14 shrink-0 text-xs font-semibold ${
-                match.won ? 'text-emerald-400' : 'text-rose-400'
+              className={`w-[52px] shrink-0 rounded-full border-2 border-ink px-1.5 py-0.5 text-center text-[10px] font-extrabold uppercase tracking-micro ${
+                match.won ? 'bg-brand text-ink' : 'bg-loss-soft text-ink'
               }`}
             >
               {match.won ? 'Gagné' : 'Perdu'}
             </span>
 
-            <span className="w-10 shrink-0 text-sm font-bold tabular-nums text-slate-200">
+            <span className="w-10 shrink-0 font-display text-base font-black tabular-nums">
               {match.games_won}–{match.games_lost}
             </span>
 
@@ -79,21 +79,21 @@ export function MatchesPanel({ matches, format }: Props) {
               {match.opponent_colors ? (
                 <>
                   <ManaIcons colors={match.opponent_colors} size="sm" />
-                  <span className="text-xs font-medium text-slate-400">
+                  <span className="text-xs font-bold text-ink-soft">
                     {match.opponent_colors}
                   </span>
                 </>
               ) : (
-                <span className="text-xs italic text-slate-600">couleurs inconnues</span>
+                <span className="text-xs italic text-ink-faint">couleurs inconnues</span>
               )}
             </span>
 
-            <span className="ml-auto truncate text-xs text-slate-600">
+            <span className="ml-auto truncate text-xs font-semibold text-ink-faint">
               {match.opponent_name ?? '—'}
             </span>
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   )
 }

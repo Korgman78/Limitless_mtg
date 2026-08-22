@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Hand } from 'lucide-react'
 import { getCardImage } from '@limitless/utils/helpers'
 import CardImage from '@limitless/components/Common/CardImage'
 import { usePicks } from '../queries/usePicks'
@@ -16,6 +16,9 @@ interface Props {
  * Revue de la phase de pick, calquée sur Draft Practice : on rejoue pack par
  * pack, la carte prise est mise en avant et le reste du pack grisé — c'est ce
  * qu'on a laissé passer qui est instructif.
+ *
+ * Les visuels Magic sont posés sur une plaque sombre : ils sont dessinés pour
+ * du fond noir, le crème les délaverait.
  */
 export function PickPanel({ eventId, active }: Props) {
   const { data: picks, isLoading, error } = usePicks(eventId, active)
@@ -47,36 +50,38 @@ export function PickPanel({ eventId, active }: Props) {
   const packCards = current.pack_cards ?? []
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <section className="well p-3.5">
       {/* Navigation */}
-      <div className="mb-3 flex items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Phase de pick
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised">
+          <Hand size={13} strokeWidth={2.5} />
         </span>
+        <h3 className="h-card">Phase de pick</h3>
 
-        <div className="flex items-center gap-1">
-          <NavButton
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
             onClick={() => setIndex((i) => Math.max(0, i - 1))}
             disabled={index === 0}
-            label="Pick précédent"
+            aria-label="Pick précédent"
+            className="btn-icon"
           >
-            <ChevronLeft size={14} />
-          </NavButton>
-          <span className="min-w-[64px] text-center text-sm font-bold tabular-nums text-slate-200">
+            <ChevronLeft size={14} strokeWidth={3} />
+          </button>
+          <span className="min-w-[70px] text-center font-display text-base font-black tabular-nums">
             P{current.pack_number}P{current.pick_number}
           </span>
-          <NavButton
+          <button
             onClick={() => setIndex((i) => Math.min(picks.length - 1, i + 1))}
             disabled={index === picks.length - 1}
-            label="Pick suivant"
+            aria-label="Pick suivant"
+            className="btn-icon"
           >
-            <ChevronRight size={14} />
-          </NavButton>
+            <ChevronRight size={14} strokeWidth={3} />
+          </button>
+          <span className="pill-soft">
+            {index + 1} / {picks.length}
+          </span>
         </div>
-
-        <span className="text-[11px] text-slate-600">
-          {index + 1} / {picks.length}
-        </span>
       </div>
 
       {/* Timeline cliquable */}
@@ -86,82 +91,82 @@ export function PickPanel({ eventId, active }: Props) {
             key={pick.id}
             onClick={() => setIndex(i)}
             title={`P${pick.pack_number}P${pick.pick_number} · ${pick.picked_card ?? '?'}`}
-            className={`h-1.5 flex-1 min-w-[6px] rounded-full transition ${
+            className={`h-2 min-w-[6px] flex-1 rounded-full border border-ink transition ${
               i === index
-                ? 'bg-indigo-400'
+                ? 'bg-brand-ink'
                 : i < index
-                  ? 'bg-slate-600'
-                  : 'bg-slate-800 hover:bg-slate-700'
+                  ? 'bg-brand'
+                  : 'bg-paper-raised hover:bg-brand-soft'
             }`}
           />
         ))}
       </div>
 
-      {/* Le pack */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={current.id}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-          className="grid grid-cols-4 gap-2 sm:grid-cols-5 lg:grid-cols-7"
-        >
-          {packCards.map((card, i) => {
-            const picked = card.arenaId === current.picked_arena_id
-            const name = card.name ?? null
+      {/* Le pack, sur plaque sombre */}
+      <div className="plate p-2.5">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={current.id}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+            className="grid grid-cols-4 gap-2 sm:grid-cols-5 lg:grid-cols-7"
+          >
+            {packCards.map((card, i) => {
+              const picked = card.arenaId === current.picked_arena_id
+              const name = card.name ?? null
 
-            return (
-              <motion.div
-                key={`${card.arenaId}-${i}`}
-                whileHover={{ y: -4, scale: 1.03 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 26 }}
-                title={name ?? `#${card.arenaId}`}
-                className={`relative aspect-[63/88] overflow-hidden rounded-lg border bg-black ${
-                  picked
-                    ? 'border-indigo-400 ring-2 ring-indigo-400/60'
-                    : 'border-slate-700/70 opacity-40 saturate-50'
-                }`}
-              >
-                {name ? (
-                  <CardImage
-                    src={getCardImage(name)}
-                    alt={name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center p-1 text-center text-[9px] text-slate-600">
-                    #{card.arenaId}
-                  </div>
-                )}
+              return (
+                <motion.div
+                  key={`${card.arenaId}-${i}`}
+                  whileHover={{ y: -4, scale: 1.03 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                  title={name ?? `#${card.arenaId}`}
+                  className={`relative aspect-[63/88] overflow-hidden rounded-lg bg-black ${
+                    picked
+                      ? 'border-2 border-brand ring-2 ring-brand/50'
+                      : 'border border-white/15 opacity-40 saturate-50'
+                  }`}
+                >
+                  {name ? (
+                    <CardImage
+                      src={getCardImage(name)}
+                      alt={name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center p-1 text-center text-[9px] text-white/40">
+                      #{card.arenaId}
+                    </div>
+                  )}
 
-                {picked && (
-                  <span className="absolute left-1 top-1 rounded bg-indigo-500 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
-                    pick
-                  </span>
-                )}
-              </motion.div>
-            )
-          })}
-        </motion.div>
-      </AnimatePresence>
+                  {picked && (
+                    <span className="micro absolute left-1 top-1 rounded border border-ink bg-brand px-1 py-0.5 text-ink">
+                      pick
+                    </span>
+                  )}
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        </AnimatePresence>
 
-      {/* Pool à cet instant */}
-      <div className="mt-3 flex items-center gap-2 overflow-x-auto py-1">
-        <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-600">
-          Pool {poolSoFar.length}
-        </span>
-        {poolSoFar.slice(-24).map((name, i) => (
-          <CardImage
-            key={`${name}-${i}`}
-            src={getCardImage(name)}
-            alt={name}
-            title={name}
-            className="h-9 w-[26px] shrink-0 rounded border border-slate-800 object-cover"
-          />
-        ))}
+        {/* Pool à cet instant */}
+        <div className="mt-2.5 flex items-center gap-2 overflow-x-auto py-1">
+          <span className="micro shrink-0 text-white/50">Pool {poolSoFar.length}</span>
+          {poolSoFar.slice(-24).map((name, i) => (
+            <CardImage
+              key={`${name}-${i}`}
+              src={getCardImage(name)}
+              alt={name}
+              title={name}
+              className="h-9 w-[26px] shrink-0 rounded border border-white/20 object-cover"
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -173,33 +178,8 @@ function Shell({
   tone?: 'error'
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-      <p className={`text-sm ${tone === 'error' ? 'text-red-400' : 'text-slate-600'}`}>
-        {children}
-      </p>
+    <div className={`p-3.5 ${tone === 'error' ? 'rounded-xl border-2 border-ink bg-loss-soft' : 'well'}`}>
+      <p className="text-sm font-semibold text-ink-soft">{children}</p>
     </div>
-  )
-}
-
-function NavButton({
-  children,
-  onClick,
-  disabled,
-  label,
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  disabled: boolean
-  label: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      className="rounded-md border border-slate-800 p-1 text-slate-400 transition hover:border-slate-600 hover:text-slate-200 disabled:opacity-30"
-    >
-      {children}
-    </button>
   )
 }

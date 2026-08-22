@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Loader2 } from 'lucide-react'
+import { Check, Loader2, PenLine } from 'lucide-react'
 import type { NoteSection } from '../types'
 
 interface Props {
@@ -15,17 +15,31 @@ type SaveState = 'idle' | 'saving' | 'saved'
  * frappe : on écrit des paragraphes ici, pas des champs courts.
  */
 export function NotesEditor({ sections, notes, onSave }: Props) {
+  const filled = sections.filter((s) => (notes[s.key] ?? '').trim()).length
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {sections.map((section) => (
-        <NoteField
-          key={section.key}
-          section={section}
-          value={notes[section.key] ?? ''}
-          onSave={onSave}
-        />
-      ))}
-    </div>
+    <section className="well p-3.5">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised">
+          <PenLine size={13} strokeWidth={2.5} />
+        </span>
+        <h3 className="h-card">Débrief</h3>
+        <span className="pill-soft ml-auto">
+          {filled}/{sections.length}
+        </span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {sections.map((section) => (
+          <NoteField
+            key={section.key}
+            section={section}
+            value={notes[section.key] ?? ''}
+            onSave={onSave}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -67,14 +81,17 @@ function NoteField({
 
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+      <span className="micro flex items-center gap-2 text-ink-soft">
+        {/* La coche de la maquette : présent/absent, pas une jauge. */}
         <span
-          className={`h-1.5 w-1.5 rounded-full ${filled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+          className={`h-3 w-3 shrink-0 rounded-[4px] border-2 border-ink ${
+            filled ? 'bg-brand' : 'bg-paper-raised'
+          }`}
           aria-hidden
         />
         {section.label}
-        {state === 'saving' && <Loader2 size={12} className="animate-spin text-slate-500" />}
-        {state === 'saved' && <Check size={12} className="text-emerald-500" />}
+        {state === 'saving' && <Loader2 size={12} className="animate-spin text-ink-faint" />}
+        {state === 'saved' && <Check size={12} strokeWidth={3} className="text-brand-ink" />}
       </span>
       <textarea
         value={draft}
@@ -82,7 +99,7 @@ function NoteField({
         onBlur={handleBlur}
         rows={3}
         placeholder={section.placeholder}
-        className="min-h-[76px] resize-y rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
+        className="field min-h-[80px] resize-y leading-relaxed"
       />
     </label>
   )

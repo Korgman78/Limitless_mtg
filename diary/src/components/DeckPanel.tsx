@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Gauge, Plus, X } from 'lucide-react'
+import { Gauge, Layers, Plus, X } from 'lucide-react'
 import { parseMtgaDeck } from '@limitless/utils/deckAnalysisCore'
 import { CmcStack, type SkeletonCard } from '@limitless/components/Features/CmcStack'
 import { useCardMeta } from '../queries/useCardMeta'
@@ -19,6 +19,9 @@ const MAX_CMC_COLUMN = 7
  * Récap du deck en piles de courbe de mana, comme la tab Trophies. Les cartes
  * inconnues du set (terrains de base) sont regroupées à part plutôt qu'écartées
  * silencieusement.
+ *
+ * `CmcStack` vient de Limitless et suppose un fond sombre : on l'accueille sur
+ * une plaque plutôt que de le redessiner pour le papier.
  */
 export function DeckPanel({ versions, setCode, format, onAddVersion }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -85,54 +88,46 @@ export function DeckPanel({ versions, setCode, format, onAddVersion }: Props) {
   }, [selected, cardMeta])
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <section className="well p-3.5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Deck
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised">
+          <Layers size={13} strokeWidth={2.5} />
         </span>
+        <h3 className="h-card">Deck</h3>
 
         {versions.map((version) => (
           <button
             key={version.id}
             onClick={() => setSelectedId(version.id)}
-            className={`rounded-md px-2 py-1 text-xs transition ${
+            className={
               selected?.id === version.id
-                ? 'bg-slate-700 text-slate-100'
-                : 'bg-slate-800/60 text-slate-400 hover:text-slate-200'
-            }`}
+                ? 'pill-brand shadow-brut-sm'
+                : 'pill-soft text-ink-soft'
+            }
           >
             v{version.version_no}
             {version.label ? ` · ${version.label}` : ''}
           </button>
         ))}
 
-        {selected && (
-          <span className="text-[11px] text-slate-600">{total} cartes</span>
-        )}
+        {selected && <span className="micro text-ink-faint">{total} cartes</span>}
 
-        {selected && (
-          <button
-            onClick={() => setShowScore((v) => !v)}
-            className={`ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
-              showScore
-                ? 'bg-slate-700 text-slate-100'
-                : 'border border-slate-700 text-slate-300 hover:border-slate-500'
-            }`}
-          >
-            <Gauge size={12} />
-            {showScore ? 'Masquer le score' : 'Voir le score du deck'}
+        <div className="ml-auto flex items-center gap-1.5">
+          {selected && (
+            <button
+              onClick={() => setShowScore((v) => !v)}
+              className={showScore ? 'pill-brand shadow-brut-sm' : 'pill-soft'}
+            >
+              <Gauge size={11} strokeWidth={3} />
+              {showScore ? 'Masquer le score' : 'Score du deck'}
+            </button>
+          )}
+
+          <button onClick={() => setAdding((v) => !v)} className="btn-bare">
+            {adding ? <X size={12} strokeWidth={3} /> : <Plus size={12} strokeWidth={3} />}
+            {adding ? 'Annuler' : 'Nouvelle version'}
           </button>
-        )}
-
-        <button
-          onClick={() => setAdding((v) => !v)}
-          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 hover:text-slate-300 ${
-            selected ? '' : 'ml-auto'
-          }`}
-        >
-          {adding ? <X size={12} /> : <Plus size={12} />}
-          {adding ? 'Annuler' : 'Nouvelle version'}
-        </button>
+        </div>
       </div>
 
       {adding && (
@@ -147,12 +142,12 @@ export function DeckPanel({ versions, setCode, format, onAddVersion }: Props) {
       )}
 
       {!selected && !adding && (
-        <p className="text-sm text-slate-600">Aucun deck enregistré.</p>
+        <p className="text-sm font-semibold text-ink-soft">Aucun deck enregistré.</p>
       )}
 
       {selected && (
         <>
-          <div className="flex items-start gap-1 overflow-x-auto pb-2">
+          <div className="plate flex items-start gap-1 overflow-x-auto p-2.5">
             {columns.map((column) => (
               <CmcStack
                 key={column.cmc}
@@ -175,14 +170,14 @@ export function DeckPanel({ versions, setCode, format, onAddVersion }: Props) {
           )}
 
           {unknown.length > 0 && (
-            <p className="mt-1 text-[11px] text-slate-600">
+            <p className="mt-2 text-[11px] font-semibold text-ink-faint">
               {unknown.length} carte{unknown.length > 1 ? 's' : ''} hors set, non
               affichée{unknown.length > 1 ? 's' : ''} : {unknown.join(', ')}
             </p>
           )}
         </>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -198,19 +193,19 @@ function AddVersionForm({
   const [busy, setBusy] = useState(false)
 
   return (
-    <div className="mb-3 space-y-2 rounded-md border border-slate-800 bg-slate-950/60 p-3">
+    <div className="mb-3 space-y-2 rounded-xl border-2 border-ink bg-paper-raised p-3">
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder={`Libellé (ex: "après 0-2") — défaut : Version ${nextVersion}`}
-        className="w-full rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-sm placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
+        className="field"
       />
       <textarea
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         rows={5}
         placeholder="Colle ici l'export MTGA du deck"
-        className="w-full rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1.5 font-mono text-xs placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
+        className="field-mono"
       />
       <button
         disabled={!raw.trim() || busy}
@@ -224,7 +219,7 @@ function AddVersionForm({
             setBusy(false)
           }
         }}
-        className="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-100 disabled:opacity-40"
+        className="btn-primary px-3 py-1.5 text-xs"
       >
         Enregistrer la version
       </button>
