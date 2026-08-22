@@ -42,7 +42,7 @@ export function Sidebar({
           <span className="block font-display text-lg font-bold leading-tight">
             Training Diary
           </span>
-          <span className="micro block text-ink-faint">Limited · 17Lands</span>
+          <span className="micro block text-ink-faint">MTG Limited</span>
         </span>
       </div>
 

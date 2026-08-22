@@ -1,16 +1,28 @@
-import { useMemo } from 'react'
-import { BarChart3, Layers, LineChart, Swords, Target, Users } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { BarChart3, Hand, LayoutGrid, LineChart, Swords, Target } from 'lucide-react'
 import { getCardImage } from '@limitless/utils/helpers'
 import CardImage from '@limitless/components/Common/CardImage'
 import { ManaIcons } from '@limitless/components/Common/ManaIcons'
-import { useStats } from '../queries/useStats'
+import { metaKey, useStats, type StatEvent } from '../queries/useStats'
 import { FORMAT_LABELS, isBestOfThree, trophyThreshold } from '../constants'
 import { WinRateChart, type ChartPoint } from './WinRateChart'
 import { CardTitle, ErrorBox } from './ui'
 import type { StatsFilterState } from './StatsFilters'
 
-const MIN_EVENTS_FOR_CARD = 2
-const TOP_CARDS = 10
+const TOP_PICKS = 16
+
+/** Une ligne d'archétype, quel que soit le côté de la table. */
+interface ArchetypeRow {
+  colors: string
+  /** Ton WR : en jouant l'archétype, ou contre lui selon le mode. */
+  winRate: number
+  wins: number
+  losses: number
+  /** Nombre d'événements joués, ou de matchs affrontés. */
+  count: number
+  /** WR de l'archétype dans le format, moyenné sur tes extensions. */
+  metaWr: number | null
+}
 
 /**
  * Tableau de bord. Les filtres vivent dans la barre latérale : ici, rien que
@@ -19,6 +31,7 @@ const TOP_CARDS = 10
 export function StatsView({ filters }: { filters: StatsFilterState }) {
   const { data, isLoading, error } = useStats()
   const { format, setCode } = filters
+  const [facing, setFacing] = useState(false)
 
   const events = useMemo(
     () =>
@@ -30,7 +43,7 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
     [data, format, setCode],
   )
 
-  const played = events.filter((e) => e.wins + e.losses > 0)
+  const played = useMemo(() => events.filter((e) => e.wins + e.losses > 0), [events])
   const wins = played.reduce((n, e) => n + e.wins, 0)
   const losses = played.reduce((n, e) => n + e.losses, 0)
   const games = wins + losses
@@ -44,21 +57,6 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
   const gameTotal = gamesWon + gamesLost
   const gameWinRate = gameTotal ? (gamesWon / gameTotal) * 100 : null
   const anyBo3 = played.some((e) => isBestOfThree(e.format))
-
-  // Archetypes affrontes, les plus frequents d'abord.
-  const opponents = (() => {
-    const counts = new Map<string, { faced: number; beaten: number }>()
-    for (const e of played) {
-      for (const colors of e.opponentColors) {
-        const cur = counts.get(colors) ?? { faced: 0, beaten: 0 }
-        cur.faced += 1
-        counts.set(colors, cur)
-      }
-    }
-    return [...counts.entries()]
-      .map(([colors, c]) => ({ colors, faced: c.faced }))
-      .sort((a, b) => b.faced - a.faced)
-  })()
 
   // WR cumulé : une moyenne courante lisse le bruit d'un événement isolé.
   const points: ChartPoint[] = useMemo(() => {
@@ -78,52 +76,37 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
     })
   }, [played])
 
-  // Format retenu pour les sections d'analyse : celui choisi, sinon le plus joué.
-  const cardFormats = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const e of data?.events ?? []) {
-      if (e.wins + e.losses === 0) continue
-      counts.set(e.format, (counts.get(e.format) ?? 0) + 1)
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => f)
-  }, [data])
+  const metaWr = data?.metaWr
 
-  const activeCardFormat = filters.cardFormat ?? cardFormats[0] ?? null
-
-  // Base commune des sections par format : un WR ne se compare pas d'un
-  // format a l'autre, tout ce qui suit est donc calcule sur ce sous-ensemble.
-  const scoped = useMemo(
-    () =>
-      (data?.events ?? []).filter(
-        (e) =>
-          e.wins + e.losses > 0 &&
-          e.format === activeCardFormat &&
-          (setCode === 'all' || e.setCode === setCode),
-      ),
-    [data, activeCardFormat, setCode],
-  )
-
-  // Archétypes joués, avec leur bilan en matchs.
-  const playedArchetypes = useMemo(() => {
-    const acc = new Map<string, { events: number; wins: number; losses: number }>()
-    for (const e of scoped) {
+  // Archétypes joués : ton bilan en matchs quand tu pilotais ces couleurs.
+  const archetypesPlayed = useMemo(() => {
+    const acc = new Map<string, Agg>()
+    for (const e of played) {
       if (!e.archetype) continue
-      const cur = acc.get(e.archetype) ?? { events: 0, wins: 0, losses: 0 }
-      cur.events += 1
+      const cur = take(acc, e.archetype)
+      cur.count += 1
       cur.wins += e.wins
       cur.losses += e.losses
-      acc.set(e.archetype, cur)
+      addMeta(cur, metaWr, e, e.archetype, e.wins + e.losses)
     }
-    return [...acc.entries()]
-      .map(([colors, a]) => ({
-        colors,
-        events: a.events,
-        wins: a.wins,
-        losses: a.losses,
-        winRate: a.wins + a.losses ? (a.wins / (a.wins + a.losses)) * 100 : 0,
-      }))
-      .sort((a, b) => b.events - a.events || b.winRate - a.winRate)
-  }, [scoped])
+    return toRows(acc)
+  }, [played, metaWr])
+
+  // Archétypes affrontés : ton bilan en matchs CONTRE ces couleurs.
+  const archetypesFaced = useMemo(() => {
+    const acc = new Map<string, Agg>()
+    for (const e of played) {
+      for (const m of e.matchups) {
+        if (!m.opponent) continue
+        const cur = take(acc, m.opponent)
+        cur.count += 1
+        if (m.won) cur.wins += 1
+        else cur.losses += 1
+        addMeta(cur, metaWr, e, m.opponent, 1)
+      }
+    }
+    return toRows(acc)
+  }, [played, metaWr])
 
   // Table de matchups : mon archétype × archétype adverse.
   const matchups = useMemo(() => {
@@ -131,7 +114,7 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
     const mine = new Set<string>()
     const theirs = new Set<string>()
 
-    for (const e of scoped) {
+    for (const e of played) {
       if (!e.archetype) continue
       for (const m of e.matchups) {
         if (!m.opponent) continue
@@ -145,42 +128,21 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
       }
     }
 
-    return {
-      rows: [...mine].sort(),
-      cols: [...theirs].sort(),
-      cells,
+    return { rows: [...mine].sort(), cols: [...theirs].sort(), cells }
+  }, [played])
+
+  // Cartes pickées : un décompte brut, sur tous les événements du périmètre.
+  // Les événements sans score comptent aussi — tu les as pickées quand même.
+  const picks = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const e of events) {
+      for (const name of e.picks) counts.set(name, (counts.get(name) ?? 0) + 1)
     }
-  }, [scoped])
-
-  const cards = useMemo(() => {
-    const acc = new Map<string, { events: number; wins: number; losses: number }>()
-    for (const e of scoped) {
-      for (const name of e.cards) {
-        const cur = acc.get(name) ?? { events: 0, wins: 0, losses: 0 }
-        cur.events += 1
-        cur.wins += e.wins
-        cur.losses += e.losses
-        acc.set(name, cur)
-      }
-    }
-
-    const gih = new Map((data?.cards ?? []).map((c) => [c.name, c.gihWr]))
-
-    return [...acc.entries()]
-      .filter(([, agg]) => agg.events >= MIN_EVENTS_FOR_CARD)
-      .map(([name, agg]) => {
-        const g = agg.wins + agg.losses
-        return {
-          name,
-          events: agg.events,
-          record: `${agg.wins}-${agg.losses}`,
-          winRate: g ? (agg.wins / g) * 100 : 0,
-          gihWr: gih.get(name) ?? null,
-        }
-      })
-      .sort((a, b) => b.events - a.events || b.winRate - a.winRate)
-      .slice(0, TOP_CARDS)
-  }, [scoped, data])
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, TOP_PICKS)
+  }, [events])
 
   if (isLoading) {
     return (
@@ -190,6 +152,8 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
     )
   }
   if (error) return <ErrorBox error={error} />
+
+  const archetypes = facing ? archetypesFaced : archetypesPlayed
 
   return (
     <div className="space-y-5">
@@ -237,82 +201,61 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
         </p>
       )}
 
-      {activeCardFormat && (
-        <div className="flex items-center gap-2">
-          <span className="micro text-ink-faint">Sections suivantes</span>
-          <span className="pill-brand">
-            {FORMAT_LABELS[activeCardFormat] ?? activeCardFormat}
-          </span>
-        </div>
-      )}
+      {(archetypesPlayed.length > 0 || archetypesFaced.length > 0) && (
+        <section className="card p-4">
+          <CardTitle
+            icon={
+              facing ? (
+                <Swords size={13} strokeWidth={2.5} />
+              ) : (
+                <Target size={13} strokeWidth={2.5} />
+              )
+            }
+            title={facing ? 'Archétypes affrontés' : 'Archétypes joués'}
+          >
+            {/* Un seul interrupteur : les deux listes se lisent pareil, elles
+                n'ont aucune raison d'occuper deux colonnes en parallèle. */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setFacing(false)}
+                className={facing ? 'pill-soft text-ink-soft' : 'pill-brand shadow-brut-sm'}
+              >
+                Joués
+              </button>
+              <button
+                onClick={() => setFacing(true)}
+                className={facing ? 'pill-brand shadow-brut-sm' : 'pill-soft text-ink-soft'}
+              >
+                Affrontés
+              </button>
+            </div>
+          </CardTitle>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        {playedArchetypes.length > 0 && (
-          <section className="card p-4">
-            <CardTitle icon={<Target size={13} strokeWidth={2.5} />} title="Archétypes joués" />
-            <p className="mb-3 mt-2 text-[11px] font-semibold leading-relaxed text-ink-soft">
-              Déduits des cartes de ton deck construit : les deux couleurs
-              dominantes, plus une troisième seulement si elle rivalise avec la
-              deuxième. Sinon c'est un splash.
+          {archetypes.length === 0 ? (
+            <p className="py-6 text-center text-sm font-bold text-ink-soft">
+              Rien à afficher sur ce périmètre.
             </p>
-            <div className="space-y-2">
-              {playedArchetypes.map((arch) => (
-                <div key={arch.colors} className="flex items-center gap-3">
-                  <span className="flex w-24 shrink-0 items-center gap-2">
-                    <ManaIcons colors={arch.colors} size="sm" />
-                    <span className="text-xs font-extrabold">{arch.colors}</span>
-                  </span>
-                  <div className="h-3 flex-1 overflow-hidden rounded-full border-2 border-ink bg-paper-sunk">
-                    <div
-                      className="h-full bg-brand"
-                      style={{ width: `${Math.min(100, arch.winRate)}%` }}
-                    />
-                  </div>
-                  <span className="w-12 shrink-0 text-right font-display text-base font-black tabular-nums">
-                    {arch.winRate.toFixed(0)}%
-                  </span>
-                  <span className="w-[92px] shrink-0 text-right text-[10px] font-bold tabular-nums text-ink-faint">
-                    {arch.wins}–{arch.losses} · {arch.events} ev.
-                  </span>
+          ) : (
+            /* Réparti en deux colonnes qui se lisent de haut en bas : la
+               première prend la moitié haute, arrondie au supérieur. */
+            <div className="mt-4 grid gap-2.5 md:grid-cols-2">
+              {splitInTwo(archetypes).map((column, i) => (
+                <div key={i} className="space-y-2.5">
+                  {column.map((row) => (
+                    <ArchetypeCard key={row.colors} row={row} facing={facing} />
+                  ))}
                 </div>
               ))}
             </div>
-          </section>
-        )}
-
-        {opponents.length > 0 && (
-          <section className="card p-4">
-            <CardTitle
-              icon={<Users size={13} strokeWidth={2.5} />}
-              title="Archétypes affrontés"
-            />
-            <p className="mb-3 mt-2 text-[11px] font-semibold leading-relaxed text-ink-soft">
-              Couleurs déduites des cartes que l'adversaire a réellement jouées — une
-              couleur splash ou jamais piochée peut manquer.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {opponents.map((opponent) => (
-                <span key={opponent.colors} className="pill-soft">
-                  <ManaIcons colors={opponent.colors} size="sm" />
-                  {opponent.colors}
-                  <span className="text-ink-faint">×{opponent.faced}</span>
-                </span>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+          )}
+        </section>
+      )}
 
       {matchups.rows.length > 0 && (
         <section className="card p-4">
-          <CardTitle icon={<Swords size={13} strokeWidth={2.5} />} title="Matchups" />
-          <p className="mb-3 mt-2 text-[11px] font-semibold leading-relaxed text-ink-soft">
-            Bilan en matchs de chacun de tes archétypes contre chaque archétype
-            rencontré. Les échantillons sont minuscules au début — une case à
-            100 % sur un seul match ne dit rien.
-          </p>
+          <CardTitle icon={<LayoutGrid size={13} strokeWidth={2.5} />} title="Matchups" />
 
-          <div className="overflow-x-auto">
+          <div className="mt-4 overflow-x-auto">
             <table className="border-separate border-spacing-1 text-sm">
               <thead>
                 <tr>
@@ -353,69 +296,110 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
       )}
 
       <section className="card p-4">
-        <CardTitle
-          icon={<Layers size={13} strokeWidth={2.5} />}
-          title="Cartes les plus jouées"
-        />
+        <CardTitle icon={<Hand size={13} strokeWidth={2.5} />} title="Cartes les plus pickées">
+          {picks.length > 0 && <span className="pill-ink">top {picks.length}</span>}
+        </CardTitle>
 
-        <p className="mb-3 mt-2 text-[11px] font-semibold leading-relaxed text-ink-soft">
-          Cartes présentes dans le deck construit, sur au moins{' '}
-          {MIN_EVENTS_FOR_CARD} événements. Le GIH 17Lands est donné pour
-          référence : c'est un taux <strong className="text-ink">en partie</strong>{' '}
-          quand la carte est en main, là où le tien est un taux{' '}
-          <strong className="text-ink">en match</strong>.
-        </p>
-
-        {cards.length === 0 ? (
+        {picks.length === 0 ? (
           <p className="py-6 text-center text-sm font-bold text-ink-soft">
-            Aucune carte jouée sur au moins {MIN_EVENTS_FOR_CARD} événements en{' '}
-            {FORMAT_LABELS[activeCardFormat ?? ''] ?? activeCardFormat ?? 'ce format'}.
+            Aucun pick enregistré sur ce périmètre — l'overlay ne tournait pas.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-ink text-left">
-                  <th className="micro py-2 pr-2 text-ink-soft">Carte</th>
-                  <th className="micro px-2 py-2 text-right text-ink-soft">Events</th>
-                  <th className="micro px-2 py-2 text-right text-ink-soft">Bilan</th>
-                  <th className="micro px-2 py-2 text-right text-ink-soft">Mon WR</th>
-                  <th className="micro py-2 pl-2 text-right text-ink-soft">GIH 17L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cards.map((card) => (
-                  <tr key={card.name} className="border-b border-ink/15">
-                    <td className="py-1.5 pr-2">
-                      <span className="flex items-center gap-2">
-                        <CardImage
-                          src={getCardImage(card.name)}
-                          alt=""
-                          className="h-[33px] w-6 shrink-0 rounded border-2 border-ink object-cover"
-                        />
-                        <span className="truncate font-bold">{card.name}</span>
-                      </span>
-                    </td>
-                    <td className="px-2 text-right font-semibold tabular-nums text-ink-soft">
-                      {card.events}
-                    </td>
-                    <td className="px-2 text-right font-semibold tabular-nums text-ink-faint">
-                      {card.record}
-                    </td>
-                    <td className="px-2 text-right font-extrabold tabular-nums">
-                      {card.winRate.toFixed(1)}%
-                    </td>
-                    <td className="pl-2 text-right font-semibold tabular-nums text-ink-soft">
-                      {card.gihWr == null ? '—' : `${card.gihWr.toFixed(1)}%`}
-                    </td>
-                  </tr>
+          /* Liste nue, séparée par des filets : seize cartes encadrées à
+             l'encre feraient une grille de prison. */
+          <div className="mt-4 grid gap-x-6 md:grid-cols-2">
+            {splitInTwo(picks).map((column, i) => (
+              <div key={i}>
+                {column.map((pick, j) => (
+                  <div
+                    key={pick.name}
+                    className="flex items-center gap-2.5 border-b border-ink/10 py-1.5 last:border-b-0"
+                  >
+                    <span className="micro w-4 shrink-0 text-ink-faint">
+                      {i * Math.ceil(picks.length / 2) + j + 1}
+                    </span>
+                    <CardImage
+                      src={getCardImage(pick.name)}
+                      alt=""
+                      className="h-[33px] w-6 shrink-0 rounded border border-ink/20 object-cover"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                      {pick.name}
+                    </span>
+                    <span className="shrink-0 font-display text-base font-black tabular-nums">
+                      ×{pick.count}
+                    </span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ))}
           </div>
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * Une ligne d'archétype : couleurs, ton WR, la barre, le rappel du format.
+ *
+ * Bloc léger — pas de bordure ni d'ombre. À dix ou douze exemplaires dans une
+ * carte, le cadre d'encre du reste de l'interface écrase la donnée.
+ */
+function ArchetypeCard({ row, facing }: { row: ArchetypeRow; facing: boolean }) {
+  // L'écart n'a de sens que sur les archétypes JOUÉS : là, ton WR et celui du
+  // format mesurent la même chose. Contre un archétype, les deux chiffres ne
+  // sont pas comparables — on ne montre que la référence, brute.
+  const delta = !facing && row.metaWr != null ? row.winRate - row.metaWr : null
+
+  return (
+    <div className="space-y-1.5 rounded-xl bg-paper-sunk px-3 py-2">
+      <div className="flex items-center gap-2">
+        <ManaIcons colors={row.colors} size="sm" />
+        <span className="text-xs font-extrabold">{row.colors}</span>
+        <span className="ml-auto font-display text-lg font-black leading-none">
+          {row.winRate.toFixed(0)}%
+        </span>
+        {delta != null && <DeltaChip delta={delta} metaWr={row.metaWr!} />}
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-ink/10">
+        <div
+          className="h-full rounded-full bg-brand"
+          style={{ width: `${Math.min(100, Math.max(0, row.winRate))}%` }}
+        />
+      </div>
+
+      <div className="micro flex items-center justify-between text-ink-faint">
+        <span>
+          {row.wins}–{row.losses} · {row.count} {facing ? 'match' : 'event'}
+          {row.count > 1 ? 's' : ''}
+        </span>
+        <span>
+          {row.metaWr == null ? 'format —' : `format ${row.metaWr.toFixed(1)}%`}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function DeltaChip({ delta, metaWr }: { delta: number; metaWr: number }) {
+  // Sous un demi-point, l'écart n'est pas un signal : ton neutre.
+  const tone =
+    delta >= 0.5
+      ? 'bg-brand text-ink'
+      : delta <= -0.5
+        ? 'bg-loss-soft text-ink'
+        : 'bg-ink/10 text-ink-soft'
+
+  return (
+    <span
+      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none tabular-nums ${tone}`}
+      title={`WR de cet archétype dans le format : ${metaWr.toFixed(1)}%`}
+    >
+      {delta >= 0 ? '+' : '−'}
+      {Math.abs(delta).toFixed(1)}
+    </span>
   )
 }
 
@@ -430,8 +414,7 @@ function MatchupCell({ cell }: { cell?: { won: number; lost: number } }) {
 
   const total = cell.won + cell.lost
   const rate = (cell.won / total) * 100
-  const shade =
-    rate >= 60 ? 'bg-brand' : rate <= 40 ? 'bg-loss-soft' : 'bg-paper-sunk'
+  const shade = rate >= 60 ? 'bg-brand' : rate <= 40 ? 'bg-loss-soft' : 'bg-paper-sunk'
 
   return (
     <td className="px-0.5 py-0.5">
@@ -472,4 +455,59 @@ function Tile({
       </div>
     </div>
   )
+}
+
+// ─── Agrégation des archétypes ───────────────────────────────────────────────
+
+interface Agg {
+  count: number
+  wins: number
+  losses: number
+  /** Somme pondérée des WR de format, et son poids — pour la moyenne finale. */
+  metaSum: number
+  metaWeight: number
+}
+
+function take(acc: Map<string, Agg>, key: string): Agg {
+  const existing = acc.get(key)
+  if (existing) return existing
+  const created: Agg = { count: 0, wins: 0, losses: 0, metaSum: 0, metaWeight: 0 }
+  acc.set(key, created)
+  return created
+}
+
+/**
+ * Le WR de format dépend de l'extension ET du format : quand le périmètre en
+ * mélange plusieurs, on moyenne au prorata de ce que tu y as réellement joué.
+ */
+function addMeta(
+  agg: Agg,
+  metaWr: Map<string, number> | undefined,
+  event: StatEvent,
+  colors: string,
+  weight: number,
+) {
+  const wr = metaWr?.get(metaKey(event.setCode, event.format, colors))
+  if (wr == null || weight <= 0) return
+  agg.metaSum += wr * weight
+  agg.metaWeight += weight
+}
+
+function toRows(acc: Map<string, Agg>): ArchetypeRow[] {
+  return [...acc.entries()]
+    .map(([colors, a]) => ({
+      colors,
+      wins: a.wins,
+      losses: a.losses,
+      count: a.count,
+      winRate: a.wins + a.losses ? (a.wins / (a.wins + a.losses)) * 100 : 0,
+      metaWr: a.metaWeight > 0 ? a.metaSum / a.metaWeight : null,
+    }))
+    .sort((a, b) => b.count - a.count || b.winRate - a.winRate)
+}
+
+/** [1..7] → [[1,2,3,4], [5,6,7]] : la première colonne prend la moitié haute. */
+function splitInTwo<T>(items: T[]): [T[], T[]] {
+  const cut = Math.ceil(items.length / 2)
+  return [items.slice(0, cut), items.slice(cut)]
 }

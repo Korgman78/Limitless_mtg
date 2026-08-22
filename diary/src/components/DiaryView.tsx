@@ -98,7 +98,7 @@ export function DiaryView({
 
           <p className="micro text-center text-brand-ink">
             {played.length} événement{played.length > 1 ? 's' : ''} joué
-            {played.length > 1 ? 's' : ''} · seuil de rentabilité à mi-cadran
+            {played.length > 1 ? 's' : ''}
           </p>
         </section>
       </div>

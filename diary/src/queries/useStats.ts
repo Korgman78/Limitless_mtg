@@ -11,8 +11,8 @@ export interface StatEvent {
   playedAt: string
   wins: number
   losses: number
-  /** Cartes du dernier build, hors terrains — la version qui a réellement joué. */
-  cards: string[]
+  /** Cartes réellement pickées pendant le draft. Vide en sealed ou sans overlay. */
+  picks: string[]
   /** Parties gagnées/perdues, agrégées depuis les matchs. 0-0 si non importés. */
   gamesWon: number
   gamesLost: number
@@ -24,35 +24,26 @@ export interface StatEvent {
   matchups: { opponent: string | null; won: boolean }[]
 }
 
-export interface CardStat {
-  name: string
-  events: number
-  wins: number
-  losses: number
-  /** WR au match, sur les événements où la carte était au deck. */
-  winRate: number
-  /** GIH WR 17Lands pour ce set/format, ou null si absent. */
-  gihWr: number | null
-}
-
 export interface DiaryStats {
   events: StatEvent[]
-  cards: CardStat[]
+  /**
+   * WR du métagame par archétype, clé `setCode|format|couleurs`. Permet de
+   * situer ton résultat par rapport au format plutôt que dans l'absolu.
+   */
+  metaWr: Map<string, number>
 }
 
 /**
- * GIH d'une carte, avec repli sur la face avant : 17Lands ne connait que
- * "Smaug, the Great Calamity" la ou card_list stocke "... // Spew Flame".
+ * Clé de correspondance avec `archetype_stats`.
+ *
+ * Deux pièges dans cette table : `colors` peut porter " + Splash", et les
+ * couleurs y sont triées ALPHABÉTIQUEMENT ("BU", "GRW") là où le diary trie en
+ * ordre WUBRG ("UB", "WRG"). On retrie donc les deux côtés dans le même ordre —
+ * sans ça, aucune clé ne tombe juste et la colonne reste vide sans rien dire.
  */
-function lookupGih(source: Map<string, number>, key: string): number | null {
-  const direct = source.get(key)
-  if (direct != null) return direct
-
-  const [setCode, format, ...rest] = key.split('|')
-  const name = rest.join('|')
-  if (!name.includes(' // ')) return null
-
-  return source.get(`${setCode}|${format}|${name.split(' // ')[0].trim()}`) ?? null
+export const metaKey = (setCode: string, format: string, colors: string): string => {
+  const canonical = [...colors.replace(/[^WUBRG]/g, '')].sort().join('')
+  return `${setCode}|${format}|${canonical}`
 }
 
 interface RawEvent {
@@ -64,6 +55,7 @@ interface RawEvent {
   wins: number
   losses: number
   diary_deck_versions: { version_no: number; decklist_raw: string }[] | null
+  diary_picks: { picked_card: string | null }[] | null
   diary_matches:
     | {
         games_won: number
@@ -89,6 +81,7 @@ export function useStats() {
         .select(
           'id, set_code, format, event_type, played_at, wins, losses,' +
             ' diary_deck_versions(version_no, decklist_raw),' +
+            ' diary_picks(picked_card),' +
             ' diary_matches(games_won, games_lost, opponent_colors, won)',
         )
         .is('deleted_at', null)
@@ -98,40 +91,45 @@ export function useStats() {
 
       const rows = (data ?? []) as unknown as RawEvent[]
 
-      // Métadonnées de cartes : sert à écarter les terrains du décompte.
+      // Couleurs des cartes : sert uniquement à déduire ton archétype.
       const setCodes = [...new Set(rows.map((r) => r.set_code))]
-      const landNames = new Set<string>()
       const cardColors = new Map<string, { colors: string | null; type: string | null }>()
-      const gihBySetFormat = new Map<string, number>()
+      const metaWr = new Map<string, number>()
 
       if (setCodes.length) {
-        const [metaRes, statsRes] = await Promise.all([
+        const [metaRes, archRes] = await Promise.all([
           supabase
             .from('card_list')
             .select('card_name, card_type, colors')
             .in('set_code', setCodes),
           supabase
-            .from('card_stats')
-            .select('card_name, gih_wr, set_code, format')
-            .in('set_code', setCodes)
-            .eq('filter_context', 'Global'),
+            .from('archetype_stats')
+            .select('set_code, format, colors, win_rate, games_count')
+            .in('set_code', setCodes),
         ])
 
         for (const row of metaRes.data ?? []) {
           const r = row as Record<string, unknown>
-          const name = r.card_name as string
-          const type = (r.card_type as string) ?? ''
-          if (type.toLowerCase().includes('land')) landNames.add(name)
-          cardColors.set(name, { colors: (r.colors as string) ?? null, type })
+          cardColors.set(r.card_name as string, {
+            colors: (r.colors as string) ?? null,
+            type: (r.card_type as string) ?? '',
+          })
         }
 
-        for (const row of statsRes.data ?? []) {
+        // "WU" et "WU + Splash" retombent sur la même clé : on garde la ligne
+        // la mieux échantillonnée plutôt que la dernière arrivée.
+        const bestSample = new Map<string, number>()
+        for (const row of archRes.data ?? []) {
           const r = row as Record<string, unknown>
-          if (r.gih_wr == null) continue
-          gihBySetFormat.set(
-            `${r.set_code}|${r.format}|${r.card_name}`,
-            Number(r.gih_wr),
-          )
+          const colors = (r.colors as string) ?? ''
+          if (r.win_rate == null || !colors.replace(/[^WUBRG]/g, '')) continue
+
+          const key = metaKey(r.set_code as string, r.format as string, colors)
+          const games = Number(r.games_count ?? 0)
+          if (games < (bestSample.get(key) ?? -1)) continue
+
+          bestSample.set(key, games)
+          metaWr.set(key, Number(r.win_rate))
         }
       }
 
@@ -142,9 +140,6 @@ export function useStats() {
         )[0]
 
         const mainCards = latest ? parseMtgaDeck(latest.decklist_raw).mainCards : []
-        const cards = mainCards
-          .map((c) => c.name)
-          .filter((name) => !landNames.has(name))
 
         const archetype = deduceArchetype(
           mainCards.map((c) => ({
@@ -174,44 +169,13 @@ export function useStats() {
           playedAt: row.played_at,
           wins: row.wins,
           losses: row.losses,
-          cards,
+          picks: (row.diary_picks ?? [])
+            .map((p) => p.picked_card)
+            .filter((n): n is string => Boolean(n)),
         }
       })
 
-      // Agrégat par carte, sur les événements ayant au moins un match joué.
-      const acc = new Map<string, { events: number; wins: number; losses: number; key: string }>()
-      for (const event of events) {
-        if (event.wins + event.losses === 0) continue
-        for (const name of event.cards) {
-          const current = acc.get(name) ?? {
-            events: 0,
-            wins: 0,
-            losses: 0,
-            key: `${event.setCode}|${event.format}|${name}`,
-          }
-          current.events += 1
-          current.wins += event.wins
-          current.losses += event.losses
-          acc.set(name, current)
-        }
-      }
-
-      const cards: CardStat[] = [...acc.entries()]
-        .map(([name, agg]) => {
-          const games = agg.wins + agg.losses
-          const winRate = games ? (agg.wins / games) * 100 : 0
-          return {
-            name,
-            events: agg.events,
-            wins: agg.wins,
-            losses: agg.losses,
-            winRate,
-            gihWr: lookupGih(gihBySetFormat, agg.key),
-          }
-        })
-        .sort((a, b) => b.events - a.events || b.winRate - a.winRate)
-
-      return { events, cards }
+      return { events, metaWr }
     },
   })
 }
