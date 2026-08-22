@@ -2,13 +2,19 @@
 
 Journal d'entraînement Limited, en trois onglets :
 
-- **Diary** — une entrée par draft/sealed : score, phase de pick, deck (avec
-  versions), matchs joués et commentaires qualitatifs. Le sélecteur d'extension
-  et la création d'entrée vivent ici.
-- **Stats** — win rate et son évolution, trophées et trophy rate, puis une
-  zone « analyse par format » : archétypes joués, archétypes affrontés, table
-  de matchups et cartes les plus jouées.
+- **Journal** — bilan de l'extension en cours (assiduité, cadran de win rate,
+  trophées) puis une entrée par draft/sealed : score, phase de pick, deck (avec
+  versions), matchs joués et commentaires qualitatifs.
+- **Statistiques** — win rate et son évolution, trophées et trophy rate,
+  archétypes (joués ou affrontés, au choix), table de matchups et cartes les
+  plus pickées.
 - **Rapport hebdo** — synthèse IA hebdomadaire du journal.
+
+**Tous les contrôles vivent dans la barre latérale** — extensions, filtres,
+semaines, création d'entrée. La zone principale ne contient que des cartes de
+données, jamais de barre d'outils : c'est ce qui tient le langage visuel
+debout. Conséquence assumée : l'état d'interface des trois onglets est porté
+par `App.tsx`, pas par chaque vue.
 
 Projet **indépendant de Limitless** — front séparé, port séparé — mais qui
 partage le même projet Supabase (tables préfixées `diary_*`) et réutilise la
@@ -96,13 +102,21 @@ renvoie des chaînes de classes Tailwind qui ne seraient pas générées sinon.
 ```
 diary/
 ├── sql/001_diary_schema.sql   # schéma + RLS
+├── tailwind.config.js         # tokens du thème (papier, encre, vert, ombres)
 └── src/
-    ├── App.tsx                # navigation à trois onglets, rien d'autre
+    ├── App.tsx                # coquille + état d'interface des trois onglets
+    ├── index.css              # classes composants (.card, .pill-*, .btn-*…)
     ├── constants.ts           # formats et sections de commentaire
     ├── queries/               # hooks React Query + mutations
     └── components/
-        ├── DiaryView.tsx      # onglet Diary : extensions, création, liste
-        ├── StatsView.tsx      # onglet Stats
+        ├── Sidebar.tsx        # colonne de gauche + blocs contextuels
+        ├── ui.tsx             # CardTitle, ErrorBox — partagés par les vues
+        ├── DiaryView.tsx      # onglet Journal : bilan + flux d'entrées
+        ├── WinRateDial.tsx    # cadran de WR (0-100 % sur un tour complet)
+        ├── ActivityGrid.tsx   # heatmap d'assiduité, 14 semaines
+        ├── StatsView.tsx      # onglet Statistiques
+        ├── StatsFilters.tsx   # filtres de périmètre, rendus dans la sidebar
+        ├── WinRateChart.tsx   # courbe de WR cumulé
         ├── WeeklyReportView.tsx # onglet Rapport hebdo
         ├── EventCard.tsx      # une entrée : score, récaps, dépliage
         ├── MatchesPanel.tsx   # matchs, adversaires, score en parties
@@ -122,9 +136,11 @@ diary/
 - [x] **3. Revue visuelle des picks** — pack par pack, langage visuel de Draft
       Practice, decks en piles de CMC via `CmcStack`.
 - [x] **4. Onglet stats** — WR global et évolution, filtres format/extension,
-      cartes les plus jouées et écarts 17Lands.
+      archétypes comparés au métagame, matchups, cartes les plus pickées.
 - [x] **5. Synthèse LLM hebdo** — `backend/etl_diary_weekly.py` (Gemini),
       déclenché par `.github/workflows/diary_weekly.yaml`.
+- [x] **6. Refonte UX** — thème papier, vert de marque, barre latérale de
+      contrôles. Voir « Langage visuel ».
 
 ## Rapport hebdomadaire
 
@@ -170,13 +186,54 @@ de traiter l'écart 17Lands comme une mesure.
   `readBasicLandIds()`. Sans ça un deck s'enregistre amputé de ses 17 terrains.
 - Le log vit dans `%USERPROFILE%\AppData\LocalLow\...` sur les builds Steam et
   standalone.
+- Arena **fait tourner son log a chaque redemarrage** : le fichier courant
+  repart de zero et l'ancien devient `Player-prev.log`. Un draft joue avant le
+  dernier lancement n'a donc plus ni `draft-start` ni picks dans le log courant,
+  alors que sa course et ses matchs, eux, continuent d'y passer. C'est le piege
+  qui fait qu'un draft en cours cesse silencieusement de se synchroniser : sans
+  picks, pas de pool, donc plus aucun rattachement possible. Deux parades, les
+  deux en place : le rejeu couvre `Player-prev.log` puis `Player.log` dans le
+  meme parser, et `DiaryCollector.rehydratePools()` recharge les pools depuis
+  `diary_picks` avant toute lecture.
 
-## Couleurs des graphes
+## Langage visuel
 
-Validées avec `validate_palette.js` contre la surface `#0f172a` :
-série `#3987e5`, écarts `#34d399` / `#f43f5e` (CVD deutan ΔE 12.0). L'écart
-porte toujours son signe et une flèche — la couleur ne véhicule jamais seule
-l'information.
+Style « papier » : encre noire sur crème quadrillé, bordures pleines de 2 px,
+ombres dures sans flou. Tout est piloté par des tokens — `tailwind.config.js`
+pour les couleurs, ombres et rayons, `src/index.css` pour la quinzaine de
+classes composants (`.card`, `.card-tint`, `.well`, `.plate`, `.pill-*`,
+`.btn-*`, `.field`). Un changement d'apparence se fait là, pas dans les
+composants.
+
+Les classes de `index.css` sont écrites **à plat**, sans `@apply` de l'une sur
+l'autre : Tailwind résout mal les composants qui s'appliquent entre eux, et un
+build cassé coûte plus cher que quelques déclarations répétées.
+
+**Le vert `#10B981` est décliné en quatre rôles**, parce qu'un seul ton saturé
+ne tient pas sur de grandes surfaces de crème :
+
+| Token | Valeur | Rôle |
+|---|---|---|
+| `brand-wash` | `#EFF9F3` | blocs internes, listes |
+| `brand-soft` | `#DFF3E7` | lavis des cartes héros |
+| `brand` | `#10B981` | remplissage de signal (CTA, barres, jauges) |
+| `brand-ink` | `#05614A` | texte et états actifs sur lavis |
+
+Le noir se pose sur `brand`, jamais le blanc (≈ 9:1 contre 2,5:1).
+
+**Plaques sombres** (`.plate`) : les visuels de cartes Magic et `CmcStack` sont
+dessinés pour du fond noir, le crème les délave. On assume une insertion sombre
+bordée comme le reste, plutôt que de redessiner un composant partagé.
+
+**Graphes** : la courbe est tracée à l'encre `#141310`, l'aire sous la courbe en
+`brand-soft`, les marqueurs en `brand` cerclés d'encre. Une ligne verte sur
+crème perdrait en lisibilité ce qu'elle gagnerait en cohérence. Le seuil 50 %
+est en pointillés — un seuil n'est pas une grille.
+
+Dans le cadran (`WinRateDial`), l'échelle 0–100 % tombe juste sur un tour
+complet : **50 % est exactement le demi-tour**, le seuil de rentabilité se lit
+sans annotation. Son `viewBox` déborde volontairement du cercle : le curseur est
+centré *sur* le rayon, sans marge il se fait rogner à 0, 25, 50 et 75 %.
 
 ## Score du deck
 
@@ -218,26 +275,41 @@ si elle atteint 80 % du compte de la deuxième.
 Les deux fichiers se citent mutuellement : toucher l'un sans l'autre rendrait la
 table de matchups incohérente.
 
-## Analyse par format
+## Comparaison au métagame
 
-Archétypes joués, archétypes affrontés, matchups et cartes partagent **un seul
-sélecteur de format**, distinct du filtre général. Un WR ne se compare pas d'un
-format à l'autre : sur HOB, la même carte est à 58,7 % en PremierDraft/BG et
-66 % en TradDraft/BG.
+Chaque archétype joué affiche le WR de ce même archétype **dans le format**, lu
+dans `archetype_stats`, et l'écart signé entre les deux. C'est la seule
+comparaison qui situe un résultat : 60 % sur un archétype qui en fait 64 n'est
+pas la même nouvelle que 60 % sur un archétype à 54.
 
-## Cartes les plus jouées
+**Piège de raccord, vérifié en base, ne pas re-supposer** : `archetype_stats`
+trie ses couleurs **alphabétiquement** (`BU`, `GRW`, `UW`), là où le diary trie
+en ordre WUBRG (`UB`, `WRG`, `WU`). Sans recanonicalisation des deux côtés,
+aucune clé ne tombe juste — et l'échec est silencieux, la colonne affiche
+simplement « format — » partout. C'est le rôle de `metaKey()` dans
+`queries/useStats.ts`. Le champ `colors` peut aussi porter un suffixe
+`" + Splash"`, et plusieurs lignes retombent alors sur la même clé : on garde la
+mieux échantillonnée.
 
-Cartes présentes dans le deck construit, sur au moins 2 événements — en dessous,
-« mon WR » vaudrait simplement le score de l'unique événement, identique pour
-toutes les cartes du deck. Top 10.
+Quand le périmètre mélange plusieurs extensions ou formats, la référence est
+moyennée **au prorata de ce que tu y as réellement joué**.
 
-La section porte **son propre filtre de format**, indépendant de celui du haut :
-le GIH d'une même carte varie fortement d'un format à l'autre (58,7 % en
-PremierDraft/BG contre 66 % en TradDraft/BG sur HOB), les mélanger produirait un
-chiffre sans signification.
+Pas d'écart côté **archétypes affrontés** : ton WR *contre* un archétype et le
+WR *de* cet archétype ne mesurent pas la même chose. Seule la référence brute
+est affichée — elle dit si tu croises un archétype fort ou faible.
 
-Le GIH 17Lands est affiché pour référence, sans écart calculé : c'est un taux en
-partie quand la carte est en main, là où le WR du journal est un taux en match.
+## Cartes les plus pickées
+
+Décompte brut du nombre de fois où chaque carte a été pickée, top 16.
+
+L'ancien tableau « cartes les plus jouées » calculait un WR par carte en lui
+attribuant le score de l'événement entier : une carte présente dans un 7-1
+héritait de 7 victoires, comme les 22 autres du deck. Le chiffre ne mesurait
+rien et il a été retiré, avec la requête `card_stats` qui ne servait qu'à lui.
+
+Les picks sont comptés sur **tous** les événements du périmètre, y compris ceux
+sans score enregistré — ils ont été pickés quand même. Un événement sealed ou un
+draft joué sans l'overlay n'a aucun pick en base.
 
 ## Trophées et BO3
 
@@ -256,6 +328,12 @@ le WR en parties. Un 2-1 en matchs peut cacher un 5-4 en parties.
   en Release GitHub — non fait.
 - Un match dont le draft est sorti de la fenêtre du log n'est rattaché à rien :
   en dessous de 60 % de recouvrement on préfère l'ignorer plutôt que de
-  l'attribuer au mauvais événement.
+  l'attribuer au mauvais événement. Le pool, lui, survit à la rotation du log
+  puisqu'il est rechargé depuis la base — seuls les drafts jamais synchronisés
+  une première fois sont définitivement perdus.
+- Une version de deck n'est ajoutée que si sa liste exacte n'existe pas déjà
+  pour l'événement. Comparer à la seule dernière version rejouerait tout
+  l'historique de build à chaque relance de la synchro. Contrepartie : un
+  rebuild qui revient exactement à une liste déjà jouée ne crée pas de version.
 - `ArenaDirect_Sealed` est traité comme du BO1 (seuil 7) faute de l'avoir
   vérifié — à corriger dans `TROPHY_WINS` si besoin.
