@@ -259,8 +259,15 @@ export function StatsView({ filters }: { filters: StatsFilterState }) {
             <table className="border-separate border-spacing-1 text-sm">
               <thead>
                 <tr>
-                  <th className="micro px-2 py-1 text-left text-ink-faint">
-                    Moi \ Adverse
+                  {/* Coin de matrice : chaque axe est nommé de son côté, la
+                      flèche pointe vers ce qu'il gouverne. */}
+                  <th className="px-2 py-1 align-bottom">
+                    <span className="micro block text-right text-ink-faint">
+                      Adverse →
+                    </span>
+                    <span className="micro mt-1 block text-left text-ink-faint">
+                      ↓ Moi
+                    </span>
                   </th>
                   {matchups.cols.map((col) => (
                     <th key={col} className="px-1 py-1">
@@ -353,7 +360,7 @@ function ArchetypeCard({ row, facing }: { row: ArchetypeRow; facing: boolean }) 
   const delta = !facing && row.metaWr != null ? row.winRate - row.metaWr : null
 
   return (
-    <div className="space-y-1.5 rounded-xl bg-paper-sunk px-3 py-2">
+    <div className="space-y-1.5 rounded-xl bg-brand-wash px-3 py-2">
       <div className="flex items-center gap-2">
         <ManaIcons colors={row.colors} size="sm" />
         <span className="text-xs font-extrabold">{row.colors}</span>

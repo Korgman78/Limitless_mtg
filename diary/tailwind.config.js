@@ -37,6 +37,7 @@ export default {
         // Marque : ton conservé, décliné pour chaque rôle
         brand: {
           DEFAULT: '#10B981', // remplissage plein (CTA, barres, jauges)
+          wash: '#EFF9F3', // lavis le plus pâle (blocs internes, listes)
           soft: '#DFF3E7', // lavis de surface (cartes héros)
           mid: '#A7E3C6', // état intermédiaire (heatmap, hover)
           ink: '#05614A', // texte/bordure verte sur lavis
