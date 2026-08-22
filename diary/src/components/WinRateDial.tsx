@@ -28,7 +28,14 @@ export function WinRateDial({
 
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[280px]">
-      <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
+      {/*
+        Le viewBox déborde du cercle : le curseur est centré SUR le rayon, sa
+        bille et son contour dépassent donc de ~5,5 unités. Sans cette marge il
+        se fait rogner à chaque fois qu'il croise un bord — soit à 0, 25, 50 et
+        75 %, précisément les valeurs qu'on regarde. Le centre reste à 50,50,
+        le texte superposé n'a pas à bouger.
+      */}
+      <svg viewBox="-6 -6 112 112" className="h-full w-full" aria-hidden>
         <circle cx={CX} cy={CY} r={R} fill="#FFFCF6" stroke="#141310" strokeWidth="2" />
 
         {/* Le secteur rempli. Au-delà de 99.9 % le path d'arc dégénère : on
