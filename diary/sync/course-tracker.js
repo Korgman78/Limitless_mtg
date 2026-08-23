@@ -4,20 +4,67 @@
  * Arena emet periodiquement une charge {"Courses":[...]} listant les evenements
  * en cours. Chaque course porte CurrentWins / CurrentLosses et CourseDeck.
  *
- * Deux pieges verifies sur un Player.log reel :
+ * Pieges verifies sur un Player.log reel :
  *
- *  1. CourseId n'est PAS le draftId. Aucun identifiant ne relie les deux, donc
- *     on rattache une course a un draft par le CONTENU : le deck construit est
- *     tire du pool drafte. Mesure sur un log reel, la bonne paire ressort a
- *     89-91 % de recouvrement contre 8-16 % pour les mauvaises — la separation
- *     est nette, d'ou le seuil a 60 %.
+ *  1. CourseId n'est PAS le draftId, et aucun identifiant ne relie les deux.
+ *     Le rattachement se fait donc par le CONTENU — mais par le POOL, pas par
+ *     le deck construit. La course transporte `CardPool` : les 42 cartes
+ *     draftees, exactement ce que la table diary_picks contient. Mesure sur un
+ *     log reel : 100 % de recouvrement pour la bonne paire, 62 % au maximum
+ *     pour les mauvaises.
+ *
+ *     Le deck construit ne sert plus que de repli. Il avait ete choisi en
+ *     premier lieu parce que les mauvaises paires y tombaient a 8-16 % — mais
+ *     c'etait mesure entre extensions differentes. Sur plusieurs drafts d'une
+ *     MEME extension, elles montent a 61-65 % : un deck de 18 cartes partage
+ *     trop de communes avec le pool du draft voisin. Un score s'est ainsi
+ *     recopie d'un evenement sur l'autre. Le pool complet, lui, garde une
+ *     separation franche.
  *
  *  2. Arena OMET le champ quand la valeur vaut zero : un evenement a 0-1 est
  *     logue avec CurrentWins absent. Toujours retomber sur 0, jamais sur null.
  */
 
+/** Recouvrement exige selon ce qu'on a pu comparer. */
+const POOL_THRESHOLD = 0.9; // CardPool vs picks : mesure 100 % contre 62 %
+const DECK_THRESHOLD = 0.8; // repli deck construit : mesure 89-94 % contre 61-65 %
+
+/** Conserve pour le rattachement des matchs, qui compare des cartes vues en jeu. */
 const MATCH_THRESHOLD = 0.6;
+
 const NEWLINE = String.fromCharCode(10);
+
+/**
+ * Regles d'arret par format. Un evenement qui les atteint est TERMINE : son
+ * score et ses matchs ne bougent plus, seuls les commentaires restent ouverts.
+ *
+ * En Traditional la course fait exactement 3 rondes, quel qu'en soit l'issue.
+ * En BO1 elle s'arrete a 7 victoires ou 3 defaites.
+ */
+const EVENT_LIMITS = {
+  TradDraft: { rounds: 3 },
+  TradSealed: { rounds: 3 },
+  PremierDraft: { maxWins: 7, maxLosses: 3 },
+  Sealed: { maxWins: 7, maxLosses: 3 },
+  ArenaDirect_Sealed: { maxWins: 7, maxLosses: 3 },
+};
+
+const DEFAULT_LIMITS = { maxWins: 7, maxLosses: 3 };
+
+/**
+ * L'evenement a-t-il atteint sa fin de course ?
+ *
+ * C'est le garde-fou de dernier recours : meme si un rattachement se trompe,
+ * il ne peut plus reecrire le resultat d'un evenement deja clos.
+ */
+function isEventSettled(format, wins, losses) {
+  const limits = EVENT_LIMITS[format] ?? DEFAULT_LIMITS;
+  const w = wins ?? 0;
+  const l = losses ?? 0;
+
+  if (limits.rounds) return w + l >= limits.rounds;
+  return w >= limits.maxWins || l >= limits.maxLosses;
+}
 
 /** Extrait les courses d'une ligne de log, ou null si ce n'en est pas une. */
 function parseCoursesLine(line) {
@@ -67,6 +114,11 @@ function sideboardEntries(course) {
   return readEntries(course?.CourseDeck?.Sideboard);
 }
 
+/** Les 42 cartes draftees, telles que la course les porte. */
+function cardPoolIds(course) {
+  return (course?.CardPool || []).map(Number).filter(Number.isFinite);
+}
+
 /**
  * Part du deck qui provient du pool drafte. Les terrains de base font
  * naturellement baisser le ratio : ils ne sont jamais dans le pool.
@@ -80,24 +132,72 @@ function poolOverlap(course, pickedArenaIds) {
 }
 
 /**
- * Choisit la course correspondant au pool passe, ou null si aucune ne franchit
- * le seuil (cas normal : le draft en cours n'a pas encore de deck soumis).
+ * Affinite d'une course avec un pool, et sur quelle base elle a ete mesuree.
+ *
+ * Le pool de la course est compare aux picks quand il est disponible : c'est
+ * une egalite d'ensembles, pas une ressemblance. Le deck ne sert que si Arena
+ * n'a pas encore emis `CardPool`.
  */
-function findMatchingCourse(courses, pickedArenaIds) {
-  let best = null;
-  let bestScore = 0;
+function courseAffinity(course, pickedArenaIds) {
+  if (!pickedArenaIds?.size) return { overlap: 0, threshold: 1, basis: 'aucune' };
+
+  const ids = cardPoolIds(course);
+  if (ids.length) {
+    const hits = ids.filter((id) => pickedArenaIds.has(id)).length;
+    return { overlap: hits / ids.length, threshold: POOL_THRESHOLD, basis: 'pool' };
+  }
+
+  return {
+    overlap: poolOverlap(course, pickedArenaIds),
+    threshold: DECK_THRESHOLD,
+    basis: 'deck',
+  };
+}
+
+/**
+ * Rattache les courses aux pools, EXCLUSIVEMENT : une course va a un seul
+ * evenement, un evenement recoit une seule course.
+ *
+ * `pools` : Map(eventId -> Set(arenaId)). Plusieurs drafts peuvent etre en
+ * cours en meme temps — Arena laisse finir les matchs d’un draft apres en avoir
+ * commence un autre — et le draft courant n’est pas forcement celui que le log
+ * en cours decrit : apres une rotation du Player.log, les picks ont disparu du
+ * fichier alors que la course, elle, est toujours emise. On resout donc contre
+ * TOUS les pools, sans privilegier le draft de la session.
+ *
+ * L'attribution est globale et gloutonne : on classe toutes les paires
+ * candidates par affinite decroissante et on consomme les deux cotes. Sans
+ * cette exclusivite, deux courses pouvaient revendiquer le meme pool, ou une
+ * course se poser sur un pool qu'une autre decrivait bien mieux.
+ */
+function matchCoursesToPools(courses, pools) {
+  const candidates = [];
 
   for (const course of courses) {
     if (!isLimitedCourse(course)) continue;
 
-    const overlap = poolOverlap(course, pickedArenaIds);
-    if (overlap > bestScore) {
-      bestScore = overlap;
-      best = course;
+    for (const [eventId, pool] of pools) {
+      const { overlap, threshold, basis } = courseAffinity(course, pool);
+      if (overlap >= threshold) {
+        candidates.push({ eventId, course, overlap, basis });
+      }
     }
   }
 
-  return bestScore >= MATCH_THRESHOLD ? { course: best, overlap: bestScore } : null;
+  candidates.sort((a, b) => b.overlap - a.overlap);
+
+  const usedCourses = new Set();
+  const usedEvents = new Set();
+  const matches = [];
+
+  for (const candidate of candidates) {
+    if (usedCourses.has(candidate.course) || usedEvents.has(candidate.eventId)) continue;
+    usedCourses.add(candidate.course);
+    usedEvents.add(candidate.eventId);
+    matches.push(candidate);
+  }
+
+  return matches;
 }
 
 /**
@@ -134,12 +234,17 @@ async function toMtgaExport(course, resolveName) {
 
 module.exports = {
   MATCH_THRESHOLD,
+  POOL_THRESHOLD,
+  DECK_THRESHOLD,
   parseCoursesLine,
   isLimitedCourse,
+  isEventSettled,
   readScore,
   deckEntries,
   sideboardEntries,
+  cardPoolIds,
   poolOverlap,
-  findMatchingCourse,
+  courseAffinity,
+  matchCoursesToPools,
   toMtgaExport,
 };

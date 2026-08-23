@@ -1,6 +1,11 @@
 // fetch global (Node 18+, Electron 28+) : aucune dependance externe, ce qui
 // permet de lancer la synchro avec un `node` nu, sans installer quoi que ce soit.
-const { findMatchingCourse, readScore, toMtgaExport } = require('./course-tracker');
+const {
+  isEventSettled,
+  matchCoursesToPools,
+  readScore,
+  toMtgaExport,
+} = require('./course-tracker');
 const { resolveMatch } = require('./match-tracker');
 
 /**
@@ -41,9 +46,72 @@ class DiaryCollector {
     // seul draft courant rattacherait ces matchs au mauvais evenement.
     this.pools = new Map();
 
-    // Derniers etats ecrits, pour n'ecrire que sur changement reel.
-    this.lastDeckText = null;
-    this.lastScore = null;
+    // eventId -> set_code, pour resoudre les noms de cartes d'un draft dont
+    // le log ne parle plus (rotation du Player.log : plus de draft-start, donc
+    // plus de set courant cote parser).
+    this.eventSets = new Map();
+
+    // eventId -> {format, wins, losses, matchCount}. Sert au verrou de fin de
+    // course : un evenement termine n'accepte plus ni score, ni deck, ni match.
+    // Sans cet etat il faudrait relire la base a chaque charge de course, qu'
+    // Arena reemet plusieurs fois par minute.
+    this.eventState = new Map();
+
+    // Derniers etats ecrits PAR EVENEMENT, pour n'ecrire que sur changement
+    // reel. Par evenement et non global : plusieurs drafts peuvent avancer en
+    // parallele, un seul compteur les ferait s'ecraser l'un l'autre.
+    this.lastDeckText = new Map();
+    this.lastScore = new Map();
+  }
+
+  /**
+   * Recharge les pools drafts depuis la base.
+   *
+   * Sans ca, le rattachement des courses et des matchs depend entierement de ce
+   * que le Player.log courant contient. Or Arena fait tourner son log a chaque
+   * redemarrage : le draft d'hier soir — voire de l'heure precedente — n'y a
+   * plus ni draft-start ni picks, et tout ce qui suit (score, deck, matchs)
+   * cesse silencieusement de remonter. La base, elle, garde les picks.
+   */
+  async rehydratePools(limit = 12) {
+    if (!this.enabled) return 0;
+
+    try {
+      const events = await this.request(
+        'diary_events?select=id,set_code,format,wins,losses,' +
+          'diary_picks(picked_arena_id),diary_matches(match_id),diary_deck_versions(id)' +
+          '&deleted_at=is.null&event_type=eq.draft' +
+          `&order=created_at.desc&limit=${limit}`,
+      );
+
+      let loaded = 0;
+      for (const event of events ?? []) {
+        // L'etat est memorise meme sans picks : c'est lui qui protege un
+        // evenement termine, y compris quand son pool n'est plus rechargeable.
+        this.eventState.set(event.id, {
+          format: event.format,
+          wins: event.wins ?? 0,
+          losses: event.losses ?? 0,
+          matchCount: (event.diary_matches ?? []).length,
+          deckCount: (event.diary_deck_versions ?? []).length,
+        });
+
+        const ids = (event.diary_picks ?? [])
+          .map((p) => p.picked_arena_id)
+          .filter(Boolean);
+        if (!ids.length) continue;
+
+        this.pools.set(event.id, new Set(ids));
+        if (event.set_code) this.eventSets.set(event.id, event.set_code);
+        loaded += 1;
+      }
+
+      console.log(`[Diary] ${loaded} pool(s) recharges depuis la base`);
+      return loaded;
+    } catch (err) {
+      console.error('[Diary] Rechargement des pools impossible:', err.message);
+      return 0;
+    }
   }
 
   get headers() {
@@ -75,17 +143,31 @@ class DiaryCollector {
     // Nouveau Set plutot que clear() : this.pools garde une reference vers
     // celui du draft precedent, le vider effacerait son pool.
     this.pickedArenaIds = new Set();
-    this.lastDeckText = null;
-    this.lastScore = null;
 
     try {
       const existing = await this.request(
-        `diary_events?draft_id=eq.${encodeURIComponent(draftId)}&select=id`,
+        `diary_events?draft_id=eq.${encodeURIComponent(draftId)}` +
+          '&select=id,format,wins,losses,diary_matches(match_id),diary_deck_versions(id)',
       );
 
       if (existing?.length) {
         this.eventId = existing[0].id;
+        this.eventState.set(this.eventId, {
+          format: existing[0].format,
+          wins: existing[0].wins ?? 0,
+          losses: existing[0].losses ?? 0,
+          matchCount: (existing[0].diary_matches ?? []).length,
+          deckCount: (existing[0].diary_deck_versions ?? []).length,
+        });
+        // Le pool rechargé depuis la base reste la reference : les picks rejoues
+        // viennent s'y ajouter au lieu de repartir d'un ensemble vide, sinon un
+        // rejeu partiel du log retrecirait le pool en cours de route.
+        const known = this.pools.get(this.eventId);
+        if (known) {
+          for (const id of known) this.pickedArenaIds.add(id);
+        }
         this.pools.set(this.eventId, this.pickedArenaIds);
+        if (setCode) this.eventSets.set(this.eventId, setCode);
         console.log('[Diary] Draft déjà au journal, reprise:', this.eventId);
         return;
       }
@@ -103,7 +185,17 @@ class DiaryCollector {
       });
 
       this.eventId = created?.[0]?.id ?? null;
-      if (this.eventId) this.pools.set(this.eventId, this.pickedArenaIds);
+      if (this.eventId) {
+        this.pools.set(this.eventId, this.pickedArenaIds);
+        if (setCode) this.eventSets.set(this.eventId, setCode);
+        this.eventState.set(this.eventId, {
+          format: format || 'PremierDraft',
+          wins: 0,
+          losses: 0,
+          matchCount: 0,
+          deckCount: 0,
+        });
+      }
       console.log('[Diary] Événement créé:', this.eventId, setCode, format);
     } catch (err) {
       console.error('[Diary] Création événement impossible:', err.message);
@@ -180,42 +272,94 @@ class DiaryCollector {
    * reemet la meme charge plusieurs fois par minute.
    */
   async onCoursesUpdate(courses) {
-    if (!this.enabled || !this.eventId || !this.pickedArenaIds.size) return;
+    if (!this.enabled || !this.pools.size) return;
 
-    const matched = findMatchingCourse(courses, this.pickedArenaIds);
-    if (!matched) return;
-
-    try {
-      const { wins, losses } = readScore(matched.course);
-      const scoreKey = `${wins}-${losses}`;
-
-      if (scoreKey !== this.lastScore) {
-        await this.request(`diary_events?id=eq.${this.eventId}`, {
-          method: 'PATCH',
-          headers: { ...this.headers, Prefer: 'return=minimal' },
-          body: JSON.stringify({ wins, losses }),
-        });
-        this.lastScore = scoreKey;
-        console.log(`[Diary] Score mis a jour: ${scoreKey}`);
+    // Tous les pools, pas seulement le draft de la session : apres une rotation
+    // du Player.log le draft en cours n'a plus de picks dans le fichier, alors
+    // que sa course continue d'y passer. Se limiter au draft courant revenait a
+    // ne plus rien enregistrer du tout jusqu'au draft suivant.
+    for (const { eventId, course } of matchCoursesToPools(courses, this.pools)) {
+      try {
+        await this.applyCourse(eventId, course);
+      } catch (err) {
+        console.error('[Diary] Mise a jour course impossible:', err.message);
       }
-
-      const { text, skipped, resolved } = await toMtgaExport(
-        matched.course,
-        (arenaId) => this.resolveDeckCard(arenaId),
-      );
-
-      if (resolved > 0 && text !== this.lastDeckText) {
-        await this.saveDeckVersion(text, skipped);
-        this.lastDeckText = text;
-      }
-    } catch (err) {
-      console.error('[Diary] Mise a jour course impossible:', err.message);
     }
   }
 
-  /** Nom d'une carte du deck : card_list d'abord, terrains de base ensuite. */
-  async resolveDeckCard(arenaId) {
-    const name = await this.resolveCardName(arenaId);
+  /**
+   * Un evenement dont la course est allee au bout ne bouge plus.
+   *
+   * C'est le garde-fou de dernier recours, independant du rattachement : meme
+   * si une course se posait sur le mauvais draft, elle ne pourrait plus en
+   * reecrire le resultat. Seuls les commentaires restent modifiables, et ils
+   * passent par le front, pas par ici.
+   */
+  isSettled(eventId) {
+    const state = this.eventState.get(eventId);
+    if (!state) return false;
+    return isEventSettled(state.format, state.wins, state.losses);
+  }
+
+  /** Score et deck d'une course deja rattachee a son evenement. */
+  async applyCourse(eventId, course) {
+    const { wins, losses } = readScore(course);
+    const scoreKey = `${wins}-${losses}`;
+    const state = this.eventState.get(eventId);
+    const settled = this.isSettled(eventId);
+
+    // Un score identique n'est pas un conflit : Arena reemet la meme charge en
+    // boucle. On ne signale que les tentatives de CHANGEMENT sur un evenement
+    // clos — c'est exactement la trace qu'un rattachement a derape.
+    if (settled && (state.wins !== wins || state.losses !== losses)) {
+      console.warn(
+        `[Diary] Evenement ${eventId.slice(0, 8)} deja termine ` +
+          `(${state.wins}-${state.losses}) : score ${scoreKey} ignore`,
+      );
+      return;
+    }
+
+    if (!settled && scoreKey !== this.lastScore.get(eventId)) {
+      await this.request(`diary_events?id=eq.${eventId}`, {
+        method: 'PATCH',
+        headers: { ...this.headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ wins, losses }),
+      });
+      this.lastScore.set(eventId, scoreKey);
+      if (state) {
+        state.wins = wins;
+        state.losses = losses;
+      }
+      console.log(`[Diary] Score mis a jour: ${scoreKey}`);
+    }
+
+    // Un evenement clos ne change plus de deck — sauf s'il n'en a aucun. Ce
+    // cas arrive au rattrapage : un draft synchronise pour la premiere fois
+    // apres coup est deja termine, le verrouiller sans exception le priverait
+    // definitivement de sa decklist.
+    const mayWriteDeck = !settled || (state ? state.deckCount === 0 : true);
+    if (!mayWriteDeck) return;
+
+    const { text, skipped, resolved } = await toMtgaExport(course, (arenaId) =>
+      this.resolveDeckCard(arenaId, eventId),
+    );
+
+    if (resolved > 0 && text !== this.lastDeckText.get(eventId)) {
+      await this.saveDeckVersion(eventId, text, skipped);
+      this.lastDeckText.set(eventId, text);
+      if (state) state.deckCount += 1;
+    }
+  }
+
+  /**
+   * Nom d'une carte du deck : card_list d'abord, terrains de base ensuite.
+   *
+   * Le set vient de l'evenement quand on le connait, et non du draft courant :
+   * apres une rotation du log il n'y a plus de draft courant, et sans set aucun
+   * nom ne se resout — le deck ne serait jamais enregistre.
+   */
+  async resolveDeckCard(arenaId, eventId) {
+    const name = await this.resolveCardName(arenaId, this.eventSets.get(eventId));
     return name ?? this.basicLandIds.get(arenaId) ?? null;
   }
 
@@ -226,14 +370,20 @@ class DiaryCollector {
    * session : sans ca, chaque relance de la synchro reecrirait une version
    * identique et l'historique se remplirait de doublons.
    */
-  async saveDeckVersion(decklistRaw, skipped) {
+  async saveDeckVersion(eventId, decklistRaw, skipped) {
     const existing = await this.request(
-      `diary_deck_versions?event_id=eq.${this.eventId}` +
-        '&select=version_no,decklist_raw&order=version_no.desc&limit=1',
+      `diary_deck_versions?event_id=eq.${eventId}` +
+        '&select=version_no,decklist_raw&order=version_no.desc',
     );
 
-    if (existing?.[0]?.decklist_raw === decklistRaw) {
-      console.log('[Diary] Deck inchange, aucune version ajoutee');
+    // Comparaison a TOUTES les versions, pas seulement a la derniere : un rejeu
+    // du log repasse par tout l'historique de build (A, B, C), et comparer a la
+    // seule derniere version rajouterait A, B, C a la suite de C a chaque
+    // relance. Le prix : un rebuild qui revient exactement a une liste deja
+    // jouee ne cree pas de nouvelle version. C'est le bon compromis, la synchro
+    // etant faite pour etre relancee.
+    if ((existing ?? []).some((v) => v.decklist_raw === decklistRaw)) {
+      console.log('[Diary] Deck deja enregistre, aucune version ajoutee');
       return;
     }
 
@@ -243,7 +393,7 @@ class DiaryCollector {
       method: 'POST',
       headers: { ...this.headers, Prefer: 'return=minimal' },
       body: JSON.stringify({
-        event_id: this.eventId,
+        event_id: eventId,
         version_no: versionNo,
         label: versionNo === 1 ? 'Build initial' : `Rebuild ${versionNo - 1}`,
         decklist_raw: decklistRaw,
@@ -270,6 +420,24 @@ class DiaryCollector {
       console.log(
         `[Diary] Match ${String(match.matchId).slice(0, 8)} non rattache ` +
           '(draft hors du log ?)',
+      );
+      return;
+    }
+
+    // Un evenement clos n'accueille plus de match — mais seulement une fois
+    // qu'il a les siens. Le score final arrive parfois avant le dernier match :
+    // verrouiller sur le seul etat "termine" lui ferait perdre sa propre
+    // derniere ronde.
+    const state = this.eventState.get(resolved.eventId);
+    if (
+      state &&
+      this.isSettled(resolved.eventId) &&
+      state.matchCount >= state.wins + state.losses
+    ) {
+      console.warn(
+        `[Diary] Evenement ${resolved.eventId.slice(0, 8)} deja termine ` +
+          `et complet (${state.matchCount} matchs) : match ` +
+          `${String(match.matchId).slice(0, 8)} ignore`,
       );
       return;
     }
@@ -301,6 +469,8 @@ class DiaryCollector {
         }),
       });
 
+      if (state && matchNumber) state.matchCount = matchNumber;
+
       console.log(
         `[Diary] Match ${resolved.won ? 'gagne' : 'perdu'} ` +
           `${resolved.gamesWon}-${resolved.gamesLost} vs ` +
@@ -318,8 +488,8 @@ class DiaryCollector {
     // Nouveau Set plutot que clear() : this.pools garde une reference vers
     // celui du draft precedent, le vider effacerait son pool.
     this.pickedArenaIds = new Set();
-    this.lastDeckText = null;
-    this.lastScore = null;
+    this.lastDeckText.clear();
+    this.lastScore.clear();
   }
 
   async request(path, options = {}) {

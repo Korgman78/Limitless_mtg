@@ -74,6 +74,27 @@ function findLogPath(override) {
   return found;
 }
 
+/**
+ * Logs a rejouer, du plus ancien au plus recent.
+ *
+ * Arena fait tourner son log a chaque redemarrage : le fichier courant repart
+ * de zero et l'ancien devient Player-prev.log. Un draft joue avant le dernier
+ * lancement n'a donc plus ni draft-start ni picks dans Player.log, alors que sa
+ * course et ses matchs, eux, continuent d'y passer. Rejouer les deux fichiers
+ * dans l'ordre reconstruit le pool avant d'arriver au log courant.
+ *
+ * L'ecriture etant idempotente, repasser sur du deja-synchronise ne coute que
+ * du temps de lecture.
+ */
+function findLogPaths(override) {
+  if (override) return [override];
+
+  const current = findLogPath();
+  const previous = path.join(path.dirname(current), 'Player-prev.log');
+
+  return fs.existsSync(previous) ? [previous, current] : [current];
+}
+
 // ─── Resolution des noms de cartes ───────────────────────────────────────────
 
 async function loadCardMeta(url, key, setCode) {
@@ -102,12 +123,14 @@ async function main() {
   const { url, key } = readEnv();
   const args = process.argv.slice(2);
   const watch = args.includes('--watch');
-  const logPath = findLogPath(args.find((a) => !a.startsWith('--')));
+  const logPaths = findLogPaths(args.find((a) => !a.startsWith('--')));
+  const logPath = logPaths[logPaths.length - 1];
 
-  console.log(`Log   : ${logPath}`);
-  const content = fs.readFileSync(logPath, 'utf8');
-  const lines = content.split('\n');
+  for (const p of logPaths) console.log(`Log   : ${p}`);
 
+  // Le parser surveille le log COURANT ; les fichiers precedents ne sont que
+  // rejoues, ligne par ligne, dans la meme instance pour que l'etat de draft
+  // (set courant, pack en cours) traverse la rotation.
   const parser = new LogParser(logPath);
 
   // Les noms de cartes dependent du set, connu seulement apres le premier
@@ -130,6 +153,11 @@ async function main() {
     resolveCardName,
     basicLandIds,
   });
+
+  // Les pools drafts viennent de la base avant toute lecture : c'est ce qui
+  // permet de rattacher une course ou un match a un draft que plus aucun log
+  // ne decrit.
+  await collector.rehydratePools();
 
   // Le parser emet en synchrone alors que le collecteur ecrit en asynchrone :
   // on met les taches en file pour les executer dans l'ordre du log.
@@ -210,9 +238,11 @@ async function main() {
     }
   };
 
-  for (const line of lines) {
-    parser.parseLine(line);
-    feedMatchLine(line);
+  for (const file of logPaths) {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      parser.parseLine(line);
+      feedMatchLine(line);
+    }
   }
 
   console.log = chatty;

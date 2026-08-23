@@ -164,9 +164,19 @@ de traiter l'écart 17Lands comme une mesure.
 - `DraftStatus`/`Complete` **n'apparaît jamais** → l'événement `draft-end` ne se
   déclenche pas. D'où l'écriture au fil de l'eau, un upsert par pick.
 - Le score et le deck construit vivent dans une charge `{"Courses":[...]}`, pas
-  dans les événements de draft. **`CourseId` n'est pas le `draftId`** : le
-  rattachement se fait par recouvrement du deck avec le pool drafté (89-91 %
-  pour la bonne paire contre 8-16 %, seuil à 60 %).
+  dans les événements de draft. **`CourseId` n'est pas le `draftId`**, et aucun
+  identifiant ne relie les deux.
+- **La course porte `CardPool` : les 42 cartes draftées.** C'est le champ qui
+  rattache une course à son draft, par égalité d'ensembles avec `diary_picks` —
+  mesuré sur log réel : **100 % pour la bonne paire, 62 % au maximum pour les
+  mauvaises**. Seuil à 90 %.
+  Le rattachement se faisait auparavant par le **deck construit**, avec un seuil
+  à 60 % justifié par un écart de 89-91 % contre 8-16 %. Ce chiffre avait été
+  mesuré **entre extensions différentes**. Sur plusieurs drafts d'une même
+  extension, les mauvaises paires montent à **61-65 %** : un deck de 18 cartes
+  partage trop de communes avec le pool du draft voisin. Le seuil a été franchi
+  pour de bon et un score s'est recopié d'un événement sur l'autre, avec trois
+  versions de deck. Le deck ne sert plus que de repli, à 80 %.
 - Arena **omet le champ quand la valeur vaut 0** : un 0-1 est logué avec
   `CurrentWins` absent.
 - Les matchs vivent dans `matchGameRoomStateChangedEvent` :
@@ -260,6 +270,32 @@ reste du pool drafté — le collecteur l'écrit depuis `CourseDeck.Sideboard`.
 Le rendu est propre au diary : le panneau vit dans une carte d'événement, pas
 dans une modale plein écran comme Test my deck. Seule la présentation diffère,
 les seuils (55 solide, 72 trophée) et les pondérations sont ceux de Limitless.
+
+## Un événement terminé ne bouge plus
+
+Dès qu'une course atteint sa fin — 3 rondes en Traditional, 7 victoires ou
+3 défaites en BO1 — le collecteur **refuse toute écriture** de score, de deck ou
+de match sur cet événement. Les commentaires, eux, restent modifiables : ils
+passent par le front, jamais par la synchro.
+
+C'est un garde-fou de dernier recours, volontairement indépendant du
+rattachement : même si une course se posait un jour sur le mauvais draft, elle
+ne pourrait plus en réécrire le résultat. Une tentative est journalisée en
+`console.warn` — c'est la trace qui dirait qu'un rattachement a dérapé.
+
+Deux exceptions, sans lesquelles le verrou casserait des cas légitimes :
+
+- **Un événement clos sans aucun deck accepte encore le sien.** Un draft
+  synchronisé pour la première fois après coup est déjà terminé ; le verrouiller
+  sans réserve le priverait définitivement de sa decklist.
+- **Un événement clos accepte ses matchs tant qu'il n'en a pas `wins + losses`.**
+  Le score final arrive parfois avant le dernier match : verrouiller sur le seul
+  état « terminé » lui ferait perdre sa propre dernière ronde.
+
+L'attribution des courses est par ailleurs **exclusive** : une course va à un
+seul événement, un événement reçoit une seule course. Les paires candidates sont
+classées par affinité décroissante et les deux côtés sont consommés. Sans ça,
+deux courses pouvaient revendiquer le même pool.
 
 ## Archétypes : deux règles, volontairement différentes
 
