@@ -112,7 +112,7 @@ diary/
         ├── Sidebar.tsx        # colonne de gauche + blocs contextuels
         ├── ui.tsx             # CardTitle, ErrorBox — partagés par les vues
         ├── DiaryView.tsx      # onglet Journal : bilan + flux d'entrées
-        ├── WinRateDial.tsx    # cadran de WR (0-100 % sur un tour complet)
+        ├── WinRateMeter.tsx   # jauge de WR, repère d'encre à 50 %
         ├── ActivityGrid.tsx   # heatmap d'assiduité, 14 semaines
         ├── StatsView.tsx      # onglet Statistiques
         ├── StatsFilters.tsx   # filtres de périmètre, rendus dans la sidebar
@@ -230,10 +230,16 @@ bordée comme le reste, plutôt que de redessiner un composant partagé.
 crème perdrait en lisibilité ce qu'elle gagnerait en cohérence. Le seuil 50 %
 est en pointillés — un seuil n'est pas une grille.
 
-Dans le cadran (`WinRateDial`), l'échelle 0–100 % tombe juste sur un tour
-complet : **50 % est exactement le demi-tour**, le seuil de rentabilité se lit
-sans annotation. Son `viewBox` déborde volontairement du cercle : le curseur est
-centré *sur* le rayon, sans marge il se fait rogner à 0, 25, 50 et 75 %.
+L'indicateur de win rate (`WinRateMeter`) est une **jauge linéaire**, pas un
+cadran. Un taux se place sur un segment borné, il ne tourne pas : un cadran
+gradué suggère un cycle, donc que 100 % reboucle sur 0. Le seul repère est le
+trait d'encre à 50 %, au milieu exact de l'échelle — au-dessus tu gagnes, en
+dessous tu perds, et ça se lit sans légende.
+
+Sous la jauge, la **bande de forme** aligne les dix derniers scores du plus
+ancien au plus récent, teintés par `scoreTone()`. Le taux global lisse tout ;
+la suite des scores dit ce qu'il cache — une remontée, un creux, ou de
+l'irrégularité.
 
 ## Score du deck
 

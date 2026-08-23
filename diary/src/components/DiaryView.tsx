@@ -9,10 +9,10 @@ import {
   useSaveNote,
   useUpdateEvent,
 } from '../queries/useDiaryMutations'
-import { trophyThreshold } from '../constants'
+import { FORMAT_LABELS, scoreTone, trophyThreshold } from '../constants'
 import { EventCard } from './EventCard'
 import { NewEventForm } from './NewEventForm'
-import { WinRateDial } from './WinRateDial'
+import { WinRateMeter } from './WinRateMeter'
 import { ActivityGrid } from './ActivityGrid'
 import { CardTitle, ErrorBox } from './ui'
 
@@ -58,6 +58,10 @@ export function DiaryView({
   const winRate = wins + losses > 0 ? (wins / (wins + losses)) * 100 : null
   const trophies = played.filter((e) => e.wins >= trophyThreshold(e.format)).length
 
+  // Bande de forme : les dix derniers, du plus ancien au plus récent. Le
+  // journal arrive antichronologique, on le remet dans le sens de la lecture.
+  const form = [...played].reverse().slice(-10)
+
   return (
     <div className="space-y-5">
       {setsError && <ErrorBox error={setsError} />}
@@ -94,7 +98,31 @@ export function DiaryView({
             </span>
           </div>
 
-          <WinRateDial winRate={winRate} wins={wins} losses={losses} />
+          <WinRateMeter winRate={winRate} wins={wins} losses={losses} />
+
+          {/* Le taux global lisse tout. La suite des scores dit ce qu'il cache :
+              une remontée, un creux, ou de l'irrégularité. */}
+          {form.length > 0 && (
+            <div className="space-y-2 border-t-2 border-dashed border-brand-ink/30 pt-3.5">
+              <span className="micro block text-brand-ink">Derniers événements</span>
+              <div className="flex flex-wrap gap-1.5">
+                {form.map((event) => (
+                  <span
+                    key={event.id}
+                    title={`${FORMAT_LABELS[event.format] ?? event.format} · ${new Date(
+                      event.played_at,
+                    ).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}`}
+                    className={`rounded-lg border-2 border-ink px-2 py-1 font-display text-sm font-black tabular-nums ${scoreTone(
+                      event.wins,
+                      event.format,
+                    )}`}
+                  >
+                    {event.wins}-{event.losses}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <p className="micro text-center text-brand-ink">
             {played.length} événement{played.length > 1 ? 's' : ''} joué

@@ -68,19 +68,6 @@ export function Sidebar({
         <div className="min-h-0 flex-1 overflow-y-auto lg:pr-1">{children}</div>
       )}
 
-      {/* Signature : la déclinaison du vert, du lavis au plein. Décoratif, mais
-          il documente la palette à l'endroit où on la regarde. */}
-      <div className="hidden border-t-2 border-dashed border-ink/25 pt-3 lg:flex lg:items-center lg:gap-2">
-        <span className="micro text-ink-faint">Accent</span>
-        <span className="ml-auto flex gap-1">
-          {['bg-brand-soft', 'bg-brand-mid', 'bg-brand', 'bg-brand-ink'].map((tone) => (
-            <span
-              key={tone}
-              className={`h-5 w-5 rounded-md border-2 border-ink ${tone}`}
-            />
-          ))}
-        </span>
-      </div>
     </aside>
   )
 }

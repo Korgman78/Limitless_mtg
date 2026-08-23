@@ -4,7 +4,7 @@ import {
   FORMAT_LABELS,
   SECTIONS_BY_TYPE,
   isBestOfThree,
-  trophyThreshold,
+  scoreTone,
 } from '../constants'
 import type { DiaryEventDetail } from '../types'
 import { DeckPanel } from './DeckPanel'
@@ -49,7 +49,7 @@ export function EventCard({
         <Score
           wins={event.wins}
           losses={event.losses}
-          trophyAt={trophyThreshold(event.format)}
+          format={event.format}
           onSave={(w, l) => onUpdateScore(event.id, w, l)}
         />
 
@@ -177,30 +177,16 @@ export function EventCard({
 function Score({
   wins,
   losses,
-  trophyAt,
+  format,
   onSave,
 }: {
   wins: number
   losses: number
-  /** Victoires valant trophée pour ce format : 3 en BO3, 7 en BO1. */
-  trophyAt: number
+  format: string
   onSave: (wins: number, losses: number) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ wins, losses })
-
-  // Le ton se calcule EN PROPORTION du seuil du format : un 3-0 en Traditional
-  // est un trophée, pas un score moyen. Sur papier, ce sont des aplats pleins
-  // bordés d'encre — le chiffre reste lisible dans tous les cas.
-  const ratio = trophyAt > 0 ? wins / trophyAt : 0
-  const tone =
-    ratio >= 1
-      ? 'bg-trophy text-white'
-      : ratio >= 0.66
-        ? 'bg-brand text-ink'
-        : ratio >= 0.4
-          ? 'bg-warn text-ink'
-          : 'bg-loss-soft text-ink'
 
   const commit = async () => {
     setEditing(false)
@@ -250,7 +236,7 @@ function Score({
         setEditing(true)
       }}
       title="Modifier le score"
-      className={`flex h-14 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-ink font-display text-xl font-black shadow-brut-sm transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${tone}`}
+      className={`flex h-14 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-ink font-display text-xl font-black shadow-brut-sm transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${scoreTone(wins, format)}`}
     >
       {wins}-{losses}
     </button>
