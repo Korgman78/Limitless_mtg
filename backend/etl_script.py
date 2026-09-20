@@ -17,10 +17,10 @@ END_DATE = date.today().strftime("%Y-%m-%d")
 
 # ✅ VARIABLE DE CIBLAGE (liste de codes, ou liste vide pour tous les sets actifs)
 # ⚠️ Ce script croise TARGET_SET_CODES avec les sets `active=true` de Supabase :
-# un set listé ici mais inactif est ignoré (warning). HOB reste donc inerte
+# un set listé ici mais inactif est ignoré (warning). FRA reste donc inerte
 # jusqu'au passage en actif ; comme chaque run refetch toute la fenêtre depuis
 # `start_date`, le 1er run après activation rattrape l'historique complet.
-TARGET_SET_CODES = ["HOB"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
+TARGET_SET_CODES = ["HOB", "FRA"]  # Ex: ["TLA", "FDN", "DSK"] ou [] pour tous
 
 ALL_FORMATS = ["PremierDraft", "TradDraft", "Sealed", "ArenaDirect_Sealed"]
 

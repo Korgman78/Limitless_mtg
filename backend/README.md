@@ -33,6 +33,8 @@ Un fichier par extension. Run apres `enrich_card_tags.py` pour corriger faux pos
 | Script | Description |
 |--------|-------------|
 | `correct_sos_tags.py` | Corrections pour SOS (Secrets of Strixhaven) |
+| `correct_soa_tags.py` | Corrections pour SOA (Mystical Archives, bonus sheet de SOS) |
+| `correct_fra_tags.py` | Corrections pour FRA (Reality Fracture) : mecaniques `planeswalker` / `threshold` / `prepared`, faux positifs removal |
 
 ## Sealed Optimizer (`sealed-optimizer/`)
 

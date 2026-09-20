@@ -16,7 +16,7 @@ from pathlib import Path
 # ==============================================================================
 
 # ✅ VARIABLE DE CIBLAGE (peut être overridé par argument CLI)
-TARGET_SET = "HOB"
+TARGET_SET = "FRA"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent

@@ -10,7 +10,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "HOB"
+TARGET_SET = "FRA"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -86,6 +86,13 @@ EXCLUDED_DEPENDENCY_WORDS = {
     # Extra false positives caught in testing
     'among', 'enchant', 'those', 'nontoken', 'attacking', 'ability', 'them',
     'elk', 'worm', 'shapeshifter', 'copy', 'rest', 'chosen', 'number',
+    # Conjonctions / quantificateurs captures sur FRA (Reality Fracture) :
+    # « seven or more cards », « Then creatures you control... », « for each
+    # different power », « a creature an opponent controls », « players can't
+    # cast spells », « put a charge counter », « a Plains you control ».
+    'more', 'then', 'different', 'opponent', 'cast', 'charge', 'plain',
+    # Supertype, pas un type de creature (« return target legendary card »)
+    'legendary',
 }
 
 TOKEN_COUNT_WORDS = {

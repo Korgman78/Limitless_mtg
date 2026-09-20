@@ -10,7 +10,7 @@ from pathlib import Path
 # ==============================================================================
 
 # ✅ VARIABLE DE CIBLAGE
-TARGET_SET = "HOB"
+TARGET_SET = "FRA"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent

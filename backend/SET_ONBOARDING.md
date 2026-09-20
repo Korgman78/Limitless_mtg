@@ -1,8 +1,8 @@
 # Onboarding d'un nouveau set
 
 Runbook pour ajouter une extension à Limitless MTG. Reconstitué depuis les
-configs réelles — à suivre dans l'ordre. Exemple courant : **MSH — Marvel Super
-Heroes**, sortie Arena le 2026-06-23.
+configs réelles — à suivre dans l'ordre. Dernier set onboardé : **FRA — Reality
+Fracture**, sortie Arena le 2026-09-29 (cf. section en bas).
 
 ## Comment l'app gère les sets (à savoir avant de commencer)
 - L'app liste les sets de la table Supabase **`sets`** où `active=true`, **moins**
@@ -201,6 +201,92 @@ puis `enrich_card_tags.py` (26 removal, 22 producteurs de mana, 50 support tags)
   Ça supprime 93 appels 17Lands/jour à vide, et surtout ça fige son
   `win_rate_history` : `daily_etl` continue sinon d'y empiler des valeurs
   identiques, qui aplatissent la sparkline en trois semaines.
+
+---
+
+## Cas concret — FRA (Reality Fracture), sortie Arena 2026-09-29
+
+Onboarding préparé le 2026-09-20 (J-9).
+
+Vérifications faites le 2026-09-20 :
+- Code **`FRA`** confirmé des deux côtés — Scryfall (`code: fra`,
+  `arena_code: fra`, « Reality Fracture », 2026-10-02 en papier) et 17Lands
+  (`FRA` déjà listé dans `https://www.17lands.com/data/expansions`,
+  `card_ratings` renvoie `[]`, normal avant la sortie).
+  ⚠️ Le set s'appelle « Reality Fractur**e** », pas « Reality Fractured ».
+- **Pas de bonus sheet à rattacher.** Les sets enfants sont `tfra` / `tfrc`
+  (tokens) et `frc` « Reality Fracture Commander » (`set_type: commander`,
+  hors boosters de draft). `fetch_bonus_sheet_codes` ne retient que
+  `masterpiece`/`bonus` → rien à faire, même schéma que HOB et TLA.
+- **Spoiler complet** : 461 prints, collector numbers **1→461 sans aucun trou**.
+  La requête du script (`q=set:fra`, dédoublonnée par carte) ramène
+  **285 cartes** — 86C / 109U / 64R / 26M —, du même ordre que MSH (281 en base)
+  et TLA (286).
+
+Fait dans le code (commit du 2026-09-20) :
+- `FRA` ajouté à côté de `HOB` dans les 5 ciblages ETL (`etl_script`,
+  `etl_script_trophydecks`, `etl_script_synergy`, `calculate_archetypal_decks`,
+  `etl_trophy_draft_picks`).
+- `TARGET_SET = "FRA"` dans les 4 scripts manuels de Phase 1/2
+  (`populate_card_list`, `enrich_card_tags`, `scryfall_enrichment`,
+  `populate_arena_ids`).
+- **`MSH` retiré des 5 ciblages** (dette laissée par l'onboarding HOB) : 0 trophy
+  deck MSH sur les 14 derniers jours contre 2 548 pour HOB. Ça supprime les
+  appels 17Lands à vide et fige son `win_rate_history`, qui s'aplatissait sinon.
+
+Ligne `sets` **créée inactive** le 2026-09-20, avec `start_date = 2026-09-30` —
+un jour de décalage volontaire sur la sortie Arena (09-29) pour écarter les
+winrates de J1, toujours bruitées. Ça ne coûte aucun trophy deck : leur scrap ne
+lit ni `start_date` ni `active`, il prend les dernières 24 h en dur.
+
+```sql
+insert into sets (code, name, active, start_date)
+values ('FRA', 'Reality Fracture', false, '2026-09-30')
+on conflict (code) do update
+  set name = excluded.name,
+      active = excluded.active,
+      start_date = excluded.start_date;
+```
+
+**Phase 1 exécutée le 2026-09-20** : `card_list` peuplée (285 cartes, 285
+`image_url`, 283 `oracle_text`), puis `enrich_card_tags.py` (55 removal,
+42 producteurs de mana), puis `corrections/correct_fra_tags.py` — 131
+corrections. FRA est un set **planeswalker-matters** que le détecteur générique
+ne savait pas lire ; le script encode son vocabulaire réel :
+
+| Mécanique | Cartes | Traitement |
+|---|---|---|
+| `empower <PW> N` — crée/charge un jeton planeswalker | 34 | support `planeswalker` |
+| Cycle de 10 terrains « enters tapped unless you control a planeswalker » | 10 | dépendance `planeswalker` (min 5) |
+| `prepared` — créature // sort, copie du sort | 17 | support `prepared` (+ dép. sur Codie) |
+| `Threshold` — sept cartes ou plus au cimetière | 6 payoffs | dépendance `threshold` + 29 enablers |
+
+Au passage, les mots parasites capturés par les regex génériques (`more` pour
+« seven or more », `then`, `different`, `opponent`, `cast`, `charge`, `plain`,
+`legendary`) ont été ajoutés à `EXCLUDED_DEPENDENCY_WORDS` dans
+`enrich_card_tags.py` — les prochains sets n'auront plus à les corriger à la
+main. Après corrections : `dependency_tags` = `{noncreature_spell: 15,
+planeswalker: 17, threshold: 6, prepared: 1, …}`, 57 removal.
+
+Le jour J (2026-09-29), un seul UPDATE, faisable depuis un téléphone :
+```sql
+update sets set active = true where code = 'FRA';
+```
+
+**Reste à faire :**
+- [x] Créer la ligne `sets` (SQL ci-dessus) — fait le 2026-09-20, `active=false`.
+- [x] Phase 1 : `populate_card_list.py` + `enrichment/enrich_card_tags.py`.
+- [x] `corrections/correct_fra_tags.py` — écrit et appliqué.
+- [ ] J : `update sets set active = true where code = 'FRA';`
+- [ ] J+1/J+3 : `scryfall_enrichment.py` (après le 1er `daily_etl` sur FRA),
+      puis `populate_arena_ids.py FRA` si l'overlay Arena / le mapping MTGA est
+      utilisé.
+- [ ] Plus tard : retirer `HOB` des ciblages quand il ne sort plus de trophy
+      decks, et calibrer le sealed optimizer sur FRA.
+
+**Dette HOB soldée au passage** : `correct_hob_tags.py` n'a jamais été écrit (le
+faux positif connu reste le cycle de bicolores tagué `is_removal`). À arbitrer :
+soit on l'écrit, soit on l'assume puisque HOB sort bientôt de la fenêtre chaude.
 
 ---
 
