@@ -13,7 +13,7 @@ from pathlib import Path
 # ==============================================================================
 
 # Sets et formats à traiter
-TARGET_SET_CODES = ["HOB", "FRA"]  # [] pour tous les sets actifs
+TARGET_SET_CODES = ["FRA"]  # [] pour tous les sets actifs
 TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 
 # Seuils pour filtrer les résultats (valeurs par défaut, recalculées dynamiquement)
