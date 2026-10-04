@@ -1476,6 +1476,51 @@ const kickQueuedShards = async (
   return toLaunch.length;
 };
 
+// Garde-fou avant de lancer les shards : le setCode vient du set actif de l'app,
+// pas du pool. Un pool FRA soumis avec SOS selectionne ne reconnait aucune carte
+// et finissait en 500 opaque au poll. On refuse tout de suite, en indiquant le
+// set detecte.
+const POOL_SET_MIN_MATCH_RATIO = 0.5;
+
+const checkPoolMatchesSet = async (
+  supabase: ReturnType<typeof createClient>,
+  setCode: string,
+  poolText: string,
+): Promise<string | null> => {
+  const names = [...new Set(parsePoolText(poolText).map((c) => c.name))];
+  if (names.length === 0) return null;
+
+  const { data: setRows, error: setError } = await supabase
+    .from("card_list")
+    .select("card_name")
+    .eq("set_code", setCode);
+  if (setError) throw setError;
+  const known = new Set<string>();
+  for (const row of (setRows || []) as { card_name: string }[]) {
+    known.add(normalizeName(row.card_name));
+    known.add(normalizeName(splitCardBase(row.card_name)));
+  }
+  const matched = names.filter((n) => known.has(normalizeName(n))).length;
+  if (matched / names.length >= POOL_SET_MIN_MATCH_RATIO) return null;
+
+  const { data: otherRows } = await supabase
+    .from("card_list")
+    .select("set_code")
+    .in("card_name", names)
+    .neq("set_code", setCode);
+  const countBySet = new Map<string, number>();
+  for (const row of (otherRows || []) as { set_code: string }[]) {
+    countBySet.set(row.set_code, (countBySet.get(row.set_code) || 0) + 1);
+  }
+  const detected = [...countBySet.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  return (
+    `This pool doesn't match the selected set ${setCode} ` +
+    `(${matched}/${names.length} cards recognized).` +
+    (detected ? ` It looks like a ${detected} pool: switch the set to ${detected} and try again.` : "")
+  );
+};
+
 const aggregateShardResults = (
   shards: SealedOptimizerJobRow[],
 ): { result: SealedOptimizerResult; computeTimeMs: number } => {
@@ -1591,6 +1636,48 @@ const aggregateShardResults = (
   };
 };
 
+// Tous les shards sont termines : agrege, ou passe le parent en failed si
+// aucun shard n'a produit de build (pool vide pour ce set, etc.). Sans ca,
+// aggregateShardResults levait a chaque poll et le parent restait "running".
+const finalizeParentJob = async (
+  supabase: ReturnType<typeof createClient>,
+  parentJobId: string,
+  shards: SealedOptimizerJobRow[],
+  nowIso: string,
+) => {
+  const hasBuilds = shards.some((s) => s.result_payload?.result?.builds?.length);
+  if (!hasBuilds) {
+    const poolSize = shards[0]?.result_payload?.result?.poolSize ?? null;
+    await supabase
+      .from(JOB_TABLE)
+      .update({
+        status: "failed",
+        error_payload: {
+          message:
+            "No playable deck could be built from this pool" +
+            (poolSize != null ? ` (${poolSize} card(s) recognized for this set).` : ".") +
+            " Check that the selected set matches the pool.",
+          details: { code: "NO_BUILDS", poolSize },
+        },
+        finished_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq("id", parentJobId);
+    return;
+  }
+  const { result, computeTimeMs } = aggregateShardResults(shards);
+  await supabase
+    .from(JOB_TABLE)
+    .update({
+      status: "done",
+      result_payload: { result, computeTimeMs },
+      compute_time_ms: computeTimeMs,
+      finished_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", parentJobId);
+};
+
 const reconcileParentJob = async (
   supabase: ReturnType<typeof createClient>,
   parentJob: SealedOptimizerJobRow,
@@ -1644,17 +1731,7 @@ const reconcileParentJob = async (
   const doneCount = shards.filter((s) => s.status === "done").length;
   const total = shards.length;
   if (total > 0 && doneCount === total) {
-    const { result, computeTimeMs } = aggregateShardResults(shards);
-    await supabase
-      .from(JOB_TABLE)
-      .update({
-        status: "done",
-        result_payload: { result, computeTimeMs },
-        compute_time_ms: computeTimeMs,
-        finished_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq("id", parentJob.id);
+    await finalizeParentJob(supabase, parentJob.id, shards, nowIso);
     return await getOptimizationJob(supabase, parentJob.id);
   }
 
@@ -1695,17 +1772,7 @@ const reconcileParentJob = async (
 
     const doneAfterRun = shards.filter((s) => s.status === "done").length;
     if (shards.length > 0 && doneAfterRun === shards.length) {
-      const { result, computeTimeMs } = aggregateShardResults(shards);
-      await supabase
-        .from(JOB_TABLE)
-        .update({
-          status: "done",
-          result_payload: { result, computeTimeMs },
-          compute_time_ms: computeTimeMs,
-          finished_at: nowIso,
-          updated_at: nowIso,
-        })
-        .eq("id", parentJob.id);
+      await finalizeParentJob(supabase, parentJob.id, shards, nowIso);
     }
   }
 
@@ -1823,6 +1890,10 @@ Deno.serve(async (req) => {
     }
 
     const resolvedRun = resolveOptimizationRun(payload);
+    const setMismatch = await checkPoolMatchesSet(supabase, resolvedRun.setCode, resolvedRun.poolText);
+    if (setMismatch) {
+      return json(400, { error: setMismatch, code: "POOL_SET_MISMATCH" });
+    }
     const shardCount = Math.max(2, Math.min(8, Number(payload.shardCount ?? DEEP_SHARD_COUNT) || DEEP_SHARD_COUNT));
     const nowIso = new Date().toISOString();
 

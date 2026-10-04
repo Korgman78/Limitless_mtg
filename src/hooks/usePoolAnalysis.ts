@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../supabase';
 
+// supabase.functions.invoke ne met dans error.message que "Edge Function returned
+// a non-2xx status code" : le vrai message du backend est dans le corps de la
+// Response (error.context).
+const readFunctionError = async (error: unknown, fallback: string): Promise<string> => {
+  const context = (error as { context?: unknown } | null)?.context;
+  if (context instanceof Response) {
+    try {
+      const body = (await context.clone().json()) as { error?: unknown } | null;
+      if (typeof body?.error === 'string' && body.error) return body.error;
+    } catch {
+      // corps non JSON : on retombe sur le message generique
+    }
+  }
+  return (error as { message?: string } | null)?.message || fallback;
+};
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 // These types mirror the response shape from sealedOptimizerCore.ts.
 // Keep in sync when the API contract changes.
@@ -326,7 +342,7 @@ export function usePoolAnalysis({
       if (!mountedRef.current) return;
 
       if (submitError) {
-        const msg = submitError.message || 'Pool analysis submit failed.';
+        const msg = await readFunctionError(submitError, 'Pool analysis submit failed.');
         if (msg.toLowerCase().includes('sealed_optimizer_jobs')) {
           throw new Error(
             'Supabase setup missing: table `sealed_optimizer_jobs` is required for async pool optimization. Run the SQL provided by the backend.',
@@ -374,7 +390,7 @@ export function usePoolAnalysis({
           if (!mountedRef.current) return;
 
           if (statusError) {
-            throw new Error(statusError.message || 'Pool analysis polling failed.');
+            throw new Error(await readFunctionError(statusError, 'Pool analysis polling failed.'));
           }
 
           const statusPayload = (statusData as
@@ -499,7 +515,7 @@ export function usePoolAnalysis({
         },
       });
       if (error) {
-        throw new Error(error.message || 'Custom deck scoring failed.');
+        throw new Error(await readFunctionError(error, 'Custom deck scoring failed.'));
       }
 
       const payload = data as
