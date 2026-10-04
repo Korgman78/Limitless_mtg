@@ -10,7 +10,8 @@ FRA est un set **planeswalker-matters** :
   - `behold a Jace` = cout additionnel paye en revelant/controlant un Jace ;
   - `prepared` : creature // sort, la creature arrive « preparee » et permet de
     copier son sort — 17 cartes ;
-  - `Threshold` (sept cartes ou plus au cimetiere) — 6 payoffs.
+  - `Threshold` (sept cartes ou plus au cimetiere) — 6 payoffs, volontairement
+    sans dependance (cf. section 2).
 
 Le detecteur generique ne connait aucune de ces mecaniques : il a produit des
 tags parasites ('more' pour « seven or more cards », 'then', 'plain',
@@ -19,7 +20,7 @@ vocabulaire reel du format : `planeswalker`, `threshold`, `prepared`.
 
 Corrections couvertes :
   1. Faux positifs dependency (regex) — 11 cartes
-  2. Dependances THRESHOLD — 6 cartes
+  2. Threshold : dependances effacees — 6 cartes
   3. Dependances PLANESWALKER — 17 cartes
   4. Dependance PREPARED — 1 carte
   5. Corrections is_removal — 8 cartes
@@ -167,37 +168,24 @@ false_positive_removals = [
 ]
 
 # ======================================================================
-# 2. DEPENDANCES THRESHOLD
+# 2. THRESHOLD : PAS DE DEPENDANCE
 #    « Threshold — ... seven or more cards in your graveyard ».
-#    Seuils :
-#      min=6 : la carte est injouable sans threshold (lancement bloque)
-#      min=5 : payoff fort (activation ou moitie de la carte conditionnee)
-#      min=4 : bonus notable mais la carte fonctionne avant
+#    Threshold n'est PAS traite comme une dependance : le cimetiere se remplit
+#    naturellement au fil de la partie (sorts, creatures mortes) et les cartes
+#    prepared s'auto-alimentent (le sort copie finit au cimetiere). Le GIH WR
+#    integre deja la frequence reelle d'activation ; une penalite de seuil
+#    double-compterait et bloquerait des cartes jouables (ex. Theorix Metamage).
+#    On efface donc explicitement les tags poses par enrich_card_tags /
+#    calibrate_dependency_thresholds.
 # ======================================================================
 
 threshold_deps = [
-    # Proft : « You can't cast this spell unless there are seven or more cards
-    # in your graveyard ». Dependance dure, carte litteralement morte sans
-    # remplissage de cimetiere.
-    dep("Proft, Sinister Mastermind", ["threshold"], 6, "tribal"),
-
-    # Null Summoner : la carte exilee n'est recastable que sous threshold.
-    # La moitie de la valeur de la carte en depend.
-    dep("Null Summoner", ["threshold"], 5, "tribal"),
-
-    # Loot, the Anomaly : l'activation « Sacrifice another creature or
-    # planeswalker » est verrouillee sous threshold.
-    dep("Loot, the Anomaly", ["threshold"], 5, "tribal"),
-
-    # Eye of Jace : surveil 1 chaque upkeep puis se sacrifie sous threshold
-    # pour 2 damage + 2 life. S'auto-alimente : dependance moderee.
-    dep("Eye of Jace", ["threshold"], 4, "tribal"),
-
-    # Theorix Metamage : +1/+0 et vol sous threshold. Corps correct avant.
-    dep("Theorix Metamage // Omit Variables", ["threshold"], 4, "tribal"),
-
-    # Void Extrapolator : +1/+1 sous threshold. Meme profil.
-    dep("Void Extrapolator // Omit Variables", ["threshold"], 4, "tribal"),
+    dep("Proft, Sinister Mastermind", []),
+    dep("Null Summoner", []),
+    dep("Loot, the Anomaly", []),
+    dep("Eye of Jace", []),
+    dep("Theorix Metamage // Omit Variables", []),
+    dep("Void Extrapolator // Omit Variables", []),
 ]
 
 # ======================================================================
@@ -455,7 +443,7 @@ if __name__ == "__main__":
     start = time.time()
 
     upsert_batch(false_positive_removals, "1. Faux positifs supprimes")
-    upsert_batch(threshold_deps,          "2. Dependances threshold")
+    upsert_batch(threshold_deps,          "2. Threshold: dependances effacees")
     upsert_batch(planeswalker_deps,       "3. Dependances planeswalker")
     upsert_batch(prepared_deps,           "4. Dependance prepared")
     upsert_batch(removal_corrections,     "5. Removal corrections")
