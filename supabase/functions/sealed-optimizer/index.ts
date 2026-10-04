@@ -458,6 +458,20 @@ const normalizeFormat = (raw: string): string => {
   return value;
 };
 
+// Chaine de repli pour le GIH WR uniquement (synergies et skeletons gardent
+// `queryFormats`). En debut de set, 17Lands renvoie gih_wr = null pour la
+// majorite des rares/mythiques en ArenaDirect_Sealed et TradDraft (echantillon
+// trop faible) : sans Sealed/PremierDraft, ces cartes etaient silencieusement
+// ecartees du pool et des decks importes. Chaque repli est recale par delta a
+// la moyenne du format.
+const wrFallbackFormatsFor = (normalizedFormat: string): string[] => {
+  const chain =
+    normalizedFormat === "ArenaDirect_Sealed"
+      ? ["ArenaDirect_Sealed", "TradDraft", "Sealed", "PremierDraft"]
+      : [normalizedFormat, "PremierDraft"];
+  return [...new Set(chain)];
+};
+
 const BASIC_LANDS = new Set(["Plains", "Island", "Swamp", "Mountain", "Forest"]);
 const MANA_COLORS = [...COLOR_ORDER];
 const MANA_COLOR_SET = new Set<string>(MANA_COLORS);
@@ -678,6 +692,7 @@ const loadOptimizationContext = async (
     normalizedFormat === "ArenaDirect_Sealed"
       ? ["ArenaDirect_Sealed", "TradDraft"]
       : [normalizedFormat];
+  const wrFormats = wrFallbackFormatsFor(normalizedFormat);
 
   const formatMeanCache = new Map<string, number>();
   const getFormatGlobalMean = async (queryFormat: string): Promise<number> => {
@@ -717,8 +732,8 @@ const loadOptimizationContext = async (
   const wrByNormalized = new Map<string, number>();
   let primaryMean: number | null = null;
 
-  for (let fi = 0; fi < queryFormats.length; fi++) {
-    const queryFormat = queryFormats[fi];
+  for (let fi = 0; fi < wrFormats.length; fi++) {
+    const queryFormat = wrFormats[fi];
     const { data: statsRows, error: statsError } = await supabase
       .from("card_stats")
       .select("card_name,gih_wr,filter_context")
@@ -771,8 +786,8 @@ const loadOptimizationContext = async (
   if (unresolvedSplitBaseByInput.size > 0) {
     const unresolvedBases = [...new Set(unresolvedSplitBaseByInput.values())];
     const wrByBaseNorm = new Map<string, number>();
-    for (let fi = 0; fi < queryFormats.length; fi++) {
-      const queryFormat = queryFormats[fi];
+    for (let fi = 0; fi < wrFormats.length; fi++) {
+      const queryFormat = wrFormats[fi];
       const { data: splitRows, error: splitErr } = await supabase
         .from("card_stats")
         .select("card_name,gih_wr,filter_context")
@@ -879,6 +894,7 @@ const buildOptimization = async (
     normalizedFormat === "ArenaDirect_Sealed"
       ? ["ArenaDirect_Sealed", "TradDraft"]
       : [normalizedFormat];
+  const wrFormats = wrFallbackFormatsFor(normalizedFormat);
 
   const formatMeanCache = new Map<string, number>();
   const getFormatGlobalMean = async (queryFormat: string): Promise<number> => {
@@ -941,8 +957,8 @@ const buildOptimization = async (
   const wrByNormalized = new Map<string, number>();
   let primaryMean: number | null = null;
 
-  for (let fi = 0; fi < queryFormats.length; fi++) {
-    const queryFormat = queryFormats[fi];
+  for (let fi = 0; fi < wrFormats.length; fi++) {
+    const queryFormat = wrFormats[fi];
     const { data: statsRows, error: statsError } = await supabase
       .from("card_stats")
       .select("card_name,gih_wr,filter_context")
@@ -1008,8 +1024,8 @@ const buildOptimization = async (
     ];
     const wrByBaseNorm = new Map<string, number>();
 
-    for (let fi = 0; fi < queryFormats.length; fi++) {
-      const queryFormat = queryFormats[fi];
+    for (let fi = 0; fi < wrFormats.length; fi++) {
+      const queryFormat = wrFormats[fi];
       const { data: splitRows, error: splitErr } = await supabase
         .from("card_stats")
         .select("card_name,gih_wr,filter_context")
