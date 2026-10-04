@@ -283,7 +283,7 @@ update sets set active = true where code = 'FRA';
       utilisé.
 - [x] Retirer `HOB` des 5 ciblages ETL — fait sur GitHub (commits a916396 et
       précédents).
-- [ ] Calibrer le sealed optimizer sur FRA (584 trophy decks Sealed au
+- [x] Calibrer le sealed optimizer sur FRA (584 trophy decks Sealed au
       2026-10-04) :
       ```bash
       python backend/sealed-optimizer/calibrate_dependency_thresholds.py --set FRA --skip-tag mv_ge_3 --update
@@ -292,7 +292,7 @@ update sets set active = true where code = 'FRA';
       `noncreature_spell` 6-7→9, `instant_sorcery` 6→8. `mv_ge_3` volontairement
       **ignoré** (P25 = 13) : ce tag ne porte que sur *Your Fate Ends Here*, et le
       P25 mesure la courbe typique d'un deck Sealed, pas le besoin de la carte.
-      On garde 4.
+      On garde 4. **Appliqué le 2026-10-04** (35 cartes modifiées).
 
 **Calibrage — deux bugs corrigés dans `calibrate_dependency_thresholds.py`**
 (2026-10-04), qui auraient faussé tout calibrage d'un set à mécaniques

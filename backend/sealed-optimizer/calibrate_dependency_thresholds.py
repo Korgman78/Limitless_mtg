@@ -100,6 +100,7 @@ def load_card_metadata(set_code: str) -> dict[str, dict]:
         if not name:
             continue
         by_name[name] = {
+            "card_name": name,  # nom canonique, cle d'ecriture en BDD
             "card_type": (row.get("card_type") or "").lower(),
             "cmc": float(row.get("card_cmc") or 0),
             "dependency_tags": row.get("dependency_tags") or [],
@@ -115,7 +116,7 @@ def load_card_metadata(set_code: str) -> dict[str, dict]:
     for name in list(by_name):
         if " //" in name:
             by_name.setdefault(name.split(" //")[0].strip(), by_name[name])
-    print(f"  {len(by_name)} cartes chargees depuis card_list.")
+    print(f"  {len(rows)} cartes chargees depuis card_list.")
     return by_name
 
 
@@ -313,8 +314,11 @@ def analyze(set_code: str, card_filter: str | None = None) -> dict[str, dict]:
                     continue  # tag non-calibrable (fixer_only)
 
                 tag_global[tag].append(enabler_count)
-                payoff_tag[(name, tag)].append(enabler_count)
-                tag_payoffs[tag].add(name)
+                # Nom canonique ("A // B") : c'est la cle de l'upsert. Le nom de
+                # face avant des trophy decks y creerait une ligne fantome.
+                canonical = meta["card_name"]
+                payoff_tag[(canonical, tag)].append(enabler_count)
+                tag_payoffs[tag].add(canonical)
 
     # Aggregation
     results: dict[str, dict] = {}
