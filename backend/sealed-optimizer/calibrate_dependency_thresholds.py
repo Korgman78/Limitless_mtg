@@ -91,7 +91,7 @@ def load_trophy_decks(set_code: str) -> list[dict]:
 def load_card_metadata(set_code: str) -> dict[str, dict]:
     """Charge les metadonnees de cartes (type, cmc, dependency_tags)."""
     rows = supabase_get_all("card_list", {
-        "select": "card_name,card_type,card_cmc,dependency_tags,dependency_min_support,dependency_scope,oracle_text",
+        "select": "card_name,card_type,card_cmc,dependency_tags,dependency_min_support,dependency_scope,oracle_text,support_tags",
         "set_code": f"eq.{set_code}",
     })
     by_name: dict[str, dict] = {}
@@ -106,7 +106,15 @@ def load_card_metadata(set_code: str) -> dict[str, dict]:
             "dependency_min_support": row.get("dependency_min_support"),
             "dependency_scope": (row.get("dependency_scope") or "").lower(),
             "oracle_text": (row.get("oracle_text") or "").lower(),
+            "support_tags": [
+                t.lower().strip() for t in (row.get("support_tags") or []) if t
+            ],
         }
+    # Les trophy decks listent les cartes doubles (DFC, prepared) sous leur face
+    # avant seule ("Heartwood Crafter"), card_list sous "A // B".
+    for name in list(by_name):
+        if " //" in name:
+            by_name.setdefault(name.split(" //")[0].strip(), by_name[name])
     print(f"  {len(by_name)} cartes chargees depuis card_list.")
     return by_name
 
@@ -193,6 +201,15 @@ def count_enablers_for_tag(
 
     elif tag == "tribal_choose":
         return count_tribal_choose_support(deck_cards, meta_map, payoff_name=payoff_name)
+
+    elif any(tag in meta_map.get(name, {}).get("support_tags", []) for name, _ in deck_cards):
+        # Miroir du fallback generique de l'optimizer (computeDependencyPenalty) :
+        # un tag porte par des support_tags du deck (planeswalker, threshold,
+        # prepared, lifegain...) se compte en cartes support, pas en sous-types.
+        # Sans ca, ces tags tombaient dans la branche tribale et valaient 0.
+        for name, qty in deck_cards:
+            if tag in meta_map.get(name, {}).get("support_tags", []):
+                count += qty
 
     else:
         # Tag tribal: creature type cible + support changeling
@@ -449,6 +466,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Ecrire les seuils calibres en BDD (sans ce flag = dry run)",
     )
+    parser.add_argument(
+        "--skip-tag",
+        action="append",
+        default=[],
+        help="Tag a ne pas ecrire en BDD, repetable (ex: --skip-tag mv_ge_3). "
+             "Utile quand le P25 mesure la composition typique d'un deck plutot "
+             "que le besoin reel du payoff.",
+    )
     args = parser.parse_args()
 
     set_code = args.set.upper()
@@ -461,6 +486,9 @@ if __name__ == "__main__":
         sys.exit(0)
 
     recommendations = display_results(results)
+    for tag in args.skip_tag:
+        if recommendations.pop(tag.lower(), None) is not None:
+            print(f"  (tag {tag} ignore : seuils actuels conserves)")
 
     if args.update:
         print("\n>>> MODE UPDATE : ecriture en BDD <<<")

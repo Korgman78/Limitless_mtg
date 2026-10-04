@@ -281,8 +281,36 @@ update sets set active = true where code = 'FRA';
 - [ ] J+1/J+3 : `scryfall_enrichment.py` (après le 1er `daily_etl` sur FRA),
       puis `populate_arena_ids.py FRA` si l'overlay Arena / le mapping MTGA est
       utilisé.
-- [ ] Plus tard : retirer `HOB` des ciblages quand il ne sort plus de trophy
-      decks, et calibrer le sealed optimizer sur FRA.
+- [x] Retirer `HOB` des 5 ciblages ETL — fait sur GitHub (commits a916396 et
+      précédents).
+- [ ] Calibrer le sealed optimizer sur FRA (584 trophy decks Sealed au
+      2026-10-04) :
+      ```bash
+      python backend/sealed-optimizer/calibrate_dependency_thresholds.py --set FRA --skip-tag mv_ge_3 --update
+      ```
+      Dry run du 2026-10-04 : `planeswalker` 5→3, `threshold` 4-6→3,
+      `noncreature_spell` 6-7→9, `instant_sorcery` 6→8. `mv_ge_3` volontairement
+      **ignoré** (P25 = 13) : ce tag ne porte que sur *Your Fate Ends Here*, et le
+      P25 mesure la courbe typique d'un deck Sealed, pas le besoin de la carte.
+      On garde 4.
+
+**Calibrage — deux bugs corrigés dans `calibrate_dependency_thresholds.py`**
+(2026-10-04), qui auraient faussé tout calibrage d'un set à mécaniques
+non tribales :
+- Les tags portés par des `support_tags` (`planeswalker`, `threshold`,
+  `prepared`…) tombaient dans la branche tribale et comptaient 0 partout → seuil
+  recommandé de 1, ce qui neutralise la dépendance. Le script reproduit désormais
+  le repli générique de l'optimizer (`computeDependencyPenalty`).
+- Les cartes doubles (DFC, `prepared`) sont listées sous leur face avant dans
+  les trophy decks, mais sous « A // B » dans `card_list`. Faute de
+  correspondance, elles étaient comptées comme sorts non-créature, ce qui
+  gonflait `noncreature_spell` (11 au lieu de 9).
+
+**GIH WR manquants en début de set** (2026-10-04) : en ArenaDirect_Sealed et
+TradDraft, 17Lands renvoie `gih_wr = null` pour la majorité des rares les
+premiers jours. Le sealed optimizer écartait silencieusement ces cartes, du pool
+comme des decks importés. Il se replie désormais sur Sealed puis PremierDraft
+(commit 3fec1d1). Cartes FRA sans WR : 138 → 26 sur 290.
 
 **Dette HOB soldée au passage** : `correct_hob_tags.py` n'a jamais été écrit (le
 faux positif connu reste le cycle de bicolores tagué `is_removal`). À arbitrer :
