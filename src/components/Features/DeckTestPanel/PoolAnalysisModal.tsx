@@ -1,13 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
+  AlertTriangle,
+  ArrowRightLeft,
   BarChart3,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock,
   Copy,
+  Droplets,
   Layers,
-  Search,
+  ListChecks,
+  Minus,
   Sparkles,
   Target,
   Users,
@@ -21,10 +26,21 @@ import type {
   PoolOptimizationProgress,
   SealedDeckResult,
 } from '../../../hooks/usePoolAnalysis';
+import {
+  WR_POINTS_PER_SCORE_POINT,
+  buildTabLabel,
+  diffBuilds,
+  formatSigned,
+  scoreDeltaToWr,
+  summarizeBuild,
+  type PoolPreview,
+  type SummaryLine,
+} from './poolExplain';
 
 type BuildCurveRow = {
   cmc: number;
   count: number;
+  target: number | null;
 };
 
 type AxisKey = 'power' | 'synergy' | 'consistency' | 'curve';
@@ -64,7 +80,12 @@ const buildSpellCurve = (
     const bucket = Math.max(1, Math.min(7, Math.round(cmcRaw)));
     curve[bucket] += card.qty;
   }
-  return [1, 2, 3, 4, 5, 6, 7].map((cmc) => ({ cmc, count: curve[cmc] || 0 }));
+  const target = build.explanation?.targetCurve ?? null;
+  return [1, 2, 3, 4, 5, 6, 7].map((cmc) => ({
+    cmc,
+    count: curve[cmc] || 0,
+    target: target ? Number(target[String(cmc)] ?? 0) : null,
+  }));
 };
 
 const buildColorDistribution = (
@@ -125,10 +146,34 @@ const buildCmcStacks = (
   return stacks;
 };
 
+// Badges de role des cartes (en haut a gauche, seule zone visible dans la pile).
+const CARD_BADGES = {
+  bomb: { label: 'B', title: 'Bomb: win rate well above the format average', cls: 'bg-purple-500 text-white' },
+  removal: { label: 'R', title: 'Removal', cls: 'bg-rose-500 text-white' },
+  splash: { label: 'S', title: 'Splash card', cls: 'bg-amber-400 text-slate-950' },
+  unmet: { label: '!', title: 'Payoff without enough support in this deck', cls: 'bg-red-600 text-white' },
+} as const;
+
+const Badge: React.FC<{ kind: keyof typeof CARD_BADGES }> = ({ kind }) => (
+  <span
+    title={CARD_BADGES[kind].title}
+    className={`h-4 min-w-[16px] px-1 rounded-full text-[11px] leading-4 font-black text-center shadow ${CARD_BADGES[kind].cls}`}
+  >
+    {CARD_BADGES[kind].label}
+  </span>
+);
+
+const TONE_ICON: Record<SummaryLine['tone'], React.ReactNode> = {
+  good: <CheckCircle2 size={14} className="text-emerald-400 shrink-0 mt-0.5" />,
+  neutral: <Minus size={14} className="text-slate-400 shrink-0 mt-0.5" />,
+  warn: <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />,
+};
+
 interface PoolAnalysisModalProps {
   poolAnalysis: PoolAnalysisCache | null;
   isLoading: boolean;
   loadingProgress?: PoolOptimizationProgress | null;
+  poolPreview?: PoolPreview | null;
   selectedBuildIndex: number;
   selectedTab: 'build' | 'user';
   userDeckBuild: SealedDeckResult | null;
@@ -141,7 +186,7 @@ interface PoolAnalysisModalProps {
   onZoomCard: (name: string) => void;
 }
 
-// â”€â”€â”€ Unified section header style â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Unified section header style ───────────────────────────────────────────
 const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -150,7 +195,7 @@ const SectionHeader: React.FC<{
   <div className="flex items-center justify-between gap-3 mb-4">
     <div className="flex items-center gap-2">
       {icon}
-      <h4 className="text-[11px] md:text-xs text-slate-300 uppercase tracking-[0.14em] font-extrabold">
+      <h4 className="text-xs text-slate-200 uppercase tracking-[0.12em] font-extrabold">
         {title}
       </h4>
     </div>
@@ -158,10 +203,27 @@ const SectionHeader: React.FC<{
   </div>
 );
 
+const HelpDot: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Tooltip content={<div className="max-w-[260px] text-[11px] text-slate-200 space-y-1">{children}</div>}>
+    <span className="w-4 h-4 rounded-full border border-slate-500 text-[11px] font-bold text-slate-300 hover:text-white hover:border-slate-300 transition-colors flex items-center justify-center cursor-help">
+      ?
+    </span>
+  </Tooltip>
+);
+
+const STRATEGIES = [
+  { key: 'skeleton', title: 'Trophy-deck template', subtitle: 'Builds close to winning decks of the archetype' },
+  { key: 'power_mana_safe', title: 'Power, safe mana', subtitle: 'Best cards, stable castability' },
+  { key: 'power_greedy_splash', title: 'Greedy splash', subtitle: 'Splashes bombs, explores 3 colors' },
+  { key: 'curve_creatures', title: 'Curve & creatures', subtitle: 'Tempo and board presence' },
+  { key: 'synergy_if_online', title: 'Synergy', subtitle: 'Payoffs when their support is there' },
+];
+
 export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   poolAnalysis,
   isLoading,
   loadingProgress,
+  poolPreview,
   selectedBuildIndex,
   selectedTab,
   userDeckBuild,
@@ -175,6 +237,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
 }) => {
   const [didCopy, setDidCopy] = useState(false);
   const [activeAxis, setActiveAxis] = useState<AxisKey>('power');
+  const [showComputation, setShowComputation] = useState(false);
   const [expandedCurveComponentId, setExpandedCurveComponentId] = useState<string | null>(null);
   const result = poolAnalysis?.result;
   const metaByName = poolAnalysis?.metaByName || {};
@@ -183,13 +246,15 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     selectedTab === 'user' && userDeckBuild
       ? userDeckBuild
       : result?.builds[selectedBuildIndex] || result?.builds[0] || null;
+  const bestBuild = result?.builds[0] || null;
+  const isBestSelected = selectedTab === 'build' && selectedBuildIndex === 0;
 
   const curveRows = useMemo(
     () => (selectedBuild ? buildSpellCurve(selectedBuild, metaByName) : []),
     [selectedBuild, metaByName],
   );
   const maxCurveValue = useMemo(
-    () => Math.max(...curveRows.map((row) => row.count), 1),
+    () => Math.max(...curveRows.map((row) => Math.max(row.count, row.target ?? 0)), 1),
     [curveRows],
   );
 
@@ -214,6 +279,15 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     [maxCmc],
   );
 
+  const summary = useMemo(
+    () => (selectedBuild ? summarizeBuild(selectedBuild) : []),
+    [selectedBuild],
+  );
+  const diffVsBest = useMemo(
+    () => (selectedBuild && bestBuild && !isBestSelected ? diffBuilds(bestBuild, selectedBuild) : null),
+    [selectedBuild, bestBuild, isBestSelected],
+  );
+
   // Escape key is handled centrally in DeckTestPanel/index.tsx
 
   if (isLoading) {
@@ -230,14 +304,10 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
       ? `${Math.round(estimatedProgressPct ?? 0)}%`
       : 'Starting...';
     const phaseLabel = !hasShardProgress
-      ? 'Initializing optimizer'
+      ? 'Reading your pool'
       : progressDone >= progressTotal
-        ? 'Finalizing recommendations'
-        : progressRunning > 0
-          ? 'Exploring deck variants'
-          : progressQueued > 0
-            ? 'Waiting for shard workers'
-            : 'Preparing shard queue';
+        ? 'Picking the 3 best builds'
+        : 'Exploring builds';
     const waitingForWorkers =
       hasShardProgress &&
       progressDone < progressTotal &&
@@ -254,26 +324,17 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
       while (shardStates.length < progressTotal) shardStates.push('queued');
       if (shardStates.length > progressTotal) shardStates.length = progressTotal;
     }
-
-    const shardProfiles = [
-      { key: 'skeleton', title: 'Skeleton guided', subtitle: 'Archetype trophy baseline' },
-      { key: 'power_mana_safe', title: 'Power mana-safe', subtitle: 'WR focused, stable castability' },
-      { key: 'power_greedy_splash', title: 'Greedy splash bombs', subtitle: 'Higher risk, higher ceiling' },
-      { key: 'curve_creatures', title: 'Curve creatures', subtitle: 'Tempo + board presence plan' },
-      { key: 'synergy_if_online', title: 'Synergy online', subtitle: 'Enable payoff thresholds' },
-    ];
-    const shardCards = Array.from({ length: hasShardProgress ? progressTotal : shardProfiles.length }).map((_, i) => {
-      const profile = shardProfiles[i] ?? {
-        key: `shard_${i + 1}`,
-        title: `Shard ${i + 1}`,
-        subtitle: 'Exploration worker',
-      };
-      return {
-        ...profile,
-        index: i,
-        status: (shardStates[i] ?? 'queued') as ShardState,
-      };
-    });
+    const statusLabel: Record<ShardState, string> = {
+      done: 'explored',
+      running: 'exploring',
+      queued: 'next',
+      failed: 'skipped',
+    };
+    const strategyCards = Array.from({ length: hasShardProgress ? progressTotal : STRATEGIES.length }).map((_, i) => ({
+      ...(STRATEGIES[i] ?? { key: `strategy_${i + 1}`, title: `Strategy ${i + 1}`, subtitle: '' }),
+      index: i,
+      status: (shardStates[i] ?? 'queued') as ShardState,
+    }));
 
     return (
       <motion.div
@@ -291,30 +352,24 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
         >
           <div className="p-5 md:p-6 border-b border-slate-800 flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-[0.15em] font-bold">
-                Pool Optimization Dashboard
+              <p className="text-[11px] text-slate-400 uppercase tracking-[0.15em] font-bold">
+                Sealed Pool Optimizer
               </p>
               <h3 className="text-xl md:text-2xl font-black tracking-tight text-white mt-1">
-                Analyzing Pool
+                Analyzing your pool
               </h3>
-              <p className="text-xs mt-1 text-slate-300">
-                Running sealed optimizer and evaluating top 3 builds...
+              <p className="text-sm mt-1 text-slate-300">
+                Several build strategies are explored, then the 3 best distinct builds are kept.
               </p>
-              <p className="text-[11px] mt-2 text-indigo-200 font-semibold">
+              <p className="text-xs mt-2 text-indigo-200 font-semibold">
                 {phaseLabel}
+                {hasShardProgress && ` · strategies explored: ${progressDone}/${progressTotal}`}
               </p>
-              {progressTotal > 0 && (
-                <p className="text-[11px] mt-1 text-slate-400">
-                  Shards: {progressDone}/{progressTotal} done
-                  {' | '}running {progressRunning}
-                  {' | '}queued {progressQueued}
-                  {progressFailed > 0 ? ` | failed ${progressFailed}` : ''}
-                </p>
-              )}
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors flex items-center justify-center"
+              aria-label="Close"
+              className="w-8 h-8 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors flex items-center justify-center"
             >
               <X size={14} />
             </button>
@@ -341,81 +396,79 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                 <p className="text-2xl font-black text-white leading-none">
                   {progressPctLabel}
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">overall progress</p>
+                <p className="text-xs text-slate-400 mt-1">overall progress</p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              {hasShardProgress && shardStates.length > 0 && (
-                <div
-                  className="grid gap-1.5 rounded-xl border border-slate-800 bg-slate-950/45 p-2.5 w-full"
-                  style={{ gridTemplateColumns: `repeat(${Math.max(1, progressTotal)}, minmax(0, 1fr))` }}
-                >
-                  {shardStates.map((state, index) => (
-                    <motion.div
-                      key={`${state}-${index}`}
-                      title={`Shard ${index + 1}: ${state}`}
-                      className={`h-3.5 rounded-md ${
-                        state === 'done'
-                          ? 'bg-emerald-400'
-                          : state === 'running'
-                            ? 'bg-cyan-400'
-                            : state === 'failed'
-                              ? 'bg-rose-400'
-                              : 'bg-slate-600'
-                      }`}
-                      animate={state === 'running' ? { opacity: [0.45, 1, 0.45] } : undefined}
-                      transition={state === 'running' ? { repeat: Infinity, duration: 1 } : undefined}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
-                {shardCards.map((item, index) => (
-                  <motion.div
-                    key={`${item.key}-${item.index}`}
-                    className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5"
-                    animate={item.status === 'running' ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
-                    transition={{
-                      repeat: item.status === 'running' ? Infinity : 0,
-                      duration: 1.2,
-                      delay: index * 0.08,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">
-                        Shard {item.index + 1}
-                      </p>
-                      <span
-                        className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                          item.status === 'done'
-                            ? 'text-emerald-200 bg-emerald-500/25'
-                            : item.status === 'running'
-                              ? 'text-cyan-200 bg-cyan-500/25'
-                              : item.status === 'failed'
-                                ? 'text-rose-200 bg-rose-500/25'
-                                : 'text-slate-300 bg-slate-700/45'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[11px] font-semibold text-white leading-tight">
-                      {item.title}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-slate-500 leading-tight">
-                      {item.subtitle}
-                    </p>
-                  </motion.div>
-                ))}
-              </div>
-              {waitingForWorkers && (
-                <p className="text-[11px] text-amber-300/90">
-                  Waiting for available workers. Processing resumes automatically.
+            {poolPreview && poolPreview.total > 0 && (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                <p className="text-xs uppercase tracking-[0.12em] text-slate-300 font-bold mb-3">
+                  Your pool · {poolPreview.total} cards
                 </p>
-              )}
+                <div className="flex flex-wrap items-end gap-4">
+                  {COLOR_ORDER.map((color) => (
+                    <div key={color} className="flex flex-col items-center gap-1">
+                      <img
+                        src={`https://svgs.scryfall.io/card-symbols/${color}.svg`}
+                        alt={color}
+                        className="w-6 h-6"
+                      />
+                      <span className="text-sm font-black text-white">{poolPreview.byColor[color]}</span>
+                    </div>
+                  ))}
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-xs font-bold text-slate-300 h-6 flex items-center">Multi</span>
+                    <span className="text-sm font-black text-white">{poolPreview.multicolor}</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-xs font-bold text-slate-300 h-6 flex items-center">Colorless</span>
+                    <span className="text-sm font-black text-white">{poolPreview.colorless}</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-xs font-bold text-amber-300 h-6 flex items-center">Rares & mythics</span>
+                    <span className="text-sm font-black text-white">{poolPreview.raresMythics}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+              {strategyCards.map((item, index) => (
+                <motion.div
+                  key={`${item.key}-${item.index}`}
+                  className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5"
+                  animate={item.status === 'running' ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
+                  transition={{
+                    repeat: item.status === 'running' ? Infinity : 0,
+                    duration: 1.2,
+                    delay: index * 0.08,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-white leading-tight">{item.title}</p>
+                    <span
+                      className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                        item.status === 'done'
+                          ? 'text-emerald-200 bg-emerald-500/25'
+                          : item.status === 'running'
+                            ? 'text-cyan-200 bg-cyan-500/25'
+                            : item.status === 'failed'
+                              ? 'text-rose-200 bg-rose-500/25'
+                              : 'text-slate-300 bg-slate-700/45'
+                      }`}
+                    >
+                      {statusLabel[item.status]}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400 leading-snug">{item.subtitle}</p>
+                </motion.div>
+              ))}
             </div>
+            {waitingForWorkers && (
+              <p className="text-xs text-amber-300/90">
+                Waiting for a free server slot. It resumes automatically.
+              </p>
+            )}
           </div>
         </motion.div>
       </motion.div>
@@ -430,14 +483,14 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   const totalNonLand = Math.max(1, creatureCount + spellCount);
   const creatureRatio = Math.round((creatureCount / totalNonLand) * 100);
   const spellRatio = 100 - creatureRatio;
+  const roles = selectedBuild.explanation?.cardRoles || {};
+  const manaPlan = selectedBuild.explanation?.manaPlan || [];
+  const hasTargetCurve = curveRows.some((row) => row.target != null);
 
   const b = selectedBuild.scoreBreakdown;
   const synergyBaseNormalized = Number.isFinite(b.synergyBaseNormalized)
     ? b.synergyBaseNormalized
     : b.synergyNormalized - b.dependencyAdjustment;
-  const curveBaseScore = Number.isFinite(b.curveBaseScore)
-    ? b.curveBaseScore
-    : b.curveScore - b.removalAdjustment;
   const baseScore = b.qualityScore;
   const totalWeight =
     result.weightsApplied.power +
@@ -499,7 +552,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'skeleton-shape',
       label: 'Skeleton',
-      tooltip: 'Penalizes distance from trophy skeleton curve for this archetype.',
+      tooltip: 'Penalizes distance from the trophy-deck curve of this archetype (dashed marks on the curve chart).',
       raw: curveSkeletonPenalty,
       scale: curveSkeletonScale,
       delta: curveSkeletonDelta,
@@ -507,7 +560,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'early-creature',
       label: 'Early Creature',
-      tooltip: 'Penalizes missing creature presence in CMC 2-3 buckets.',
+      tooltip: 'Penalizes missing creature presence in mana value 2-3.',
       raw: curveEarlyCreaturePenalty,
       scale: curveEarlyCreatureScale,
       delta: curveEarlyCreatureDelta,
@@ -515,7 +568,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'creature-corridor',
       label: 'Creature Corridor',
-      tooltip: 'Penalizes total creature count outside the configured corridor.',
+      tooltip: 'Penalizes a total creature count outside 12-18.',
       raw: curveCreatureCorridorPenalty,
       scale: curveCreatureCorridorScale,
       delta: curveCreatureCorridorDelta,
@@ -523,7 +576,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'removal',
       label: 'Removal',
-      tooltip: 'Removal profile adjustment: >=4 removals no penalty, 3 => -3, <=2 => -6.',
+      tooltip: 'Removal adjustment: 4+ removal spells no penalty, 3 => -3, 2 or fewer => -6.',
       raw: b.removalAdjustment,
       scale: removalAxisScale,
       delta: removalAxisDelta,
@@ -534,6 +587,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'power' as AxisKey,
       label: 'Power',
+      hint: 'Card quality',
       value: b.wrNormalized,
       weight: result.weightsApplied.power,
       color: 'from-emerald-500 to-teal-400',
@@ -541,6 +595,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'synergy' as AxisKey,
       label: 'Synergy',
+      hint: 'Cards that win together',
       value: b.synergyNormalized,
       weight: result.weightsApplied.synergy,
       color: 'from-fuchsia-500 to-violet-400',
@@ -548,6 +603,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'consistency' as AxisKey,
       label: 'Consistency',
+      hint: 'Casting spells on time',
       value: b.consistencyScore,
       weight: result.weightsApplied.consistency,
       color: 'from-cyan-500 to-sky-400',
@@ -555,6 +611,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     {
       id: 'curve' as AxisKey,
       label: 'Curve & Structure',
+      hint: 'Curve, creatures, removal',
       value: b.curveScore,
       weight: result.weightsApplied.curve,
       color: 'from-amber-500 to-orange-400',
@@ -562,51 +619,29 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   ];
 
   const selectedAxis = axisRows.find((row) => row.id === activeAxis) || axisRows[0];
-  const axisTheme: Record<
-    AxisKey,
-    {
-      tabActive: string;
-      tabInactive: string;
-      tabInactiveText: string;
-      cardActive: string;
-      cardInactive: string;
-      chip: string;
-    }
-  > = {
+  const axisTheme: Record<AxisKey, { cardActive: string; cardInactive: string; chip: string }> = {
     power: {
-      tabActive: 'border-emerald-400/55 bg-emerald-500/12 text-emerald-100',
-      tabInactive: 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-100/90 hover:border-emerald-400/45 hover:bg-emerald-500/[0.10]',
-      tabInactiveText: 'text-emerald-200/80',
       cardActive: 'border-emerald-400/65 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_0_35px_rgba(16,185,129,0.15)]',
       cardInactive: 'border-emerald-500/25 bg-emerald-500/[0.05] hover:bg-emerald-500/[0.08] hover:border-emerald-400/40',
       chip: 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30',
     },
     synergy: {
-      tabActive: 'border-fuchsia-400/55 bg-fuchsia-500/12 text-fuchsia-100',
-      tabInactive: 'border-fuchsia-500/30 bg-fuchsia-500/[0.06] text-fuchsia-100/90 hover:border-fuchsia-400/45 hover:bg-fuchsia-500/[0.10]',
-      tabInactiveText: 'text-fuchsia-200/80',
       cardActive: 'border-fuchsia-400/65 bg-fuchsia-500/12 shadow-[0_0_0_1px_rgba(244,114,182,0.25),0_0_35px_rgba(217,70,239,0.15)]',
       cardInactive: 'border-fuchsia-500/25 bg-fuchsia-500/[0.05] hover:bg-fuchsia-500/[0.08] hover:border-fuchsia-400/40',
       chip: 'bg-fuchsia-500/15 text-fuchsia-200 border border-fuchsia-400/30',
     },
     consistency: {
-      tabActive: 'border-cyan-400/55 bg-cyan-500/12 text-cyan-100',
-      tabInactive: 'border-cyan-500/30 bg-cyan-500/[0.06] text-cyan-100/90 hover:border-cyan-400/45 hover:bg-cyan-500/[0.10]',
-      tabInactiveText: 'text-cyan-200/80',
       cardActive: 'border-cyan-400/65 bg-cyan-500/12 shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_0_35px_rgba(14,165,233,0.15)]',
       cardInactive: 'border-cyan-500/25 bg-cyan-500/[0.05] hover:bg-cyan-500/[0.08] hover:border-cyan-400/40',
       chip: 'bg-cyan-500/15 text-cyan-200 border border-cyan-400/30',
     },
     curve: {
-      tabActive: 'border-amber-400/55 bg-amber-500/12 text-amber-100',
-      tabInactive: 'border-amber-500/30 bg-amber-500/[0.06] text-amber-100/90 hover:border-amber-400/45 hover:bg-amber-500/[0.10]',
-      tabInactiveText: 'text-amber-200/80',
       cardActive: 'border-amber-400/65 bg-amber-500/12 shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_0_35px_rgba(249,115,22,0.15)]',
       cardInactive: 'border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/[0.08] hover:border-amber-400/40',
       chip: 'bg-amber-500/15 text-amber-200 border border-amber-400/30',
     },
   };
-  const selectedAxisContributionByKey: Record<AxisKey, number> = {
+  const contributionByKey: Record<AxisKey, number> = {
     power: Number.isFinite(b.powerWeightedContribution)
       ? b.powerWeightedContribution
       : (b.wrNormalized * result.weightsApplied.power) / Math.max(1e-6, totalWeight),
@@ -620,17 +655,11 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
       ? b.curveWeightedContribution
       : (b.curveScore * result.weightsApplied.curve) / Math.max(1e-6, totalWeight),
   };
-  const axisRowsWithContribution = axisRows.map((axis) => {
-    const contribution = selectedAxisContributionByKey[axis.id];
-    return {
-      ...axis,
-      contribution,
-      weightSharePct: (axis.weight / Math.max(1e-6, totalWeight)) * 100,
-      contributionSharePct: (Math.max(0, contribution) / Math.max(1e-6, baseScore)) * 100,
-    };
-  });
-  const selectedAxisMetric =
-    axisRowsWithContribution.find((row) => row.id === selectedAxis.id) || axisRowsWithContribution[0];
+  const axisRowsWithContribution = axisRows.map((axis) => ({
+    ...axis,
+    contribution: contributionByKey[axis.id],
+    weightSharePct: (axis.weight / Math.max(1e-6, totalWeight)) * 100,
+  }));
   const curveComponentByStepLabel: Record<string, string> = {
     'top heavy delta': 'top-heavy',
     'skeleton delta': 'skeleton-shape',
@@ -643,7 +672,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     raw: b.dependencyAdjustment,
     scale: dependencyAxisScale,
     delta: dependencyAxisDelta,
-    tooltip: 'Dependency safety adjustment translated into synergy axis points.',
+    tooltip: 'Penalty for payoff cards whose support (tribe, spell count...) is missing, in axis points.',
   } as const;
   const synergyComponentByStepLabel: Record<string, string> = {
     'dependency delta': 'dependency',
@@ -653,8 +682,7 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
   const axisDetails: Record<
     AxisKey,
     {
-      title: string;
-      subtitle: string;
+      explanation: string;
       formula: string;
       waterfall: Array<{
         label: string;
@@ -662,30 +690,24 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
         kind: 'base' | 'delta' | 'final';
         tooltip?: string;
       }>;
-      rows: Array<{ label: string; value: string; tone?: 'neutral' | 'good' | 'bad' }>;
     }
   > = {
     power: {
-      title: 'Power Axis',
-      subtitle: 'Card quality from contextual WR.',
-      formula: 'Axis score = WR normalized',
+      explanation: `Average 17Lands win rate of the deck's spells (${b.wrScore.toFixed(1)}%, bomb bonus included), scaled around the format average: average deck = 50, 4 points above = 100.`,
+      formula: 'Power = average WR, scaled to 0-100',
       waterfall: [
         {
-          label: 'Axis score',
-          value: b.wrNormalized,
-          kind: 'final',
-          tooltip: 'Normalized contextual WR for the selected build.',
+          label: 'Average WR (incl. bomb bonus)',
+          value: b.wrScore,
+          kind: 'base',
+          tooltip: 'Mean "games in hand" win rate of the spells. Cards far above the format average get a bonus.',
         },
-      ],
-      rows: [
-        { label: 'Raw WR', value: `${toFixed2NoRound(b.wrScore)}%` },
-        { label: 'Normalized axis', value: toFixed2NoRound(b.wrNormalized) },
+        { label: 'Power axis', value: b.wrNormalized, kind: 'final' },
       ],
     },
     synergy: {
-      title: 'Synergy Axis',
-      subtitle: 'Base synergy + dependency safety adjustment.',
-      formula: 'Synergy axis = Synergy base + (Dependency raw x Dependency scale)',
+      explanation: 'How often the deck\'s cards appear together in winning decks, minus a penalty when a payoff card lacks its support.',
+      formula: 'Synergy = pair synergy + dependency adjustment',
       waterfall: [
         {
           label: 'Base synergy',
@@ -699,32 +721,12 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
           kind: 'delta',
           tooltip: 'Dependency penalty translated into axis points.',
         },
-        {
-          label: 'Final axis',
-          value: b.synergyNormalized,
-          kind: 'final',
-        },
-      ],
-      rows: [
-        { label: 'Base synergy axis', value: toFixed2NoRound(synergyBaseNormalized) },
-        { label: 'Dependency scale', value: `x${toFixed2NoRound(dependencyAxisScale)}` },
-        {
-          label: 'Dependency adjustment (raw)',
-          value: signed(b.dependencyAdjustment),
-          tone: b.dependencyAdjustment >= 0 ? 'good' : 'bad',
-        },
-        {
-          label: 'Dependency axis delta',
-          value: signed(dependencyAxisDelta),
-          tone: dependencyAxisDelta >= 0 ? 'good' : 'bad',
-        },
-        { label: 'Final synergy axis', value: toFixed2NoRound(b.synergyNormalized) },
+        { label: 'Final axis', value: b.synergyNormalized, kind: 'final' },
       ],
     },
     consistency: {
-      title: 'Consistency Axis',
-      subtitle: 'Mana castability reliability.',
-      formula: 'Consistency axis = 100 - (Mana penalty x 450), clamped to [0, 100]',
+      explanation: 'Probability of casting each spell on curve with this mana base. Drops when a color lacks sources (see Mana base below).',
+      formula: 'Consistency = 100 - mana strain, clamped to 0-100',
       waterfall: [
         {
           label: 'Start',
@@ -733,28 +735,23 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
           tooltip: 'Consistency starts at 100 and decreases with mana strain.',
         },
         {
-          label: 'Mana penalty delta',
+          label: 'Mana strain',
           value: consistencyRawDelta,
           kind: 'delta',
           tooltip: 'Computed from castability pressure across card requirements.',
         },
         {
-          label: 'Clamp delta',
+          label: 'Clamp',
           value: consistencyClampDelta,
           kind: 'delta',
-          tooltip: 'Clamp correction to keep axis in [0, 100].',
+          tooltip: 'Correction to keep the axis in [0, 100].',
         },
         { label: 'Final axis', value: b.consistencyScore, kind: 'final' },
       ],
-      rows: [
-        { label: 'Mana penalty', value: b.manaPenalty.toFixed(4) },
-        { label: 'Consistency axis', value: toFixed2NoRound(b.consistencyScore) },
-      ],
     },
     curve: {
-      title: 'Curve & Structure Axis',
-      subtitle: 'Starts at 100, then each component applies its own scaled delta.',
-      formula: 'Curve axis = 100 + sum(curve deltas) + removal delta',
+      explanation: 'Starts at 100, then loses points for a top-heavy curve, a shape far from trophy decks, few early creatures, a creature count outside 12-18, or fewer than 4 removal spells.',
+      formula: 'Curve = 100 + curve deltas + removal delta',
       waterfall: [
         { label: 'Start', value: 100, kind: 'base' },
         { label: 'Top heavy delta', value: curveTopHeavyDelta, kind: 'delta' },
@@ -764,10 +761,21 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
         { label: 'Removal delta', value: removalAxisDelta, kind: 'delta' },
         { label: 'Final axis', value: b.curveScore, kind: 'final' },
       ],
-      rows: [],
     },
   };
   const selectedAxisDetail = axisDetails[selectedAxis.id];
+  const selectedAxisMetric =
+    axisRowsWithContribution.find((row) => row.id === selectedAxis.id) || axisRowsWithContribution[0];
+
+  // Comparaisons de score, traduites en win rate par partie.
+  const comparisons: Array<{ label: string; delta: number }> = isBestSelected
+    ? result.builds.slice(1).map((other, i) => ({
+        label: `vs Alternative ${i + 1} (${other.archetype})`,
+        delta: selectedBuild.score - other.score,
+      }))
+    : bestBuild
+      ? [{ label: `vs Best build (${bestBuild.archetype})`, delta: selectedBuild.score - bestBuild.score }]
+      : [];
 
   const copyDeckList = async () => {
     const lines: string[] = ['Deck'];
@@ -788,6 +796,26 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     }
   };
 
+  const renderBadges = (card: SkeletonCard) => {
+    const r = roles[card.name];
+    if (!r) return null;
+    return (
+      <>
+        {r.bomb && <Badge kind="bomb" />}
+        {r.removal && <Badge kind="removal" />}
+        {r.splash && <Badge kind="splash" />}
+        {r.dependency === 'unmet' && <Badge kind="unmet" />}
+      </>
+    );
+  };
+
+  const tabClass = (active: boolean) =>
+    `px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+      active
+        ? 'bg-indigo-600 text-white'
+        : 'bg-slate-900/70 border border-slate-700 text-slate-200 hover:text-white hover:border-slate-500'
+    }`;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -804,18 +832,20 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
       >
         <div className="p-5 md:p-6 border-b border-slate-800 flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-[0.15em] font-bold">
-              Pool Optimization Dashboard
+            <p className="text-[11px] text-slate-400 uppercase tracking-[0.15em] font-bold">
+              Sealed Pool Optimizer
             </p>
             <h3 className="text-xl md:text-2xl font-black tracking-tight text-white mt-1 flex items-center gap-2">
-              <span>{selectedTab === 'user' ? 'User Deck:' : 'Best Build:'}</span>
+              <span>
+                {selectedTab === 'user' ? 'Your deck:' : isBestSelected ? 'Best build:' : `Alternative ${selectedBuildIndex}:`}
+              </span>
               <ManaIcons colors={selectedBuild.mainColors.join('')} size="sm" />
               <span className="text-indigo-300">{selectedBuild.archetype}</span>
             </h3>
             <p className="text-xs mt-1 text-slate-300">
-              {result.format} | {result.poolSize} cards in pool
+              {result.format} · {result.poolSize} cards in pool
               {computeTimeMs != null && (
-                <span className="text-slate-500"> | {computeTimeMs}ms</span>
+                <span className="text-slate-400"> · {(computeTimeMs / 1000).toFixed(1)}s</span>
               )}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -823,57 +853,164 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                 <button
                   key={`${build.archetype}-${index}`}
                   onClick={() => onSelectBuild(index)}
-                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    selectedTab === 'build' && index === selectedBuildIndex
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-900/70 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
-                  }`}
+                  className={tabClass(selectedTab === 'build' && index === selectedBuildIndex)}
                 >
-                  {index === 0 ? 'Best Build' : `Alternative ${index}`}
+                  {index === 0 ? 'Best' : `Alt ${index}`} · {buildTabLabel(build)}
                 </button>
               ))}
               {userDeckBuild && (
-                <button
-                  onClick={onSelectUserDeck}
-                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    selectedTab === 'user'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-900/70 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
-                  }`}
-                >
-                  User Deck
+                <button onClick={onSelectUserDeck} className={tabClass(selectedTab === 'user')}>
+                  Your deck · {buildTabLabel(userDeckBuild)}
                 </button>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors flex items-center justify-center"
+            aria-label="Close"
+            className="w-8 h-8 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors flex items-center justify-center"
           >
             <X size={14} />
           </button>
         </div>
 
         <div className="p-4 md:p-6 space-y-5">
-          {/* â”€â”€ Recommended Deck List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── En bref : score, comparaisons, resume ─────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-4">
+            <div className="rounded-3xl border border-indigo-500/25 bg-indigo-500/10 p-4 md:p-5">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-indigo-300" />
+                <p className="text-xs font-extrabold text-indigo-200 uppercase tracking-[0.12em]">
+                  Deck score
+                </p>
+                <HelpDot>
+                  <p className="font-semibold">Used to rank builds, out of 100.</p>
+                  <p className="text-slate-300">
+                    Weighted mix of Power, Synergy, Consistency and Curve & Structure (details below).
+                  </p>
+                </HelpDot>
+              </div>
+              <p className="mt-2 text-5xl font-black text-white">{selectedBuild.score.toFixed(1)}</p>
+              {comparisons.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {comparisons.map((cmp) => (
+                    <p key={cmp.label} className="text-sm text-slate-200">
+                      <span className={cmp.delta >= 0 ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}>
+                        {formatSigned(cmp.delta)} pts
+                      </span>{' '}
+                      {cmp.label}
+                      <span className="text-slate-400">
+                        {' '}≈ {formatSigned(scoreDeltaToWr(cmp.delta))}% wins per game
+                      </span>
+                    </p>
+                  ))}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <span className="text-[11px] text-slate-400">Estimate, not a guarantee</span>
+                    <HelpDot>
+                      <p>
+                        Measured on 17Lands public Sealed games (MSH and HOB): at equal player skill, each score
+                        point is worth about {WR_POINTS_PER_SCORE_POINT} win-rate points per game.
+                      </p>
+                      <p className="text-slate-300">Card play and opponents matter far more than the deck alone.</p>
+                    </HelpDot>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5">
+              <SectionHeader icon={<ListChecks size={14} className="text-cyan-300" />} title="At a glance" />
+              <ul className="space-y-2">
+                {summary.map((line) => (
+                  <li key={line.text} className="flex items-start gap-2 text-sm text-slate-200 leading-snug">
+                    {TONE_ICON[line.tone]}
+                    <span>{line.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* ── Ecart avec le meilleur build ─────────────────────────────── */}
+          {diffVsBest && bestBuild && (diffVsBest.removed.length > 0 || diffVsBest.added.length > 0) && (
+            <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5">
+              <SectionHeader
+                icon={<ArrowRightLeft size={14} className="text-indigo-300" />}
+                title={`Changes vs best build (${bestBuild.archetype})`}
+              />
+              {diffVsBest.colorChange && (
+                <p className="text-sm text-slate-300 mb-3">Colors: {diffVsBest.colorChange}</p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-bold text-rose-300 uppercase tracking-wide mb-2">
+                    Not in this deck ({totalQty(diffVsBest.removed)})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diffVsBest.removed.map((c) => (
+                      <button
+                        key={c.name}
+                        onClick={() => onZoomCard(c.name)}
+                        className="text-xs px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-100 hover:bg-rose-500/20"
+                      >
+                        −{c.qty > 1 ? `${c.qty} ` : ''}{c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-emerald-300 uppercase tracking-wide mb-2">
+                    Added in this deck ({totalQty(diffVsBest.added)})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diffVsBest.added.map((c) => (
+                      <button
+                        key={c.name}
+                        onClick={() => onZoomCard(c.name)}
+                        className="text-xs px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 hover:bg-emerald-500/20"
+                      >
+                        +{c.qty > 1 ? `${c.qty} ` : ''}{c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Liste du deck ─────────────────────────────────────────────── */}
           <div>
             <SectionHeader
-              icon={<Layers size={13} className="text-indigo-300" />}
-              title="Recommended Deck List"
+              icon={<Layers size={14} className="text-indigo-300" />}
+              title={selectedTab === 'user' ? 'Your Deck List' : 'Recommended Deck List'}
               trailing={(
                 <button
                   onClick={copyDeckList}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-200 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30 hover:bg-indigo-500/25 text-indigo-100 text-xs font-bold transition-colors"
                 >
-                  <Copy size={11} />
-                  {didCopy ? 'Copied' : 'Copy Decklist'}
+                  <Copy size={12} />
+                  {didCopy ? 'Copied' : 'Copy decklist'}
                 </button>
               )}
             />
-            <p className="text-[10px] text-slate-500 mb-3">
-              {selectedBuild.stats.totalCards} cards
-              {selectedBuild.splashColor ? ` | splash ${selectedBuild.splashColor}` : ''}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3 text-xs text-slate-300">
+              <span>
+                {selectedBuild.stats.totalCards} cards
+                {selectedBuild.splashColor ? ` · splash ${selectedBuild.splashColor}` : ''}
+              </span>
+              {Object.keys(roles).length > 0 && (
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {(['bomb', 'removal', 'splash', 'unmet'] as const).map((kind) => (
+                    <span key={kind} className="inline-flex items-center gap-1">
+                      <Badge kind={kind} />
+                      <span className="text-slate-400">
+                        {kind === 'bomb' ? 'Bomb' : kind === 'removal' ? 'Removal' : kind === 'splash' ? 'Splash' : 'Missing support'}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
             <div className="-mx-4 md:-mx-6 px-4 md:px-6 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] [scrollbar-color:theme(colors.slate.700)_transparent]">
               <div className="flex flex-nowrap items-start gap-0 md:gap-1 min-w-[700px] [&>div]:flex-1 [&>div]:min-w-0 [&>div]:w-auto">
                 {cmcRange.map((cmc) => (
@@ -882,180 +1019,74 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                     cmc={cmc}
                     cards={cmcStacks[cmc] || []}
                     onCardSelect={(card) => onZoomCard(card.name)}
+                    renderBadges={renderBadges}
                   />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* â”€â”€ Global Score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-          <div className="rounded-3xl border border-indigo-500/25 bg-indigo-500/10 p-4 md:p-5">
-            <div className="flex items-center gap-2">
-              <Zap size={13} className="text-indigo-300" />
-              <p className="text-[11px] md:text-xs font-extrabold text-indigo-300 uppercase tracking-[0.14em]">
-                Global Score
-              </p>
-              <Tooltip
-                content={
-                  <div className="max-w-[230px] space-y-1">
-                    <p className="text-[10px] text-slate-200 font-semibold">
-                      Final score used to rank builds.
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Formula: weighted composite of Power, Synergy, Consistency, and Curve & Structure.
-                    </p>
-                  </div>
-                }
-              >
+          {/* ── Detail du score (un seul bloc) ────────────────────────────── */}
+          <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-4">
+            <SectionHeader
+              icon={<Sparkles size={14} className="text-indigo-300" />}
+              title="Score breakdown"
+              trailing={<span className="text-xs text-slate-400">Click an axis for details</span>}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
+              {axisRowsWithContribution.map((axis) => (
                 <button
+                  key={axis.id}
                   type="button"
-                  className="w-4 h-4 rounded-full border border-indigo-400/40 text-[10px] font-bold text-indigo-300/90 hover:text-white hover:border-indigo-300 transition-colors flex items-center justify-center"
+                  onClick={() => setActiveAxis(axis.id)}
+                  className={`rounded-2xl border p-3 text-left transition-all ${
+                    selectedAxis.id === axis.id ? axisTheme[axis.id].cardActive : axisTheme[axis.id].cardInactive
+                  }`}
                 >
-                  ?
-                </button>
-              </Tooltip>
-            </div>
-            <div className="mt-2 flex items-end gap-2">
-              <span className="text-4xl md:text-5xl font-black text-white">
-                {toFixed2NoRound(selectedBuild.score)}
-              </span>
-              
-            </div>
-            <p className="mt-2 text-[11px] text-slate-300">
-              Final = Weighted Axes Composite ({toFixed2NoRound(baseScore)}).
-            </p>
-          </div>
-
-          {/* Composite Axes */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="self-start rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-4 relative overflow-hidden">
-              <div className="absolute -top-16 -left-12 w-40 h-40 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-              <div className="absolute -bottom-20 -right-10 w-44 h-44 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
-              <SectionHeader
-                icon={<Sparkles size={13} className="text-indigo-300" />}
-                title="Composite Axes"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 relative">
-                {axisRowsWithContribution.map((axis) => (
-                  <button
-                    key={axis.id}
-                    type="button"
-                    onClick={() => setActiveAxis(axis.id)}
-                    className={`rounded-2xl border p-3 text-left transition-all ${
-                      selectedAxis.id === axis.id
-                        ? axisTheme[axis.id].cardActive
-                        : axisTheme[axis.id].cardInactive
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-200">
-                        {axis.label}
-                      </p>
-                      <div className="text-right">
-                        <p className="text-lg font-black text-white leading-none">
-                          {toFixed2NoRound(axis.value)}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          {toFixed2NoRound(axis.contributionSharePct)}%
-                        </p>
-                      </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-slate-100">{axis.label}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{axis.hint}</p>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${axisTheme[axis.id].chip}`}>
-                        Weight {toFixed2NoRound(axis.weight)}x
-                      </span>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-900/70 border border-slate-700 text-slate-200">
-                        Contrib {toFixed2NoRound(axis.contribution)} ({toFixed2NoRound(axis.contributionSharePct)}%)
-                      </span>
-                    </div>
-                    <div className="mt-2.5 h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
-                      <div
-                        className={`h-full bg-gradient-to-r ${axis.color}`}
-                        style={{ width: `${clamp(axis.value)}%` }}
-                      />
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-            </div>
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-950/45 p-4 md:p-5 space-y-3">
-              <SectionHeader
-                icon={<Search size={13} className="text-cyan-300" />}
-                title="Composite Axis Analysis"
-              />
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {axisRowsWithContribution.map((axis) => (
-                  <button
-                    key={axis.id}
-                    type="button"
-                    onClick={() => setActiveAxis(axis.id)}
-                    className={`px-2.5 py-2 rounded-lg border text-left transition-colors ${
-                      selectedAxis.id === axis.id
-                        ? axisTheme[axis.id].tabActive
-                        : axisTheme[axis.id].tabInactive
-                    }`}
-                  >
-                    <p className="text-[10px] font-bold uppercase tracking-wide">{axis.label}</p>
-                    <p className={`text-[11px] mt-0.5 ${selectedAxis.id === axis.id ? 'text-slate-200' : axisTheme[axis.id].tabInactiveText}`}>
-                      {toFixed2NoRound(axis.value)}
-                    </p>
-                  </button>
-                ))}
-              </div>
-
-              <div className="rounded-2xl border border-slate-700/45 bg-slate-900/60 p-3.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-[0.12em] font-bold">
-                      {selectedAxisDetail.title}
-                    </p>
-                    <p className="text-[11px] text-slate-300 mt-1">
-                      {selectedAxisDetail.subtitle}
-                    </p>
-                    <p className="mt-1 text-[10px] text-slate-400">
-                      {selectedAxisDetail.formula}
-                    </p>
+                    <p className="text-2xl font-black text-white leading-none">{Math.round(axis.value)}</p>
                   </div>
-                  <p className="text-3xl font-black text-white">
-                    {toFixed2NoRound(selectedAxisMetric.value)}
-                    <span className="ml-2 text-sm font-semibold text-slate-300">
-                      ({toFixed2NoRound(selectedAxisMetric.contributionSharePct)}%)
+                  <div className="mt-2.5 h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
+                    <div className={`h-full bg-gradient-to-r ${axis.color}`} style={{ width: `${clamp(axis.value)}%` }} />
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-300">
+                    <span className={`px-1.5 py-0.5 rounded-md ${axisTheme[axis.id].chip}`}>
+                      weight {Math.round(axis.weightSharePct)}%
                     </span>
+                    <span className="ml-2">+{axis.contribution.toFixed(1)} pts to the score</span>
                   </p>
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-slate-700/45 bg-slate-900/60 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs text-slate-300 uppercase tracking-[0.12em] font-bold">{selectedAxis.label}</p>
+                  <p className="text-sm text-slate-200 mt-1 leading-snug">{selectedAxisDetail.explanation}</p>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-slate-700/45 bg-slate-900/60 px-2.5 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Axis Weight</p>
-                    <p className="text-sm font-black text-slate-100">
-                      {toFixed2NoRound(selectedAxisMetric.weight)}x
-                      <span className="text-[11px] text-slate-400 ml-1">
-                        ({toFixed2NoRound(selectedAxisMetric.weightSharePct)}%)
-                      </span>
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-700/45 bg-slate-900/60 px-2.5 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Weighted Contribution</p>
-                    <p className="text-sm font-black text-slate-100">
-                      {toFixed2NoRound(selectedAxisMetric.contribution)}
-                      <span className="text-[11px] text-slate-400 ml-1">
-                        ({toFixed2NoRound(selectedAxisMetric.contributionSharePct)}%)
-                      </span>
-                    </p>
-                  </div>
-                </div>
+                <p className="text-3xl font-black text-white shrink-0">{Math.round(selectedAxisMetric.value)}</p>
               </div>
 
-              <div className="rounded-2xl border border-slate-800/60 bg-slate-900/55 p-3">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500 font-bold">Computation Steps</p>
+              <button
+                type="button"
+                onClick={() => setShowComputation((v) => !v)}
+                className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-white"
+              >
+                {showComputation ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {showComputation ? 'Hide computation' : 'Show computation'}
+              </button>
+
+              {showComputation && (
                 <div className="mt-2 space-y-1.5">
+                  <p className="text-[11px] text-slate-400">{selectedAxisDetail.formula}</p>
                   {selectedAxisDetail.waterfall.map((step, index) => {
                     const stepKey = step.label.toLowerCase();
-                    const curveLinkedId =
-                      selectedAxis.id === 'curve'
-                        ? curveComponentByStepLabel[stepKey]
-                        : undefined;
+                    const curveLinkedId = selectedAxis.id === 'curve' ? curveComponentByStepLabel[stepKey] : undefined;
                     const linkedComponent =
                       selectedAxis.id === 'curve' && curveLinkedId != null
                         ? curveComponents.find((component) => component.id === curveLinkedId) || null
@@ -1063,12 +1094,8 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                           ? synergyComponent
                           : null;
                     const isExpandable = linkedComponent != null;
-                    const isExpanded =
-                      linkedComponent != null && expandedCurveComponentId === linkedComponent.id;
-                    const tooltipText =
-                      step.tooltip ||
-                      linkedComponent?.tooltip ||
-                      'Computed step in this axis formula.';
+                    const isExpanded = linkedComponent != null && expandedCurveComponentId === linkedComponent.id;
+                    const tooltipText = step.tooltip || linkedComponent?.tooltip || 'Computed step in this axis formula.';
 
                     return (
                       <div key={`${step.label}-${index}`} className="space-y-1.5">
@@ -1076,64 +1103,44 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                           type="button"
                           onClick={() => {
                             if (!isExpandable || !linkedComponent) return;
-                            setExpandedCurveComponentId((prev) =>
-                              prev === linkedComponent.id ? null : linkedComponent.id,
-                            );
+                            setExpandedCurveComponentId((prev) => (prev === linkedComponent.id ? null : linkedComponent.id));
                           }}
                           className={`w-full grid items-center gap-2 rounded-lg border border-slate-800/55 bg-slate-950/45 px-2 py-1.5 ${
                             isExpandable ? 'cursor-pointer hover:bg-slate-900/70 transition-colors' : 'cursor-default'
                           }`}
-                          style={{
-                            gridTemplateColumns: isExpandable ? '18px 1fr auto 14px' : '18px 1fr auto',
-                          }}
+                          style={{ gridTemplateColumns: isExpandable ? '18px 1fr auto 14px' : '18px 1fr auto' }}
                         >
-                          <span className="text-[10px] text-slate-500 font-semibold">{index + 1}</span>
+                          <span className="text-[11px] text-slate-400 font-semibold">{index + 1}</span>
                           <div className="min-w-0 flex items-center gap-1.5">
-                            <p className="text-[11px] text-slate-200 truncate">{step.label}</p>
-                            <Tooltip
-                              content={(
-                                <div className="max-w-[220px] text-[10px] text-slate-300">
-                                  {tooltipText}
-                                </div>
-                              )}
-                            >
-                              <span className="w-4 h-4 rounded-full border border-slate-600 text-[10px] font-bold text-slate-400 hover:text-white hover:border-slate-400 transition-colors flex items-center justify-center">
-                                ?
-                              </span>
-                            </Tooltip>
+                            <p className="text-xs text-slate-200 truncate">{step.label}</p>
+                            <HelpDot>{tooltipText}</HelpDot>
                           </div>
                           <span
-                            className={`text-[11px] font-black ${
+                            className={`text-xs font-black ${
                               step.kind === 'delta'
-                                ? step.value >= 0
-                                  ? 'text-emerald-300'
-                                  : 'text-rose-300'
+                                ? step.value >= 0 ? 'text-emerald-300' : 'text-rose-300'
                                 : 'text-slate-100'
                             }`}
                           >
                             {step.kind === 'delta' ? signed(step.value) : toFixed2NoRound(step.value)}
                           </span>
                           {isExpandable && (
-                            isExpanded ? (
-                              <ChevronDown size={14} className="text-slate-400" />
-                            ) : (
-                              <ChevronRight size={14} className="text-slate-500" />
-                            )
+                            isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />
                           )}
                         </button>
                         {isExpanded && linkedComponent && (
                           <div className="ml-6 rounded-lg border border-slate-800/60 bg-slate-900/55 px-3 py-2">
-                            <div className="grid grid-cols-3 gap-2 text-[11px]">
+                            <div className="grid grid-cols-3 gap-2 text-xs">
                               <div>
-                                <p className="text-slate-500">Raw</p>
+                                <p className="text-slate-400">Raw</p>
                                 <p className="font-semibold text-slate-100">{signed(linkedComponent.raw)}</p>
                               </div>
                               <div>
-                                <p className="text-slate-500">Scale</p>
+                                <p className="text-slate-400">Scale</p>
                                 <p className="font-semibold text-slate-100">x{toFixed2NoRound(linkedComponent.scale)}</p>
                               </div>
                               <div>
-                                <p className="text-slate-500">Delta</p>
+                                <p className="text-slate-400">Delta</p>
                                 <p className={`font-black ${linkedComponent.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                                   {signed(linkedComponent.delta)}
                                 </p>
@@ -1144,139 +1151,162 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
                       </div>
                     );
                   })}
-                </div>
-              </div>
-              {selectedAxis.id !== 'synergy' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {selectedAxisDetail.rows.map((row) => (
-                    <div
-                      key={row.label}
-                      className="rounded-xl border border-slate-800/60 bg-slate-900/60 px-3 py-2"
-                    >
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">
-                        {row.label}
-                      </p>
-                      <p
-                        className={`text-sm font-black ${
-                          row.tone === 'good'
-                            ? 'text-emerald-300'
-                            : row.tone === 'bad'
-                              ? 'text-rose-300'
-                              : 'text-slate-100'
-                        }`}
-                      >
-                        {row.value}
-                      </p>
-                    </div>
-                  ))}
+                  <p className="text-[11px] text-slate-400 pt-1">
+                    Score {baseScore.toFixed(2)} = sum of the 4 weighted axes.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Spell Curve + Composition */}
+          {/* ── Courbe + composition / manabase ──────────────────────────── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
               <SectionHeader
-                icon={<BarChart3 size={13} className="text-indigo-300" />}
+                icon={<BarChart3 size={14} className="text-indigo-300" />}
                 title="Spell Curve"
                 trailing={
                   <div className="flex items-center gap-2 px-3 py-1 bg-slate-950/40 rounded-full border border-slate-800/30">
                     <Clock size={12} className="text-indigo-400" />
-                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider whitespace-nowrap">
-                      AVG: <span className="text-white">{selectedBuild.stats.avgCmc.toFixed(2)}</span>
+                    <span className="text-xs font-bold text-slate-200 whitespace-nowrap">
+                      Avg: <span className="text-white">{selectedBuild.stats.avgCmc.toFixed(2)}</span>
                     </span>
                   </div>
                 }
               />
 
-              <div className="flex items-end justify-between h-28 gap-2 px-4 border-b border-slate-800 pb-1">
+              <div className="flex items-end justify-between h-32 gap-2 px-4 border-b border-slate-800 pb-1">
                 {curveRows.map((row) => {
                   const height = Math.max((row.count / maxCurveValue) * 100, 2);
+                  const targetPct = row.target != null ? (row.target / maxCurveValue) * 100 : null;
                   return (
-                    <div
-                      key={row.cmc}
-                      className="flex-1 flex flex-col items-center gap-2 group h-full justify-end"
-                    >
-                      <motion.div
-                        initial={{ height: 0 }}
-                        animate={{ height: `${height}%` }}
-                        className="w-full rounded-t-md relative border-x border-t shadow-lg transition-colors bg-gradient-to-t from-indigo-600 to-cyan-400 border-indigo-400/10"
-                      >
-                        <div className="absolute -top-6 left-0 right-0 text-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-all uppercase">
-                          {row.count}
-                        </div>
-                      </motion.div>
-                      <span className="text-[10px] font-black text-slate-500 uppercase">
-                        {row.cmc}
-                      </span>
+                    <div key={row.cmc} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                      <div className="relative w-full h-full flex items-end">
+                        <motion.div
+                          initial={{ height: 0 }}
+                          animate={{ height: `${height}%` }}
+                          className="w-full rounded-t-md relative border-x border-t shadow-lg bg-gradient-to-t from-indigo-600 to-cyan-400 border-indigo-400/10"
+                        >
+                          <div className="absolute -top-5 left-0 right-0 text-center text-xs font-bold text-white">
+                            {row.count > 0 ? row.count : ''}
+                          </div>
+                        </motion.div>
+                        {targetPct != null && targetPct > 0 && (
+                          <div
+                            className="absolute left-0 right-0 border-t-2 border-dashed border-amber-300/80 pointer-events-none"
+                            style={{ bottom: `${targetPct}%` }}
+                            title={`Trophy decks average: ${row.target}`}
+                          />
+                        )}
+                      </div>
+                      <span className="text-xs font-black text-slate-400">{row.cmc}</span>
                     </div>
                   );
                 })}
               </div>
+              {hasTargetCurve && (
+                <p className="mt-3 text-xs text-slate-400 flex items-center gap-2">
+                  <span className="inline-block w-5 border-t-2 border-dashed border-amber-300/80" />
+                  Average curve of trophy decks in this archetype
+                </p>
+              )}
             </div>
 
             <div className="bg-slate-900/30 backdrop-blur-xl border border-slate-800/40 p-6 rounded-[2.5rem]">
               <SectionHeader
-                icon={<Users size={13} className="text-emerald-300" />}
+                icon={<Users size={14} className="text-emerald-300" />}
                 title="Composition & Mana Base"
               />
-              <div className="grid grid-cols-3 gap-2 h-[100px]">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl lg:text-4xl font-black text-emerald-400 tracking-tighter">{creatureRatio}</span>
-                    <span className="text-xl text-slate-600 font-bold">/</span>
-                    <span className="text-3xl lg:text-4xl font-black text-indigo-400 tracking-tighter">{spellRatio}</span>
+                    <span className="text-3xl font-black text-emerald-400 tracking-tighter">{creatureRatio}</span>
+                    <span className="text-xl text-slate-500 font-bold">/</span>
+                    <span className="text-3xl font-black text-indigo-400 tracking-tighter">{spellRatio}</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[8px] font-bold text-emerald-500/60 uppercase">Crea</span>
-                    <span className="text-[8px] font-bold text-indigo-500/60 uppercase">Spells</span>
-                  </div>
+                  <span className="text-[11px] font-bold text-slate-400 mt-1">% creatures / spells</span>
                 </div>
 
                 <div className="flex flex-col items-center justify-center p-3 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
-                  <span className="text-3xl lg:text-4xl font-black text-white tracking-tighter">{landCount}</span>
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1 text-center whitespace-nowrap">LANDS</span>
+                  <span className="text-3xl font-black text-white tracking-tighter">{landCount}</span>
+                  <span className="text-[11px] font-bold text-slate-400 mt-1">lands</span>
                 </div>
 
                 <div className="flex flex-col items-center justify-center p-2 bg-slate-950/40 rounded-[1.5rem] border border-slate-800/30">
                   <div className="flex items-center justify-center gap-2">
-                    {COLOR_ORDER.filter((color) => colorDistribution[color] > 0).map(
-                      (color) => (
-                        <div key={color} className="flex flex-col items-center">
-                          <div className="relative">
-                            <img
-                              src={`https://svgs.scryfall.io/card-symbols/${color}.svg`}
-                              alt={color}
-                              className="w-7 h-7 lg:w-8 lg:h-8 drop-shadow-lg"
-                            />
-                            <span className="absolute -bottom-1 -right-1 bg-slate-900 text-white text-[9px] font-black px-1 rounded-full border border-slate-700 min-w-[16px] text-center">
-                              {colorDistribution[color]}
-                            </span>
-                          </div>
-                        </div>
-                      ),
-                    )}
+                    {COLOR_ORDER.filter((color) => colorDistribution[color] > 0).map((color) => (
+                      <div key={color} className="relative">
+                        <img
+                          src={`https://svgs.scryfall.io/card-symbols/${color}.svg`}
+                          alt={color}
+                          className="w-7 h-7 drop-shadow-lg"
+                        />
+                        <span className="absolute -bottom-1 -right-1 bg-slate-900 text-white text-[11px] font-black px-1 rounded-full border border-slate-700 min-w-[16px] text-center">
+                          {colorDistribution[color]}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <span className="text-[8px] font-bold text-slate-600 uppercase mt-2">Cards by Color</span>
+                  <span className="text-[11px] font-bold text-slate-400 mt-2">cards by color</span>
                 </div>
               </div>
 
+              {manaPlan.length > 0 && (
+                <div className="mt-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Droplets size={14} className="text-cyan-300" />
+                    <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-200">Mana sources per color</p>
+                    <HelpDot>
+                      <p>
+                        Sources = lands producing the color, plus mana creatures (counted partially, the
+                        more expensive the less).
+                      </p>
+                      <p className="text-slate-300">
+                        Needed = what this deck's spells require to be cast on time (Frank Karsten's tables for
+                        40-card decks).
+                      </p>
+                    </HelpDot>
+                  </div>
+                  <div className="space-y-2">
+                    {manaPlan.map((m) => {
+                      const ok = m.sources + 0.5 >= m.required;
+                      const max = Math.max(m.required, m.sources, 1);
+                      return (
+                        <div key={m.color} className="grid grid-cols-[28px_1fr_auto] items-center gap-3">
+                          <img src={`https://svgs.scryfall.io/card-symbols/${m.color}.svg`} alt={m.color} className="w-6 h-6" />
+                          <div className="relative h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                            <div
+                              className={`h-full ${ok ? 'bg-emerald-500/80' : 'bg-amber-500/80'}`}
+                              style={{ width: `${clamp((m.sources / max) * 100)}%` }}
+                            />
+                            <div
+                              className="absolute top-0 bottom-0 border-l-2 border-white/70"
+                              style={{ left: `${clamp((m.required / max) * 100)}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-semibold whitespace-nowrap ${ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                            {m.sources} / {Math.ceil(m.required)} needed{m.isSplash ? ' · splash' : ''} {ok ? '✓' : '⚠'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
         </div>
 
         <div className="px-5 md:px-6 pb-5 md:pb-6 flex flex-wrap justify-center md:justify-end gap-2">
           <button
             onClick={onNewPool}
-            className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 text-xs font-bold uppercase tracking-wider transition-colors"
+            className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:text-white hover:border-slate-400 text-xs font-bold uppercase tracking-wider transition-colors"
           >
             Load New Pool
           </button>
           <button
             onClick={onTestCustomDeck}
-            className="px-4 py-2 rounded-xl border border-indigo-500/50 text-indigo-200 hover:text-white hover:border-indigo-400 text-xs font-bold uppercase tracking-wider transition-colors"
+            className="px-4 py-2 rounded-xl border border-indigo-500/50 text-indigo-100 hover:text-white hover:border-indigo-400 text-xs font-bold uppercase tracking-wider transition-colors"
           >
             Test Custom Deck
           </button>
@@ -1292,5 +1322,3 @@ export const PoolAnalysisModal: React.FC<PoolAnalysisModalProps> = ({
     </motion.div>
   );
 };
-
-

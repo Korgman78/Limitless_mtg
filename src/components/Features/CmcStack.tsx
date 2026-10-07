@@ -19,9 +19,11 @@ interface CmcStackProps {
     stackOverlap?: string;
     /** Libellé d'en-tête optionnel (par défaut = cmc). Ex: "Lands". */
     label?: React.ReactNode;
+    /** Badges optionnels en haut à gauche de la carte (seule zone visible dans la pile). */
+    renderBadges?: (card: SkeletonCard) => React.ReactNode;
 }
 
-export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, stackOverlap = '-135%', label }) => {
+export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, stackOverlap = '-135%', label, renderBadges }) => {
     const grouped = useMemo(() => {
         return cards.reduce((acc: (SkeletonCard & { count: number })[], card) => {
             const existing = acc.find(x => x.name === card.name);
@@ -70,6 +72,12 @@ export const CmcStack: React.FC<CmcStackProps> = ({ cmc, cards, onCardSelect, st
                                 alt={card.name}
                                 className="w-full h-full object-cover"
                             />
+
+                            {renderBadges && (
+                                <div className="absolute top-1 left-1 flex gap-0.5 z-[60]">
+                                    {renderBadges(card)}
+                                </div>
+                            )}
 
                             {card.count > 1 && (
                                 <div className="absolute top-1 right-1 bg-indigo-600 text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center shadow-lg border border-indigo-300/40 z-[60]">

@@ -196,6 +196,7 @@ export const DeckTestPanel: React.FC<DeckTestPanelProps> = ({
             poolAnalysis={pool.poolAnalysis}
             isLoading={pool.isAnalyzingPool}
             loadingProgress={pool.poolOptimizationProgress}
+            poolPreview={pool.poolPreview}
             selectedBuildIndex={pool.selectedBuildIndex}
             selectedTab={pool.selectedTab}
             userDeckBuild={pool.poolAnalysis?.userDeckBuild || null}

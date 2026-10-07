@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../supabase';
+import {
+  buildPoolPreview,
+  parsePoolNames,
+  type PoolPreview,
+} from '../components/Features/DeckTestPanel/poolExplain';
 
 // supabase.functions.invoke ne met dans error.message que "Edge Function returned
 // a non-2xx status code" : le vrai message du backend est dans le corps de la
@@ -69,6 +74,19 @@ export type ScoreBreakdown = {
   totalAdjustment: number;
 };
 
+export type BuildExplanation = {
+  formatMean: number;
+  manaPlan: Array<{ color: string; sources: number; required: number; isSplash: boolean }>;
+  cardRoles: Record<string, {
+    wr: number;
+    bomb: boolean;
+    removal: boolean;
+    splash: boolean;
+    dependency: 'met' | 'unmet' | null;
+  }>;
+  targetCurve: Record<string, number> | null;
+};
+
 export type SealedDeckResult = {
   rank: number;
   score: number;
@@ -85,6 +103,8 @@ export type SealedDeckResult = {
     skeletonSimilarity: number;
   };
   scoreBreakdown: ScoreBreakdown;
+  // Absent des analyses faites avant le deploiement de l'explicabilite.
+  explanation?: BuildExplanation;
 };
 
 export type SealedOptimizerResult = {
@@ -127,7 +147,8 @@ type CardListRow = {
   rarity?: string | null;
 };
 
-const POOL_ANALYSIS_CACHE_VERSION = 5;
+// 6 : nouveau score (parite multicolore, bonus bomb lineaire) + explication.
+const POOL_ANALYSIS_CACHE_VERSION = 6;
 const POOL_ANALYSIS_TIMEOUT_MS = 25_000;
 const POOL_ANALYSIS_JOB_POLL_MS = 800;
 const POOL_ANALYSIS_JOB_TIMEOUT_MS = 90_000;
@@ -223,6 +244,7 @@ export function usePoolAnalysis({
   const [isAnalyzingPool, setIsAnalyzingPool] = useState(false);
   const [poolOptimizationProgress, setPoolOptimizationProgress] =
     useState<PoolOptimizationProgress | null>(null);
+  const [poolPreview, setPoolPreview] = useState<PoolPreview | null>(null);
   const [poolAnalysis, setPoolAnalysis] = useState<PoolAnalysisCache | null>(
     null,
   );
@@ -316,8 +338,17 @@ export function usePoolAnalysis({
 
     setIsAnalyzingPool(true);
     setPoolOptimizationProgress(null);
+    setPoolPreview(null);
     setShowImportModal(false);
     setShowAnalysisModal(true);
+
+    // Apercu du pool pendant le calcul (non bloquant).
+    const poolNames = parsePoolNames(poolImportText);
+    void fetchPoolMetaByName(activeSet, poolNames.map((c) => c.name))
+      .then((meta) => {
+        if (mountedRef.current) setPoolPreview(buildPoolPreview(poolNames, meta));
+      })
+      .catch(() => {});
 
     try {
       const submitPromise = supabase.functions.invoke('sealed-optimizer', {
@@ -564,6 +595,7 @@ export function usePoolAnalysis({
     importError,
     isAnalyzingPool,
     poolOptimizationProgress,
+    poolPreview,
     poolAnalysis,
     selectedBuildIndex,
     selectedTab,
