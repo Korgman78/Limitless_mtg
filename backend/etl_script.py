@@ -4,7 +4,7 @@ import time
 import random
 import re
 import math
-from datetime import date
+from datetime import date, datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -14,6 +14,15 @@ from pathlib import Path
 
 INGESTION_MODE = "ALL"
 END_DATE = date.today().strftime("%Y-%m-%d")
+
+# Jour (UTC) du run : un 2e run le meme jour remplace le dernier point des
+# historiques au lieu d'en ajouter un (sinon les sparklines comptent 2 jours).
+TODAY = datetime.now(timezone.utc).date().isoformat()
+HISTORY_MAX_LEN = 21
+
+# Passe a False si la colonne `history_date` n'existe pas encore en base :
+# on retombe alors sur l'ancien comportement (ajout a chaque run).
+HAS_HISTORY_DATE = True
 
 # ✅ VARIABLE DE CIBLAGE (liste de codes, ou liste vide pour tous les sets actifs)
 # ⚠️ Ce script croise TARGET_SET_CODES avec les sets `active=true` de Supabase :
@@ -132,40 +141,62 @@ def get_active_sets():
         print(f"❌ Exception Fetch Sets: {e}")
         return []
 
+def fetch_existing_rows(table, columns, filters):
+    """GET Supabase avec `history_date` si la colonne existe, sinon sans."""
+    global HAS_HISTORY_DATE
+    cols = columns + (",history_date" if HAS_HISTORY_DATE else "")
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/{table}?select={cols}&{filters}", headers=HEADERS_SUPABASE)
+    if r.status_code == 400 and HAS_HISTORY_DATE and "history_date" in r.text:
+        print("   ⚠️ Colonne history_date absente : un run = un point d'historique.")
+        HAS_HISTORY_DATE = False
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/{table}?select={columns}&{filters}", headers=HEADERS_SUPABASE)
+    return r
+
+def push_history(history, value, same_day):
+    """Ajoute `value` a l'historique, ou remplace le dernier point si deja ecrit aujourd'hui."""
+    history = list(history or [])
+    if value is None:
+        return history
+    if same_day and history:
+        history[-1] = value
+    else:
+        history.append(value)
+    return history[-HISTORY_MAX_LEN:]
+
 def get_existing_histories(set_code, fmt):
-    """Pour les Decks (Archetypes) — retourne (histories, initial_wrs)"""
-    url = f"{SUPABASE_URL}/rest/v1/archetype_stats?select=colors,win_rate_history,initial_wr&set_code=eq.{set_code}&format=eq.{fmt}"
+    """Pour les Decks (Archetypes) — retourne (histories, initial_wrs, history_dates)"""
     try:
-        r = requests.get(url, headers=HEADERS_SUPABASE)
+        r = fetch_existing_rows("archetype_stats", "colors,win_rate_history,initial_wr", f"set_code=eq.{set_code}&format=eq.{fmt}")
         if r.status_code == 200:
             data = r.json()
             histories = {row['colors']: row.get('win_rate_history', []) for row in data}
             initial_wrs = {row['colors']: row.get('initial_wr') for row in data}
-            return histories, initial_wrs
-        return {}, {}
+            history_dates = {row['colors']: row.get('history_date') for row in data}
+            return histories, initial_wrs, history_dates
+        return {}, {}, {}
     except Exception:
-        return {}, {}
+        return {}, {}, {}
 
 def get_existing_card_histories(set_code, fmt, context):
     """
     Pour les Cartes : Récupère l'historique WIN RATE et ALSA par nom de carte
     pour un set, un format et un contexte de couleur donnés.
-    Retourne un tuple (wr_histories, alsa_histories, initial_wrs, initial_alsas)
+    Retourne un tuple (wr_histories, alsa_histories, initial_wrs, initial_alsas, history_dates)
     """
-    url = f"{SUPABASE_URL}/rest/v1/card_stats?select=card_name,win_rate_history,alsa_history,initial_wr,initial_alsa&set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.{context}"
     try:
-        r = requests.get(url, headers=HEADERS_SUPABASE)
+        r = fetch_existing_rows("card_stats", "card_name,win_rate_history,alsa_history,initial_wr,initial_alsa", f"set_code=eq.{set_code}&format=eq.{fmt}&filter_context=eq.{context}")
         if r.status_code == 200:
             data = r.json()
             wr_histories = {row['card_name']: row.get('win_rate_history', []) for row in data}
             alsa_histories = {row['card_name']: row.get('alsa_history', []) for row in data}
             initial_wrs = {row['card_name']: row.get('initial_wr') for row in data}
             initial_alsas = {row['card_name']: row.get('initial_alsa') for row in data}
-            return wr_histories, alsa_histories, initial_wrs, initial_alsas
-        return {}, {}, {}, {}
+            history_dates = {row['card_name']: row.get('history_date') for row in data}
+            return wr_histories, alsa_histories, initial_wrs, initial_alsas, history_dates
+        return {}, {}, {}, {}, {}
     except Exception as e:
         print(f"⚠️ Erreur récupération historique cartes: {e}")
-        return {}, {}, {}, {}
+        return {}, {}, {}, {}, {}
 
 # ==============================================================================
 # 4. INGESTION DES DECKS (Avec Gestion Historique)
@@ -177,7 +208,7 @@ def ingest_decks(set_code, start_date):
     for fmt in ALL_FORMATS:
         print(f" 👉 Format: {fmt}")
         
-        existing_histories, existing_initial_wrs = get_existing_histories(set_code, fmt)
+        existing_histories, existing_initial_wrs, existing_history_dates = get_existing_histories(set_code, fmt)
         
         url = f"https://www.17lands.com/color_ratings/data?expansion={set_code}&event_type={fmt}&start_date={start_date}&end_date={END_DATE}&combine_splash=false"
         raw_data = fetch_data_safe(url, f"Decks {fmt}")
@@ -204,11 +235,8 @@ def ingest_decks(set_code, start_date):
                 current_wr = round(wr, 1)
 
                 # --- GESTION DE L'HISTORIQUE ---
-                history = existing_histories.get(final_code_colors)
-                if history is None: history = []
-                
-                history.append(current_wr)
-                if len(history) > 21: history = history[-21:]
+                same_day = existing_history_dates.get(final_code_colors) == TODAY
+                history = push_history(existing_histories.get(final_code_colors), current_wr, same_day)
                 # -------------------------------
 
                 # --- INITIAL WR (écrit une seule fois) ---
@@ -226,6 +254,7 @@ def ingest_decks(set_code, start_date):
                     "games_count": games,
                     "initial_wr": initial_wr,
                 }
+                if HAS_HISTORY_DATE: record["history_date"] = TODAY
                 unique_batch[f"{fmt}_{final_code_colors}"] = record
             except: continue
 
@@ -252,7 +281,7 @@ def ingest_cards(set_code, start_date):
             context = color if color else "Global"
 
             # 1. Récupération de l'historique existant pour ce set/format/context
-            existing_wr_histories, existing_alsa_histories, existing_initial_wrs, existing_initial_alsas = get_existing_card_histories(set_code, fmt, context)
+            existing_wr_histories, existing_alsa_histories, existing_initial_wrs, existing_initial_alsas, existing_history_dates = get_existing_card_histories(set_code, fmt, context)
             
             is_sealed = "Sealed" in fmt
             splash_param = "true" if is_sealed else "false"
@@ -287,22 +316,10 @@ def ingest_cards(set_code, start_date):
                     current_wr = round(gih, 2) if gih is not None else None
                     current_alsa = round(alsa, 2) if alsa is not None else None
 
-                    # --- GESTION HISTORIQUE WIN RATE ---
-                    wr_history = existing_wr_histories.get(name)
-                    if wr_history is None: wr_history = []
-                    if current_wr is not None:
-                        wr_history.append(current_wr)
-                        if len(wr_history) > 21:
-                            wr_history = wr_history[-21:]
-
-                    # --- GESTION HISTORIQUE ALSA ---
-                    alsa_history = existing_alsa_histories.get(name)
-                    if alsa_history is None: alsa_history = []
-                    if current_alsa is not None:
-                        alsa_history.append(current_alsa)
-                        if len(alsa_history) > 21:
-                            alsa_history = alsa_history[-21:]
-                    # ----------------------------------
+                    # --- HISTORIQUES WIN RATE / ALSA (un point par jour) ---
+                    same_day = existing_history_dates.get(name) == TODAY
+                    wr_history = push_history(existing_wr_histories.get(name), current_wr, same_day)
+                    alsa_history = push_history(existing_alsa_histories.get(name), current_alsa, same_day)
 
                     # --- INITIAL VALUES (écrites une seule fois) ---
                     initial_wr = existing_initial_wrs.get(name)
@@ -327,6 +344,7 @@ def ingest_cards(set_code, start_date):
                         "initial_wr": initial_wr,
                         "initial_alsa": initial_alsa,
                     }
+                    if HAS_HISTORY_DATE: record["history_date"] = TODAY
                     unique_batch[f"{fmt}_{name}_{context}"] = record
                 except Exception: continue
             
