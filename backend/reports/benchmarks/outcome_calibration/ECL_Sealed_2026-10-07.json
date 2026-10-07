@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "set": "ECL",
+    "event": "Sealed",
+    "threshold": 0.88,
+    "run_date": "2026-10-07",
+    "source": "game_data_public.ECL.Sealed.csv.gz",
+    "source_last_modified": null,
+    "verdict": "proxy refuse, analyse non lancee"
+  },
+  "proximity": {
+    "cards": 201,
+    "raw_corr": 0.6753169764483016,
+    "corrected_corr": 0.7012209675248599,
+    "real_gap_sd": 3.379597311830736,
+    "mean_offset": 0.3616915422885573
+  },
+  "results": null
+}

@@ -104,6 +104,23 @@ export type DeckStats = {
   skeletonSimilarity: number;
 };
 
+// Donnees d'explication d'un build, pour l'UI (n'interviennent pas dans le score).
+export type BuildExplanation = {
+  formatMean: number;
+  // Sources de mana par couleur (terrains + producteurs ponderes) vs sources visees.
+  manaPlan: { color: string; sources: number; required: number; isSplash: boolean }[];
+  // Role de chaque carte du deck. dependency : null si la carte n'a pas de condition.
+  cardRoles: Record<string, {
+    wr: number;
+    bomb: boolean;
+    removal: boolean;
+    splash: boolean;
+    dependency: "met" | "unmet" | null;
+  }>;
+  // Courbe moyenne du skeleton trophee de l'archetype (null si aucun skeleton).
+  targetCurve: Record<string, number> | null;
+};
+
 export type SealedDeckResult = {
   rank: number;
   score: number;
@@ -114,6 +131,7 @@ export type SealedDeckResult = {
   lands: DeckCard[];
   stats: DeckStats;
   scoreBreakdown: ScoreBreakdown;
+  explanation?: BuildExplanation;
 };
 
 export type SealedOptimizerResult = {
@@ -154,6 +172,11 @@ export type SealedOptimizerResult = {
     deadlineHitRate: number;
   };
 };
+
+// Budget de recherche en nombre d'evaluations du score, partage par tous les
+// hill-climbs d'un optimizePool. Contrairement aux deadlines en millisecondes,
+// il rend un run reproductible quelle que soit la charge de la machine.
+export type EvalBudget = { max: number; used: number };
 
 export type HcTelemetry = {
   evalCalls: number;
@@ -229,7 +252,6 @@ export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
 const DEFAULT_OPTIMIZER_SEED = 1337;
 const TOPK_PER_ARCHETYPE_PRE_RESCORE = 3;
 const TOPK_PER_ARCHETYPE_FINAL = 3;
-const FINAL_DIVERSITY_LAMBDA = 2.2;
 const FINAL_BUILD_COUNT = 3;
 const HC_BEST_OF_K = 2;
 const HC_BEST_OF_K_STRONG_DELTA = 0.20;
@@ -321,6 +343,21 @@ for (let i = 0; i < COLOR_ORDER.length; i++) {
     }
   }
 }
+
+// Reglages de recherche exportes pour les bancs locaux (valeurs de production).
+export const SEARCH_TUNING = {
+  // Nombre de bases tricolores ajoutees aux paires dans les profils autres que
+  // power_greedy_splash (qui explore deja paires + trios). Classees a part, pour
+  // ne pas evincer les paires au pre-classement. Jamais splashees.
+  extraTrios: 0,
+  // Penalite de similarite (MMR) pour choisir le top 3, dans chaque shard et a
+  // l'agregation des shards (index.ts).
+  // 2026-10-07 : 4.0 et partage avec l'agregation des shards (avant : 2.2 / 1.8).
+  finalDiversityLambda: 4.0,
+  // Polish final : n'accepter un echange que si le score AVEC terrains resolus
+  // depasse celui du build d'origine, puis retrier le top 3 par score.
+  polishCheckLands: true,
+};
 
 const getMainColorSetsForProfile = (profile: SearchProfile): string[][] => {
   if (profile === "power_greedy_splash") {
@@ -764,6 +801,17 @@ const getConsistencyCardWeight = (cmc: number, qty: number): number => {
   return q;
 };
 
+// Termes de la consistance specifiques aux decks a 3 couleurs actives ou plus
+// (splash actif compris). Exporte pour les bancs locaux.
+// 2026-10-07 : remis a parite avec les bicolores (avant : 4.5 / 1.5 / 6.0 / 3.8),
+// le score sous-notait les tricolores de ~3-4 pts a resultats egaux (MSH, HOB).
+export const MULTICOLOR_CONSISTENCY = {
+  deficitFactor: 3.5,
+  deficitMaxFactor: 0,
+  earlyFloorFactor: 4.5,
+  midFloorFactor: 2.8,
+};
+
 const computeConsistencyScoreFromCastability = (
   cards: DeckCard[],
   poolMap: Map<string, PoolCard>,
@@ -864,10 +912,10 @@ const computeConsistencyScoreFromCastability = (
     if (deficit > deficitMax) deficitMax = deficit;
   }
   if (deficitSum > 0) {
-    const baseFactor = activeColorCount >= 3 ? 4.5 : 3.5;
+    const baseFactor = activeColorCount >= 3 ? MULTICOLOR_CONSISTENCY.deficitFactor : 3.5;
     score -= deficitSum * baseFactor;
     if (activeColorCount >= 3) {
-      score -= deficitMax * 1.5;
+      score -= deficitMax * MULTICOLOR_CONSISTENCY.deficitMaxFactor;
     }
   }
 
@@ -883,7 +931,7 @@ const computeConsistencyScoreFromCastability = (
       const floor = 8;
       const deficit = Math.max(0, floor - src);
       if (deficit > 0) {
-        score -= deficit * (activeColorCount >= 3 ? 6.0 : 4.5);
+        score -= deficit * (activeColorCount >= 3 ? MULTICOLOR_CONSISTENCY.earlyFloorFactor : 4.5);
       }
       continue;
     }
@@ -892,7 +940,7 @@ const computeConsistencyScoreFromCastability = (
       const floor = 7;
       const deficit = Math.max(0, floor - src);
       if (deficit > 0) {
-        score -= deficit * (activeColorCount >= 3 ? 3.8 : 2.8);
+        score -= deficit * (activeColorCount >= 3 ? MULTICOLOR_CONSISTENCY.midFloorFactor : 2.8);
       }
     }
   }
@@ -1381,10 +1429,38 @@ const getCreatureTarget = (skeleton: Skeleton | null, spellCount: number): numbe
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
+// Reglages de l'axe puissance, exportes pour les bancs locaux (valeurs de production).
+export const POWER_TUNING = {
+  // "step" : wr x bombMultiplier au-dela de moyenne + bombThresholdDelta (discontinu).
+  // "linear" : + bombLinearSlope par point au-dela de moyenne + bombLinearStart.
+  // "none" : pas de bonus.
+  // 2026-10-07 : "linear" (avant : "step"), meilleure prediction des victoires.
+  bombMode: "linear" as "step" | "linear" | "none",
+  bombThresholdDelta: 10,
+  bombMultiplier: 1.15,
+  bombLinearStart: 5,
+  bombLinearSlope: 1.5,
+  // Demi-largeur de la fenetre de normalisation : moyenne +/- wrWindow => 0 / 100.
+  wrWindow: 4,
+};
+
+const bombAdjustedWr = (wr: number, formatMean: number): number => {
+  switch (POWER_TUNING.bombMode) {
+    case "none":
+      return wr;
+    case "linear":
+      return wr + POWER_TUNING.bombLinearSlope * Math.max(0, wr - (formatMean + POWER_TUNING.bombLinearStart));
+    case "step":
+    default:
+      return wr > formatMean + POWER_TUNING.bombThresholdDelta ? wr * POWER_TUNING.bombMultiplier : wr;
+  }
+};
+
 const normalizeWrScore = (wrScore: number, formatMean: number): number => {
   // Linear normalization centered on format average:
   // -4 pts vs format => 0, format average => 50, +4 pts => 100.
-  return clamp(((wrScore - formatMean + 4) / 8) * 100, 0, 100);
+  const w = POWER_TUNING.wrWindow;
+  return clamp(((wrScore - formatMean + w) / (2 * w)) * 100, 0, 100);
 };
 
 const normalizeSynergyScore = (synergyScore: number): number => {
@@ -1724,10 +1800,9 @@ export const calculateDeckScore = (
 
   const n = expanded.length;
 
-  const bombThreshold = formatMean + 10;
   let wrSum = 0, creatureCount = 0, removalCount = 0, cmcSum = 0;
   for (const pc of expanded) {
-    wrSum += pc.wr > bombThreshold ? pc.wr * 1.15 : pc.wr;
+    wrSum += bombAdjustedWr(pc.wr, formatMean);
     if (pc.isCreature) creatureCount++;
     if (pc.isRemoval) removalCount++;
     cmcSum += pc.cmc;
@@ -2153,12 +2228,15 @@ export const hillClimbOptimize = (
   rng: () => number = Math.random,
   optimizeDeadlineMs?: number,
   curveComponentScales?: Partial<CurveComponentScales> | null,
+  evalBudget?: EvalBudget | null,
 ): { deck: DeckCard[]; score: number; breakdown: ScoreBreakdown; stats: DeckStats; telemetry: HcTelemetry } => {
   const runStartedMs = Date.now();
   const hardDeadline = Number.isFinite(Number(optimizeDeadlineMs))
     ? Number(optimizeDeadlineMs)
     : null;
-  const isTimeUp = () => hardDeadline != null && Date.now() >= hardDeadline;
+  const isTimeUp = () =>
+    (hardDeadline != null && Date.now() >= hardDeadline) ||
+    (evalBudget != null && evalBudget.used >= evalBudget.max);
   let deadlineHit = false;
   let evalCalls = 0;
   let iterationsDone = 0;
@@ -2187,6 +2265,7 @@ export const hillClimbOptimize = (
   }
   const scoreDeck = (deck: DeckCard[]) => {
     evalCalls++;
+    if (evalBudget) evalBudget.used++;
     return calculateDeckScore(
       deck,
       eligible,
@@ -2448,27 +2527,20 @@ export const hillClimbOptimize = (
   };
 };
 
-// â”€â”€â”€ Land determination (Karsten-based) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export const determineLands = (
-  cards: DeckCard[], pool: PoolCard[],
-  mainColors: string[], splashColor: string | null,
-): DeckCard[] => {
-  const spellCount = totalQty(cards);
-  const landCount = Math.min(Math.max(TOTAL_DECK_SIZE - spellCount, LANDS_MIN), LANDS_MAX);
-  const poolMap = new Map<string, PoolCard>();
-  for (const pc of pool) poolMap.set(pc.name, pc);
-
-  const effectiveSplash = hasActiveSplashDemand(cards, poolMap, mainColors, splashColor) ? splashColor : null;
-  const allColors = [...mainColors, ...(effectiveSplash ? [effectiveSplash] : [])];
+// Sources visees par couleur : melange mediane / quartile haut / max des besoins
+// de Karsten des cartes du deck (partage par determineLands et explainBuild).
+const computeTargetSources = (
+  cards: DeckCard[],
+  poolMap: Map<string, PoolCard>,
+  allColors: string[],
+  effectiveSplash: string | null,
+): { pipDemand: Record<string, number>; targetSources: Record<string, number> } => {
   const pipDemand: Record<string, number> = {};
   const targetSources: Record<string, number> = {};
-  const currentSources: Record<string, number> = {};
   const reqSamplesByColor: Record<string, number[]> = {};
   for (const c of allColors) {
     pipDemand[c] = 0;
     targetSources[c] = 0;
-    currentSources[c] = 0;
     reqSamplesByColor[c] = [];
   }
 
@@ -2501,6 +2573,25 @@ export const determineLands = (
     const blended = median * 0.35 + q75 * 0.5 + maxReq * 0.15;
     targetSources[color] = Math.max(0, Math.min(17, blended));
   }
+  return { pipDemand, targetSources };
+};
+
+// â”€â”€â”€ Land determination (Karsten-based) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const determineLands = (
+  cards: DeckCard[], pool: PoolCard[],
+  mainColors: string[], splashColor: string | null,
+): DeckCard[] => {
+  const spellCount = totalQty(cards);
+  const landCount = Math.min(Math.max(TOTAL_DECK_SIZE - spellCount, LANDS_MIN), LANDS_MAX);
+  const poolMap = new Map<string, PoolCard>();
+  for (const pc of pool) poolMap.set(pc.name, pc);
+
+  const effectiveSplash = hasActiveSplashDemand(cards, poolMap, mainColors, splashColor) ? splashColor : null;
+  const allColors = [...mainColors, ...(effectiveSplash ? [effectiveSplash] : [])];
+  const { pipDemand, targetSources } = computeTargetSources(cards, poolMap, allColors, effectiveSplash);
+  const currentSources: Record<string, number> = {};
+  for (const c of allColors) currentSources[c] = 0;
 
   // Non-land mana producers as partial sources (weighted by CMC)
   for (const dc of cards) {
@@ -2721,6 +2812,63 @@ export const determineLands = (
   return lands;
 };
 
+// Seuil du badge "bomb" dans l'UI : WR >= moyenne du format + 8 pts.
+const BOMB_BADGE_DELTA = 8;
+
+export const explainBuild = (
+  cards: DeckCard[],
+  lands: DeckCard[],
+  pool: PoolCard[],
+  mainColors: string[],
+  splashColor: string | null,
+  skeleton: Skeleton | null,
+  formatMean: number,
+): BuildExplanation => {
+  const poolMap = new Map<string, PoolCard>();
+  for (const pc of pool) poolMap.set(pc.name, pc);
+  const effectiveSplash = hasActiveSplashDemand(cards, poolMap, mainColors, splashColor) ? splashColor : null;
+  const allColors = [...mainColors, ...(effectiveSplash ? [effectiveSplash] : [])];
+
+  const { targetSources } = computeTargetSources(cards, poolMap, allColors, effectiveSplash);
+  const sources = computeSourcesFromLands(lands, cards, poolMap, mainColors, effectiveSplash);
+  const manaPlan = allColors.map((color) => ({
+    color,
+    sources: Number((sources[color] || 0).toFixed(1)),
+    required: Number((targetSources[color] || 0).toFixed(1)),
+    isSplash: color === effectiveSplash,
+  }));
+
+  const deckPoolCards: PoolCard[] = [];
+  for (const dc of cards) {
+    const pc = poolMap.get(dc.name);
+    if (pc) deckPoolCards.push({ ...pc, qty: dc.qty });
+  }
+  const supportCtx = buildSupportContext(deckPoolCards);
+
+  const cardRoles: BuildExplanation["cardRoles"] = {};
+  for (const dc of cards) {
+    const pc = poolMap.get(dc.name);
+    if (!pc) continue;
+    const support = getDependencySupportForCard(pc, supportCtx, dc.qty);
+    const dependency = Number.isFinite(support)
+      ? (support >= (pc.dependencyMinSupport ?? 5) ? "met" : "unmet")
+      : null;
+    cardRoles[dc.name] = {
+      wr: Number(pc.wr.toFixed(1)),
+      bomb: pc.wr >= formatMean + BOMB_BADGE_DELTA,
+      removal: pc.isRemoval,
+      splash: !!effectiveSplash && countRequiredColorPipsForDeck(pc.cost, effectiveSplash, allColors) > 0,
+      dependency,
+    };
+  }
+
+  const targetCurve = skeleton?.avg_mana_curve
+    ? Object.fromEntries(Object.entries(getIdealCurve(skeleton)).map(([k, v]) => [k, Number(Number(v).toFixed(1))]))
+    : null;
+
+  return { formatMean: Number(formatMean.toFixed(1)), manaPlan, cardRoles, targetCurve };
+};
+
 // â”€â”€â”€ Match skeleton for color pair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const findBestSkeleton = (colorCode: string, skeletons: Skeleton[]): Skeleton | null => {
@@ -2790,11 +2938,22 @@ export const optimizePool = (
   hcIterationLimit = ITERATION_LIMIT,
   seed = DEFAULT_OPTIMIZER_SEED,
   maxOptimizeMs = DEFAULT_MAX_OPTIMIZE_MS,
+  maxEvals?: number | null,
 ): SealedOptimizerResult => {
   const activeSearchProfile = normalizeSearchProfile(searchProfile);
-  const budgetMs = Math.max(1_000, Math.min(10_000, Number(maxOptimizeMs) || DEFAULT_MAX_OPTIMIZE_MS));
+  // Budget en evaluations optionnel ; la deadline en ms reste un garde-fou CPU.
+  const evalBudget: EvalBudget | null =
+    Number.isFinite(Number(maxEvals)) && Number(maxEvals) > 0
+      ? { max: Math.trunc(Number(maxEvals)), used: 0 }
+      : null;
+  // maxOptimizeMs = Infinity (banc local uniquement) : pas de deadline, seul le
+  // budget en evaluations compte, d'ou un resultat independant de la charge machine.
+  const budgetMs = evalBudget && maxOptimizeMs === Number.POSITIVE_INFINITY
+    ? Number.POSITIVE_INFINITY
+    : Math.max(1_000, Math.min(10_000, Number(maxOptimizeMs) || DEFAULT_MAX_OPTIMIZE_MS));
   const optimizeDeadline = Date.now() + budgetMs;
-  const isBudgetExhausted = () => Date.now() >= optimizeDeadline;
+  const isBudgetExhausted = () =>
+    Date.now() >= optimizeDeadline || (evalBudget != null && evalBudget.used >= evalBudget.max);
   let budgetExhausted = false;
   const results: {
     score: number; archetype: string; mainColors: string[];
@@ -2814,34 +2973,41 @@ export const optimizePool = (
   const hcTelemetryRuns: HcTelemetry[] = [];
 
   const mainColorSets = getMainColorSetsForProfile(activeSearchProfile);
-  const preRankedMainSets = [...mainColorSets]
-    .map((mainColors) => {
-      const eligible = filterEligibleCards(poolCards, mainColors, null).filter((pc) => !isLandType(pc.type));
-      if (eligible.length === 0) return { mainColors, support: -9999 };
-      const supportCtx = buildSupportContext(eligible);
+  const preRankSupport = (mainColors: string[]): { mainColors: string[]; support: number } => {
+    const eligible = filterEligibleCards(poolCards, mainColors, null).filter((pc) => !isLandType(pc.type));
+    if (eligible.length === 0) return { mainColors, support: -9999 };
+    const supportCtx = buildSupportContext(eligible);
 
-      const utilities: number[] = [];
-      for (const pc of eligible) {
-        const util = getCardUtilityScore(
-          pc,
-          null,
-          formatMean,
-          0,
-          activeSearchProfile,
-          mainColors,
-          null,
-          supportCtx,
-        );
-        for (let i = 0; i < pc.qty; i++) utilities.push(util);
-      }
-      utilities.sort((a, b) => b - a);
-      const topPlayable = utilities.slice(0, DEFAULT_SPELL_SLOTS);
-      const baseScore = topPlayable.reduce((sum, v) => sum + v, 0);
-      return { mainColors, support: baseScore };
-    })
-    .sort((a, b) => b.support - a.support);
+    const utilities: number[] = [];
+    for (const pc of eligible) {
+      const util = getCardUtilityScore(
+        pc,
+        null,
+        formatMean,
+        0,
+        activeSearchProfile,
+        mainColors,
+        null,
+        supportCtx,
+      );
+      for (let i = 0; i < pc.qty; i++) utilities.push(util);
+    }
+    utilities.sort((a, b) => b - a);
+    const topPlayable = utilities.slice(0, DEFAULT_SPELL_SLOTS);
+    const baseScore = topPlayable.reduce((sum, v) => sum + v, 0);
+    return { mainColors, support: baseScore };
+  };
+  const preRankedMainSets = mainColorSets.map(preRankSupport).sort((a, b) => b.support - a.support);
 
   const rankedMainSets = preRankedMainSets.slice(0, MAX_MAIN_PAIRS).map((item) => item.mainColors);
+  const extraTrios = activeSearchProfile === "power_greedy_splash" ? 0 : Math.max(0, Math.trunc(SEARCH_TUNING.extraTrios));
+  if (extraTrios > 0) {
+    const rankedTrios = TRIOS.map(preRankSupport)
+      .filter((item) => item.support > -9999)
+      .sort((a, b) => b.support - a.support)
+      .slice(0, extraTrios);
+    for (const item of rankedTrios) rankedMainSets.push(item.mainColors);
+  }
   if (debug) {
     const selectedSet = new Set(rankedMainSets.map((p) => p.join("")));
     for (const item of preRankedMainSets) {
@@ -2923,6 +3089,7 @@ export const optimizePool = (
         attemptRng,
         optimizeDeadline,
         curveComponentScales,
+        evalBudget,
       );
       if (debug) hcTelemetryRuns.push(result.telemetry);
       if (result.deck.length <= 0) {
@@ -2974,7 +3141,11 @@ export const optimizePool = (
 
   // Try splash for top base pairs
   acceptedMainResults.sort((a, b) => b.score - a.score);
-  const topPairs = acceptedMainResults.slice(0, MAX_SPLASH_BASES);
+  // Les bases tricolores ajoutees via SEARCH_TUNING.extraTrios ne sont pas splashees
+  // (4 couleurs) ; le profil greedy garde son comportement d'origine.
+  const topPairs = acceptedMainResults
+    .filter((r) => activeSearchProfile === "power_greedy_splash" || r.mainColors.length <= 2)
+    .slice(0, MAX_SPLASH_BASES);
   if (debug) {
     const topSet = new Set(topPairs.map((r) => r.mainColors.join("")));
     for (const base of acceptedMainResults) {
@@ -3065,6 +3236,7 @@ export const optimizePool = (
           attemptRng,
           optimizeDeadline,
           curveComponentScales,
+          evalBudget,
         );
         if (debug) hcTelemetryRuns.push(result.telemetry);
         if (result.deck.length <= 0) {
@@ -3245,7 +3417,7 @@ export const optimizePool = (
       for (const pick of selected) {
         maxSim = Math.max(maxSim, multisetJaccard(cand.deck, pick.deck));
       }
-      const mmrScore = cand.score - FINAL_DIVERSITY_LAMBDA * maxSim;
+      const mmrScore = cand.score - SEARCH_TUNING.finalDiversityLambda * maxSim;
       if (mmrScore > bestMmr) {
         bestMmr = mmrScore;
         bestIdx = i;
@@ -3266,7 +3438,7 @@ export const optimizePool = (
       for (const pick of selected) {
         maxSim = Math.max(maxSim, multisetJaccard(cand.deck, pick.deck));
       }
-      const mmrScore = cand.score - FINAL_DIVERSITY_LAMBDA * maxSim;
+      const mmrScore = cand.score - SEARCH_TUNING.finalDiversityLambda * maxSim;
       if (mmrScore > bestMmr) {
         bestMmr = mmrScore;
         bestIdx = i;
@@ -3383,6 +3555,7 @@ export const optimizePool = (
             formatMean,
             curveComponentScales,
           );
+          if (SEARCH_TUNING.polishCheckLands && trial.score <= (best?.score ?? cand.score)) continue;
           bestDelta = delta;
           best = {
             deck: newDeck,
@@ -3415,9 +3588,22 @@ export const optimizePool = (
   };
 
   const polishedTop3 = top3.map(polishFinalSingleSwap);
+  if (SEARCH_TUNING.polishCheckLands) polishedTop3.sort((a, b) => b.score - a.score);
 
   // Post-processing: compute display metadata
   const builds: SealedDeckResult[] = polishedTop3.map((r, idx) => ({
+    explanation: explainBuild(
+      r.deck,
+      r.lands,
+      poolCards,
+      r.mainColors,
+      r.activeSplash,
+      findBestSkeleton(
+        r.activeSplash ? [...r.mainColors, r.activeSplash].join("") : r.mainColors.join(""),
+        skeletons,
+      ) || findBestSkeleton(r.mainColors.join(""), skeletons),
+      formatMean,
+    ),
     rank: idx + 1,
     score: Number(r.score.toFixed(2)),
     archetype: r.resolvedArchetype,

@@ -60,7 +60,11 @@ HEADERS_17LANDS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Cache-Control": "no-cache",
+    "Origin": "https://www.17lands.com",
+    "Referer": "https://www.17lands.com/trophy_decks",
 }
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +130,21 @@ def fetch_with_retry(
     return None
 
 
+def unwrap(data: Any) -> Any:
+    """Les endpoints /api/ de 17Lands enveloppent la reponse dans {copyright, notes, data}."""
+    if isinstance(data, dict) and "data" in data:
+        return data["data"]
+    return data
+
+
 def fetch_trophies(
     set_code: str,
     format_code: str,
     color_combo: str,
 ) -> list[dict[str, Any]]:
-    url = "https://www.17lands.com/data/trophies/"
+    # Migre de /data/trophies/ vers /api/trophies/ en 2026 ; exige LANDS17_COOKIE
+    # (voir etl_script_trophydecks.py). Utilise seulement avec --source 17lands.
+    url = "https://www.17lands.com/api/trophies/"
     payload = {
         "expansion": set_code,
         "event_type": format_code,
@@ -139,18 +152,46 @@ def fetch_trophies(
         "ranks": [],
         "deck_colors": [color_combo],
     }
-    data = fetch_with_retry(
+    data = unwrap(fetch_with_retry(
         url,
         context=f"trophies {color_combo}",
         method="POST",
         payload=payload,
-    )
+    ))
     return data if isinstance(data, list) else []
 
 
+def fetch_trophies_from_supabase(set_code: str, format_code: str) -> list[dict[str, Any]]:
+    """Trophees deja recuperes par etl_script_trophydecks.py (table trophy_decks).
+
+    La table ne garde que le deck joue : le pool complet vient ensuite du detail
+    du deck sur 17Lands, qui ne demande pas de cookie.
+    """
+    url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY") or os.getenv("VITE_SUPABASE_KEY")
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    rows: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        resp = requests.get(
+            f"{url}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{format_code}"
+            "&select=aggregate_id,trophy_time,wins,losses,archetype&order=trophy_time.desc",
+            headers={**headers, "Range": f"{start}-{start + 999}"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        page = resp.json()
+        rows.extend(page)
+        if len(page) < 1000:
+            return rows
+        start += 1000
+
+
 def fetch_deck_details(aggregate_id: str, deck_index: int = 0) -> dict[str, Any] | None:
-    url = f"https://www.17lands.com/data/deck?draft_id={aggregate_id}&deck_index={deck_index}"
-    data = fetch_with_retry(url, context=f"deck {aggregate_id}")
+    # Migre de /data/deck vers /api/deck/draft/ en 2026 (l'ancien renvoie un
+    # placeholder de 40 Plains).
+    url = f"https://www.17lands.com/api/deck/draft/?draft_id={aggregate_id}&deck_index={deck_index}"
+    data = unwrap(fetch_with_retry(url, context=f"deck {aggregate_id}"))
     return data if isinstance(data, dict) else None
 
 
@@ -258,11 +299,29 @@ def run(
     fetch_sleep_max: float,
     deck_sleep_min: float,
     deck_sleep_max: float,
+    source: str = "supabase",
+    sample: str = "latest",
+    sample_seed: int = 42,
 ) -> None:
-    print(f"[1/3] Fetch trophies for {set_code} / {format_code}")
+    print(f"[1/3] Fetch trophies for {set_code} / {format_code} (source: {source})")
     by_aggregate: dict[str, dict[str, Any]] = {}
 
-    for idx, color_combo in enumerate(ALL_COLOR_COMBINATIONS, start=1):
+    if source == "supabase":
+        for row in fetch_trophies_from_supabase(set_code, format_code):
+            aggregate_id = row.get("aggregate_id")
+            if not aggregate_id or aggregate_id in by_aggregate:
+                continue
+            by_aggregate[aggregate_id] = {
+                "aggregate_id": aggregate_id,
+                "trophy_time": row.get("trophy_time"),
+                "trophy_time_parsed": parse_time(row.get("trophy_time")),
+                "wins": row.get("wins", 0),
+                "losses": row.get("losses", 0),
+                "color_combo": row.get("archetype"),
+            }
+        print(f"  {len(by_aggregate)} trophees dans trophy_decks")
+
+    for idx, color_combo in enumerate(ALL_COLOR_COMBINATIONS if source == "17lands" else [], start=1):
         rows = fetch_trophies(set_code, format_code, color_combo)
         print(f"  {idx:02d}/{len(ALL_COLOR_COMBINATIONS)} {color_combo}: {len(rows)} rows")
         for row in rows:
@@ -297,8 +356,15 @@ def run(
         key=lambda row: row.get("trophy_time_parsed") or datetime(1970, 1, 1, tzinfo=timezone.utc),
         reverse=True,
     )
-    selected = ranked[:limit]
-    print(f"[2/3] Selected {len(selected)} latest unique trophies")
+    if sample == "random":
+        # Tirage reproductible (meme graine = memes pools). Demander quelques
+        # pools de plus que necessaire : certains decks n'ont pas de pool exploitable.
+        rng = random.Random(sample_seed)
+        selected = rng.sample(ranked, min(len(ranked), limit))
+        print(f"[2/3] Selected {len(selected)} random trophies (seed {sample_seed})")
+    else:
+        selected = ranked[:limit]
+        print(f"[2/3] Selected {len(selected)} latest unique trophies")
 
     records: list[dict[str, Any]] = []
     request_count = 0
@@ -417,11 +483,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fetch-sleep-max", type=float, default=3.5)
     parser.add_argument("--deck-sleep-min", type=float, default=3.0)
     parser.add_argument("--deck-sleep-max", type=float, default=5.0)
+    parser.add_argument(
+        "--source",
+        choices=["supabase", "17lands"],
+        default="supabase",
+        help="Liste des trophees : table trophy_decks (defaut) ou API 17Lands (exige LANDS17_COOKIE).",
+    )
+    parser.add_argument("--sample", choices=["latest", "random"], default="latest")
+    parser.add_argument("--sample-seed", type=int, default=42)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+    load_dotenv(dotenv_path=REPO_ROOT / ".env")
+    if os.getenv("LANDS17_COOKIE"):
+        HEADERS_17LANDS["Cookie"] = os.getenv("LANDS17_COOKIE")
     args = parse_args()
     run(
         set_code=args.set_code.strip(),
@@ -432,4 +508,7 @@ if __name__ == "__main__":
         fetch_sleep_max=max(args.fetch_sleep_min, args.fetch_sleep_max),
         deck_sleep_min=max(0.0, args.deck_sleep_min),
         deck_sleep_max=max(args.deck_sleep_min, args.deck_sleep_max),
+        source=args.source,
+        sample=args.sample,
+        sample_seed=args.sample_seed,
     )

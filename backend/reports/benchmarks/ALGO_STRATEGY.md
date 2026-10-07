@@ -17,6 +17,45 @@
 - 2026-02-21: Light annealing micro-tune (tiny late escape probability) tested on set_02 + set_03 => **NO-GO**, rollback applied and redeployed.
 - 2026-02-23: Increased pre-rank color coverage (`MAX_MAIN_PAIRS: 10 -> 12`) tested on set_02 + set_03 => **NO-GO** cross-set, rollback applied and redeployed.
 - 2026-02-23: Conditional pre-rank wildcard pair (`+1` near-cutoff uncertainty only) tested on set_02 + set_03 => **NO-GO** cross-set, rollback applied and redeployed.
+- 2026-10-07: New evaluation protocol (local bench + outcome calibration), see section below. Kept: multicolor consistency parity, linear bomb bonus, diversity lambda 4.0 unified, land-checked polish, eval budget 12k/shard. Rejected: weights 2/1.0/0.6/0.3, extra trios, wider WR window, GIH shrinkage, removal smoothing.
+
+## Update 2026-10-07 (nouveau protocole et lot de changements)
+
+### Pourquoi un nouveau protocole
+- Les runs passaient par la fonction deployee, avec des deadlines en millisecondes :
+  resultats dependants de la charge machine. Une simple graine faisait varier le
+  Color Match top3 de ±4 pts, l'ordre de grandeur des NO-GO ci-dessous.
+- "Beats player" etait acquis par construction (meme score des deux cotes).
+- Le Strict Match comparait les archetypes comme des chaines ordonnees ("UW" != "WU"),
+  ~17 pts sous-comptes (corrige dans `calibration_runner.py`).
+- Aucune validation du score sur des resultats reels.
+
+### Outils
+- `backend/sealed-optimizer/local_bench/` : `bench.mjs` rejoue le mode deep (5 shards,
+  profils, graines, agregation) en local avec un budget en evaluations (reproductible a
+  l'identique) ; `compare.py` compare deux runs pool par pool (IC 95 % bootstrap).
+  Fiches : `backend/reports/benchmarks/local_bench/`.
+- `backend/sealed-optimizer/outcome_calibration/` : le score predit-il les victoires ?
+  (game_data 17Lands ; Sealed comme proxy d'ArenaDirect seulement si les GIH des deux
+  formats sont proches). Fiches : `backend/reports/benchmarks/outcome_calibration/`.
+
+### Critere de decision (fixe avant les tests)
+Changement de score : prediction des victoires meilleure sur MSH **et** HOB (IC 95 %
+excluant 0), et aucune degradation significative du banc trophee (FRA 50 pools
+aleatoires + SOS 50 pools). Changement de recherche : banc trophee seul.
+
+### Decisions
+| Changement | Victoires MSH / HOB | Banc FRA / SOS | Decision |
+|---|---|---|---|
+| Consistance multicolore a parite (3.5/0/4.5/2.8) | mieux / mieux | neutre, FRA Color/Strict top3 +6 (ns) | garde |
+| Bonus bomb lineaire (+1.5/pt au-dela de moyenne+5) | mieux / mieux | Jaccard best3 FRA +0.019, top1 SOS +0.040 | garde |
+| Diversite 4.0 unifiee (avant 2.2 / 1.8) | n/a | builds plus varies, Jaccard best3 SOS +0.028 | garde |
+| Polish verifie avec terrains | n/a | score top1 + (FRA, SOS) | garde |
+| Budget 12k evals/shard (45k vs 15k : +0.1/+0.2 pt) | n/a | neutre | garde |
+| Poids 2 / 1.0 / 0.6 / 0.3 | mieux / mieux | Jaccard best3 FRA -0.039 | rejete |
+| 3 trios par profil | n/a | neutre | rejete |
+| Fenetre WR ±6, lissage GIH, sans bonus bomb | moins bien | - | rejete |
+| Removals progressifs | palier actuel bien calibre | - | rejete |
 
 ## Update 2026-02-23 (Pre-rank color coverage: `MAX_MAIN_PAIRS=12`)
 Decision:

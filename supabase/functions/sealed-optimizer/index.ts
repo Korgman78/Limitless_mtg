@@ -26,6 +26,8 @@ import {
   scoreDeckWithProvidedLands,
   optimizePool,
   COLOR_ORDER,
+  SEARCH_TUNING,
+  explainBuild,
 } from "../_shared/sealedOptimizerCore.ts";
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
@@ -61,7 +63,11 @@ const DEEP_SHARD_COUNT = 5;
 const DEEP_MAX_PARALLEL_SHARDS = 1;
 const SHARD_SEED_STRIDE = 1009;
 const STALE_RUNNING_TIMEOUT_MS = 35_000;
-const FINAL_MMR_LAMBDA = 1.8;
+// Budget de recherche par shard, en evaluations du score : rend un run
+// reproductible. 15 000 suffit (45 000 n'apporte que +0,1/+0,2 pt de score top1
+// sur FRA/SOS, banc local du 2026-10-07) ; 12 000 pour finir le plus souvent
+// avant la deadline CPU de DEEP_SHARD_MAX_MS, qui reste le garde-fou.
+const DEEP_SHARD_MAX_EVALS = 12_000;
 const FINAL_BUILD_COUNT = 3;
 const DEEP_SHARD_RESTARTS = 2;
 // Canary bump (+~10-15%) to improve search depth while staying worker-safe.
@@ -90,6 +96,7 @@ type OptimizationRunPayload = {
   hcIterations?: number;
   seed?: number;
   maxOptimizeMs?: number;
+  maxEvals?: number;
   searchProfile?: SearchProfile;
 };
 
@@ -105,6 +112,7 @@ type ResolvedOptimizationRun = {
   hcIterations: number;
   seed: number;
   maxOptimizeMs: number;
+  maxEvals: number | null;
   searchProfile: SearchProfile;
 };
 
@@ -209,6 +217,7 @@ const resolveOptimizationRun = (
       2_000,
       Math.min(10_000, Number(input.maxOptimizeMs ?? DEFAULT_MAX_OPTIMIZE_MS) || DEFAULT_MAX_OPTIMIZE_MS),
     ),
+    maxEvals: Number(input.maxEvals) > 0 ? Math.min(200_000, Math.trunc(Number(input.maxEvals))) : null,
     searchProfile: resolveSearchProfile(input.searchProfile),
   };
 };
@@ -630,6 +639,7 @@ const buildProvidedLandPoolCard = (
     dependencyScope: null,
     tokenSupportTags: [],
     tokenSupportCount: 0,
+    supportTags: [],
   };
 };
 
@@ -886,6 +896,7 @@ const buildOptimization = async (
   hcIterations = ITERATION_LIMIT,
   seed = 1337,
   maxOptimizeMs = DEFAULT_MAX_OPTIMIZE_MS,
+  maxEvals: number | null = null,
 ): Promise<SealedOptimizerResult> => {
   const weights = sanitizeScoreWeights(scoreWeights);
   const normalizedFormat = normalizeFormat(format);
@@ -1118,6 +1129,7 @@ const buildOptimization = async (
     effectiveHcIterations,
     seed,
     effectiveMaxOptimizeMs,
+    maxEvals,
   );
   result.setCode = setCode;
   result.format = normalizedFormat;
@@ -1249,6 +1261,15 @@ const scoreCustomDeck = async (
       splashColor: plan.splashColor,
       cards,
       lands: scored.lands,
+      explanation: explainBuild(
+        cards,
+        scored.lands,
+        scoringPool,
+        plan.mainColors,
+        plan.splashColor,
+        skeleton,
+        context.primaryFormatMean,
+      ),
       stats: {
         ...scored.stats,
         avgCmc: Number(scored.stats.avgCmc.toFixed(2)),
@@ -1318,6 +1339,7 @@ const runOptimization = async (
     input.hcIterations,
     input.seed,
     input.maxOptimizeMs,
+    input.maxEvals,
   );
   const elapsed = Date.now() - startTime;
   return { result, computeTimeMs: elapsed };
@@ -1555,7 +1577,7 @@ const aggregateShardResults = (
       for (const pick of selected) {
         maxSim = Math.max(maxSim, multisetJaccard(cand.cards, pick.cards));
       }
-      const mmrScore = cand.score - FINAL_MMR_LAMBDA * maxSim;
+      const mmrScore = cand.score - SEARCH_TUNING.finalDiversityLambda * maxSim;
       if (mmrScore > bestMmr) {
         bestMmr = mmrScore;
         bestIdx = i;
@@ -1577,7 +1599,7 @@ const aggregateShardResults = (
       for (const pick of selected) {
         maxSim = Math.max(maxSim, multisetJaccard(cand.cards, pick.cards));
       }
-      const mmrScore = cand.score - FINAL_MMR_LAMBDA * maxSim;
+      const mmrScore = cand.score - SEARCH_TUNING.finalDiversityLambda * maxSim;
       if (mmrScore > bestMmr) {
         bestMmr = mmrScore;
         bestIdx = i;
@@ -1913,6 +1935,7 @@ Deno.serve(async (req) => {
         hcRestarts: Math.max(1, Math.min(DEEP_SHARD_RESTARTS, resolvedRun.hcRestarts)),
         hcIterations: Math.max(10, Math.min(DEEP_SHARD_ITERATIONS, resolvedRun.hcIterations)),
         maxOptimizeMs: Math.max(800, Math.min(DEEP_SHARD_MAX_MS, resolvedRun.maxOptimizeMs)),
+        maxEvals: resolvedRun.maxEvals ?? DEEP_SHARD_MAX_EVALS,
       };
       return {
         status: "queued",

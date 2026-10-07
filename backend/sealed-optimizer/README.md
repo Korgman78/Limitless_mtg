@@ -141,6 +141,54 @@ python backend/sealed-optimizer/calibration_runner.py \
   --limit 50
 ```
 
+### Etape 9ter : Banc local reproductible (pour tester un changement)
+
+```bash
+# 1) Pools trophee ArenaDirect : liste lue dans trophy_decks (Supabase), pool complet
+#    demande a 17Lands (/api/deck/draft/, sans cookie). Tirage aleatoire reproductible.
+python backend/sealed-optimizer/etl_arena_direct_sealed_replay.py --set FRA \
+  --source supabase --sample random --sample-seed 42 --limit 55 --output backend/tmp/fra_ad_random55.json
+
+# 2) Deux runs (reference et variante), memes pools, meme graine
+node --use-system-ca backend/sealed-optimizer/local_bench/bench.mjs --set FRA \
+  --input backend/tmp/fra_ad_random55.json --limit 50 --out backend/tmp/ref.json
+node --use-system-ca backend/sealed-optimizer/local_bench/bench.mjs --set FRA \
+  --input backend/tmp/fra_ad_random55.json --limit 50 --diversity 3.0 --out backend/tmp/var.json
+
+# 3) Comparaison appariee
+python backend/sealed-optimizer/local_bench/compare.py backend/tmp/ref.json backend/tmp/var.json \
+  --label-a ref --label-b var --out backend/reports/benchmarks/local_bench/FRA_<date>_var_vs_ref.md
+```
+
+**Ce que ca fait** : `bench.mjs` execute le coeur en local et reproduit le mode deep de la fonction (5 shards, un profil et une graine par shard, agregation). Le budget est en nombre d'evaluations par shard (`--max-evals`, defaut 15 000) et sans deadline : deux runs identiques donnent exactement les memes builds, meme machine chargee. Environ 9 min pour 50 pools.
+
+**Options de variante** : `--weights p,c,cv,s`, `--tuning '{"multicolor":{...},"power":{...},"search":{...},"context":{"shrinkK":500}}'` (reglages exportes par le coeur : `MULTICOLOR_CONSISTENCY`, `POWER_TUNING`, `SEARCH_TUNING`), `--diversity`, `--extra-trios`, `--polish-check true|false`, `--seed`.
+
+**`compare.py`** : ecart pool par pool + IC 95 % bootstrap pour Jaccard top1/best3, Color/Strict match top1/top3 (archetypes normalises), similarite entre builds, score top1 (si memes poids). Pas de "beats player" (acquis par construction).
+
+**Critere de decision** (voir `backend/reports/benchmarks/ALGO_STRATEGY.md`) : un changement de score doit mieux predire les victoires sur deux sets (etape 9bis) et ne rien degrader significativement sur le banc ; un changement de recherche se juge sur le banc seul.
+
+### Etape 9bis : Calibration sur resultats reels (optionnel)
+
+```bash
+python backend/sealed-optimizer/outcome_calibration/outcome_calibration.py --set MSH
+```
+
+**Ce que ca fait** : verifie que le score de production predit les victoires, sur le `game_data` public de 17Lands (toutes les parties enregistrees, pas seulement les trophees). Chaque deck est note avec le vrai coeur `sealedOptimizerCore.ts` (execute par Node), puis compare a son bilan, a niveau de joueur egal.
+
+**Proxy** : 17Lands ne publie pas les parties ArenaDirect_Sealed, seulement Sealed / TradSealed. Le script compare d'abord le GIH WR des cartes entre Sealed et ArenaDirect_Sealed (correlation corrigee du bruit) et s'arrete sous le seuil (0,88 par defaut), car le Sealed peut etre tres different selon le set (choix de pack de couleurs, niveau moins competitif). Mesures au 2026-10-07 : FRA 0,95, MSH 0,92, HOB 0,89, ECL 0,70, SOS 0,61.
+
+**Resultat** : une fiche synthese par run (`.md` + `.json`) dans `backend/reports/benchmarks/outcome_calibration/` :
+- effet du score en points de WR (toutes paires, et au sein d'une meme paire) ;
+- WR par quintile de score, par tranche de niveau ;
+- saturation des axes ;
+- poids des axes refits sur les victoires, compares a la prod ;
+- par paire : score moyen vs victoires au-dessus de l'attendu.
+
+**Options** : `--event TradSealed` pour un autre proxy, `--threshold` pour le seuil, `--force` pour analyser malgre un proxy refuse (resultat indicatif). Pour comparer une variante : `--weights` et/ou `--tuning` (meme format que le banc), `--label` ; reference reglable avec `--base-tuning` / `--base-weights` / `--base-label` (defaut : prod). La fiche ajoute alors l'ecart de log-loss apparie avec son IC 95 %, et une section "Decks tricolores" (sous- ou sur-notation a score egal). Le `game_data` est mis en cache dans `backend/tmp/outcome_calibration/`.
+
+**Prerequis** : Node.js >= 22.6 (execution native du TypeScript), `numpy` et `scikit-learn`. Le flag `--use-system-ca` est ajoute automatiquement quand Node le supporte (proxy TLS d'entreprise).
+
 ### Etape 10 : Deploy de la edge function
 
 ```bash
@@ -165,6 +213,7 @@ Necessaire uniquement si le code de `sealedOptimizerCore.ts` ou `index.ts` a cha
 [ ] 9. etl_synergy        : lift scores inter-cartes
 [ ] 10. calibrate_deps    : ajuster dependency_min_support
 [ ] 11. benchmark         : valider sur les trophy pools
+[ ] 11b. outcome_calibration : (optionnel) score vs victoires reelles
 [ ] 12. deploy edge fn    : si code modifie
 ```
 

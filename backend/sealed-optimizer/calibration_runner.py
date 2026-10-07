@@ -113,6 +113,12 @@ SMOKE_SCENARIOS = [
 ]
 
 
+def archetype_key(archetype: str) -> tuple[str, str]:
+    """Couleurs principales triees + splash triees : 'UW' == 'WU', 'GBw' == 'BGw'."""
+    s = str(archetype or "")
+    return "".join(sorted(c for c in s if c in "WUBRG")), "".join(sorted(c for c in s if c in "wubrg"))
+
+
 def color_set(archetype: str) -> frozenset[str]:
     return frozenset(ch for ch in str(archetype or "").upper() if ch in "WUBRG")
 
@@ -188,9 +194,11 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, float]:
         build_arch = [str(b.get("archetype") or "") for b in builds[:3]]
         build_colors = [color_set(x) for x in build_arch]
 
-        if player_arch and build_arch and player_arch == build_arch[0]:
+        # Comparaison independante de l'ordre des couleurs (avant : "UW" != "WU").
+        player_key = archetype_key(player_arch)
+        if player_arch and build_arch and player_key == archetype_key(build_arch[0]):
             strict_top1 += 1
-        if player_arch and any(player_arch == x for x in build_arch):
+        if player_arch and any(player_key == archetype_key(x) for x in build_arch):
             strict_top3 += 1
         if player_colors and build_colors and player_colors == build_colors[0]:
             color_top1 += 1
