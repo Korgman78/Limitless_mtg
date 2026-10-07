@@ -257,6 +257,8 @@ const HC_BEST_OF_K = 2;
 const HC_BEST_OF_K_STRONG_DELTA = 0.20;
 const FINAL_LOCAL_SWAP_MAX_ADDS = 10;
 const FINAL_LOCAL_SWAP_MAX_EVALS = 120;
+// Plafond des rescorings avec terrains resolus (determineLands, couteux) par build.
+const FINAL_LOCAL_SWAP_MAX_RESOLVED = 6;
 const DEFAULT_SEARCH_PROFILE: SearchProfile = "skeleton";
 
 const VALID_SEARCH_PROFILES = new Set<SearchProfile>([
@@ -3506,6 +3508,7 @@ export const optimizePool = (
       signature: string;
     } | null = null;
     let evals = 0;
+    let resolvedEvals = 0;
 
     for (const add of addCandidates) {
       if (evals >= FINAL_LOCAL_SWAP_MAX_EVALS) break;
@@ -3543,7 +3546,8 @@ export const optimizePool = (
           curveComponentScales,
         );
         const delta = trialLight.score - currentLight.score;
-        if (delta > bestDelta) {
+        if (delta > bestDelta && resolvedEvals < FINAL_LOCAL_SWAP_MAX_RESOLVED) {
+          resolvedEvals++;
           const trial = scoreDeckWithResolvedLands(
             newDeck,
             poolCards,
@@ -3555,8 +3559,11 @@ export const optimizePool = (
             formatMean,
             curveComponentScales,
           );
-          if (SEARCH_TUNING.polishCheckLands && trial.score <= (best?.score ?? cand.score)) continue;
+          // Seuil releve AVANT la verification : sans ca, chaque candidat suivant
+          // relancerait determineLands (recherche exhaustive) et depasserait la
+          // limite CPU des Edge Functions (WORKER_RESOURCE_LIMIT, 2026-10-07).
           bestDelta = delta;
+          if (SEARCH_TUNING.polishCheckLands && trial.score <= (best?.score ?? cand.score)) continue;
           best = {
             deck: newDeck,
             score: trial.score,
