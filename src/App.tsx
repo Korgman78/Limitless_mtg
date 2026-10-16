@@ -1100,7 +1100,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         <span>No niche cards match the current filters.</span>
                       ) : (
                         <span>
-                          <strong className="font-bold text-teal-300">Niche cards</strong> &mdash; commons &amp; uncommons that over-perform alongside one specific colour (2- and 3-colour decks) and fall back to ordinary without it; colourless cards are compared pair by pair. Badge: home pair and win-rate gap.
+                          <strong className="font-bold text-teal-300">Niche cards</strong> &mdash; commons &amp; uncommons that over-perform alongside one specific colour (2- and 3-colour decks); colourless cards are compared pair by pair.
                         </span>
                       )}
                     </div>
