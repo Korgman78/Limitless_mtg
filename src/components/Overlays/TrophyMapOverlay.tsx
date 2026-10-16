@@ -8,7 +8,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { useTrophyDeckMap, useTrophyDeckCardlist, type TrophyMapPoint } from '../../queries/useTrophyDeckMap';
 import { useTrophyArchetypeCards, useDecksWithCard, useSetCardNames } from '../../queries/useTrophyClusters';
 import type { ArchetypalSkeleton } from '../../queries/useSkeletons';
-import { COLOR_MODES, buildColorScale, buildTimeline, buildDensityLayers, rampColor, type ColorMode } from '../../utils/trophyMapViz';
+import { COLOR_MODES, buildColorScale, buildTimeline, buildDensityLayers, scaleColor, type ColorMode } from '../../utils/trophyMapViz';
 
 interface TrophyMapOverlayProps {
   activeSet: string;
@@ -239,14 +239,15 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
 
     const hl = highlightIds;
     const radius = (realPoints.length > 5000 ? 2.2 : realPoints.length > 1500 ? 2.8 : 3.6) * dpr;
-    const dotAlpha = densityLayers.length ? 0.35 : 0.85;
+    // En densité, les zones remplacent les points : superposés, ils les noyaient.
+    const showDots = densityLayers.length === 0;
     const pixels: Array<{ px: number; py: number }> = new Array(points.length);
     points.forEach((p, i) => {
       const px = toX(p.x), py = toY(p.y);
       pixels[i] = { px, py };
-      if (p.is_archetypal || !isVisible(i)) return;
+      if (p.is_archetypal || !isVisible(i) || !showDots) return;
       const member = !hl || hl.has(p.aggregate_id);
-      ctx.globalAlpha = member ? dotAlpha : 0.05;
+      ctx.globalAlpha = member ? 0.85 : 0.05;
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
       ctx.fillStyle = member ? colorOf(p) : 'rgb(148,163,184)';
@@ -363,7 +364,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     }
     let best = -1, bd = (9 * dpr) ** 2;
     for (let i = 0; i < points.length; i++) {
-      if (points[i].is_archetypal || !px[i] || !isVisible(i)) continue;
+      if (points[i].is_archetypal || !px[i] || !isVisible(i) || showDensity) continue;
       const d = (px[i].px - mx) ** 2 + (px[i].py - my) ** 2;
       if (d < bd) { bd = d; best = i; }
     }
@@ -602,17 +603,20 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
                     <div className="space-y-1">
                       {[0, 1, 2].map(v => (
                         <div key={v} className="flex items-center gap-2 px-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: rampColor(1 - v / 2) }} />
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: scaleColor(v / 2) }} />
                           <span className="text-[10px] text-slate-300 font-bold">{scale.def.format(v)}</span>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <>
-                      <div className="h-2 rounded-full" style={{ background: `linear-gradient(to right, ${rampColor(0)}, ${rampColor(0.5)}, ${rampColor(1)})` }} />
+                      <div className="h-2 rounded-full" style={{ background: `linear-gradient(to right, ${scaleColor(0)}, ${scaleColor(0.25)}, ${scaleColor(0.5)}, ${scaleColor(0.75)}, ${scaleColor(1)})` }} />
                       <div className="flex justify-between mt-1 text-[9px] text-slate-400 font-bold tabular-nums">
-                        <span>{'≤'} {scale.def.format(scale.lo)}</span><span>{'≥'} {scale.def.format(scale.hi)}</span>
+                        <span>{'≤'} {scale.def.format(scale.lo)}</span>
+                        <span className="text-slate-500">{scale.def.format(scale.mid)}</span>
+                        <span>{'≥'} {scale.def.format(scale.hi)}</span>
                       </div>
+                      <p className="text-[8px] text-slate-600 mt-0.5">Middle = median deck</p>
                     </>
                   )}
                 </div>
@@ -707,8 +711,8 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
               <ul className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
                 <li>• <strong className="text-slate-200">Each dot</strong> = one real 7-win trophy deck. <strong className="text-slate-200">Distance</strong> = card similarity (UMAP axes are meaningless).</li>
                 <li>• <strong className="text-slate-200">Color</strong> = the deck's color identity. Click an archetype in the legend to highlight it and see its <strong className="text-indigo-300">signature cards</strong>.</li>
-                <li>• <strong className="text-slate-200">Color by</strong> switches to a measure of each deck: rares &amp; mythics, average mana value, losses (7-0 brightest).</li>
-                <li>• <strong className="text-slate-200">Density</strong> shades where each archetype's decks concentrate. The <strong className="text-slate-200">timeline</strong> replays the format week by week.</li>
+                <li>• <strong className="text-slate-200">Color by</strong> switches to a measure of each deck: rares &amp; mythics, average mana value, losses. Blue = below the median deck, red = above, gray = typical (7-0 blue, 7-2 red).</li>
+                <li>• <strong className="text-slate-200">Density</strong> shades where each archetype's decks concentrate (dots are hidden). The <strong className="text-slate-200">timeline</strong> replays the format week by week.</li>
                 <li>• <strong className="text-indigo-300">Search a card</strong> (top-left) to highlight every deck that plays it.</li>
                 <li>• <strong className="text-amber-300">◆ See archetypal</strong> overlays our skeletons. <strong className="text-slate-200">Scroll</strong> zoom · <strong className="text-slate-200">drag</strong> pan · double-click reset.</li>
               </ul>

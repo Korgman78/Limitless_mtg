@@ -205,6 +205,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                     <div className="space-y-2">
                         <div className="h-10 w-72 bg-slate-800 rounded-lg" />
                         <div className="h-4 w-48 bg-slate-900 rounded" />
+                        {/* Bouton "Test my deck" : même hauteur que l'en-tête réel */}
+                        <div className="h-8 w-36 bg-slate-900 rounded-xl" />
                     </div>
                     <div className="h-10 w-80 bg-slate-900 rounded-xl" />
                 </div>
@@ -226,7 +228,9 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
     }
 
     return (
-        <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500 p-2 md:p-0 pb-32">
+        // Pas de fondu ici : l'onglet a déjà le sien, et repartir de l'opacité 0
+        // après le squelette faisait clignoter la page au chargement.
+        <div className="space-y-6 md:space-y-10 p-2 md:p-0 pb-32">
             {/* Header & Filter */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-800 pb-8 px-2 md:px-0">
                 <div className="space-y-1">
@@ -388,7 +392,8 @@ export const TrophyDecks: React.FC<TrophyDecksProps> = ({ activeSet, activeForma
                 )}
             </div>
 
-            <AnimatePresence mode="wait">
+            {/* initial={false} : fondu au changement d'archétype, pas au 1er affichage */}
+            <AnimatePresence mode="wait" initial={false}>
                 {skeleton ? (
                     <motion.div
                         key={skeleton.id}
