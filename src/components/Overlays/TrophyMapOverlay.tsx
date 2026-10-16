@@ -428,8 +428,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
   );
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-md flex flex-col">
+    <motion.div className="fade-in-soft fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-md flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-800 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">

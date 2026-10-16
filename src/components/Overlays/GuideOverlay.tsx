@@ -201,8 +201,7 @@ export const GuideOverlay: React.FC<GuideOverlayProps> = ({ onClose, onNavigate 
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[950] hidden md:flex items-center justify-center bg-black/70 backdrop-blur-md p-6"
+      className="fade-in-soft fixed inset-0 z-[950] hidden md:flex items-center justify-center bg-black/70 backdrop-blur-md p-6"
       onClick={onClose}
     >
       <motion.div

@@ -561,10 +561,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-slate-950/95 backdrop-blur-sm flex flex-col"
+      className="fade-in-soft fixed inset-0 z-[1000] bg-slate-950/95 backdrop-blur-sm flex flex-col"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-800">

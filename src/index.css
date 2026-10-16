@@ -8,3 +8,16 @@
     transform: translateX(100%);
   }
 }
+
+/* Fondu d'entrée des onglets et des écrans plein écran, en CSS plutôt qu'avec
+   framer-motion : en fin d'animation (Web Animations API), framer-motion
+   laissait l'élément revenir une frame à opacity 0, d'où un clignotement à
+   chaque changement d'onglet. Une animation CSS se termine sur le style normal
+   de l'élément, sans ce trou. */
+@keyframes fade-in-soft {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in-soft {
+  animation: fade-in-soft 150ms ease-out;
+}

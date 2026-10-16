@@ -749,11 +749,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             {activeTab === 'decks' && (
               <motion.div
                 key="decks-tab"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="p-4 md:p-0 space-y-4 md:space-y-6">
+                className="fade-in-soft p-4 md:p-0 space-y-4 md:space-y-6">
                 {(decksLoading || globalCardsLoading) ? (
                   <DecksTabSkeleton />
                 ) : (
@@ -907,11 +903,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             {activeTab === 'cards' && (
               <motion.div
                 key="cards-tab"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="flex flex-col min-h-full">
+                className="fade-in-soft flex flex-col min-h-full">
                 <div className="bg-slate-950 md:bg-slate-950/90 md:backdrop-blur sticky top-0 md:top-[-1px] z-20 border-b border-slate-800 p-3 md:p-4 space-y-3 shadow-lg">
                   {/* LIGNE 0: Points d'entrée (Synergies / Graphs) */}
                   <div className="flex items-center gap-2">
@@ -1115,14 +1107,9 @@ export default function MTGLimitedApp(): React.ReactElement {
                     </motion.div>
                     <div className="space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
                       {[...Array(12)].map((_, i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.05 }}
-                        >
+                        <div key={i}>
                           <CardSkeleton />
-                        </motion.div>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1178,21 +1165,21 @@ export default function MTGLimitedApp(): React.ReactElement {
 
             {/* 3. FORMAT COMPARISON TAB */}
             {activeTab === 'compare' && (
-              <motion.div key="compare-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <motion.div key="compare-tab" className="fade-in-soft">
                 <FormatComparison activeSet={activeSet} />
               </motion.div>
             )}
 
             {/* 4. PRESS REVIEW TAB */}
             {activeTab === 'press' && (
-              <motion.div key="press-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <motion.div key="press-tab" className="fade-in-soft">
                 <PressReview activeSet={activeSet} onViewCardInFormat={handleViewCardInFormat} />
               </motion.div>
             )}
 
             {/* 5. TROPHY DECKS TAB */}
             {activeTab === 'trophies' && (
-              <motion.div key="trophies-tab" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <motion.div key="trophies-tab" className="fade-in-soft">
                 <TrophyDecks
                   activeSet={activeSet} activeFormat={activeFormat}
                   onCardSelect={handleCardSelect} onFormatChange={setActiveFormat}

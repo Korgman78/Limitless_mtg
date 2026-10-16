@@ -21,15 +21,14 @@ export const SwipeableOverlay: React.FC<SwipeableOverlayProps> = ({ children, on
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/70 backdrop-blur-md flex flex-col justify-end md:justify-center md:items-center"
+      className="fade-in-soft fixed inset-0 bg-black/70 backdrop-blur-md flex flex-col justify-end md:justify-center md:items-center"
       style={{ zIndex }}
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: "100%", opacity: 0.5 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: "100%", opacity: 0 }}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
         className="w-full h-[92vh] md:h-auto md:max-h-[90vh] md:max-w-6xl md:w-full bg-gradient-to-b from-slate-900/98 to-slate-950/99 backdrop-blur-xl rounded-t-[30px] md:rounded-[30px] overflow-hidden flex flex-col shadow-2xl border border-white/10 relative"
         onClick={(e) => e.stopPropagation()}
