@@ -61,15 +61,31 @@ def fetch_bonus_sheet_codes(set_code):
     return bonus_codes
 
 
-def fetch_scryfall_set(set_code, store_as=None):
+def fetch_special_guests_query(set_code):
+    """
+    Requête Scryfall de la tranche Special Guests (`spg`) sortie avec le set.
+
+    `spg` est un set permanent sans parent_set_code : chaque extension y ajoute
+    une dizaine de cartes, que fetch_bonus_sheet_codes ne peut donc pas voir.
+    On les isole par date de sortie, identique à celle du set papier.
+    """
+    resp = requests.get(f"https://api.scryfall.com/sets/{set_code.lower()}", headers=HEADERS_SCRYFALL)
+    if resp.status_code != 200:
+        return None
+    released_at = resp.json().get("released_at")
+    return f"set:spg date={released_at}" if released_at else None
+
+
+def fetch_scryfall_set(set_code, store_as=None, query=None):
     """
     Récupère toutes les cartes d'un set depuis Scryfall.
     store_as: set_code à utiliser dans card_list (pour rattacher les bonus sheets au set parent).
+    query: requête Scryfall à la place de `set:<set_code>` (tranche Special Guests).
     """
     target_code = store_as or set_code
     print(f"📡 Récupération du set {set_code} sur Scryfall (stocké sous {target_code})...")
     cards = []
-    url = f"https://api.scryfall.com/cards/search?q=set:{set_code}"
+    url = "https://api.scryfall.com/cards/search?q=" + requests.utils.quote(query or f"set:{set_code}")
 
     while url:
         resp = requests.get(url, headers=HEADERS_SCRYFALL)
@@ -158,7 +174,14 @@ if __name__ == "__main__":
         print(f"  {len(bonus_cards)} bonus sheet cards from {bonus_code}")
         all_cards.extend(bonus_cards)
 
-    # 3. Supabase
+    # 3. Scryfall — Special Guests de ce set
+    spg_query = fetch_special_guests_query(target)
+    if spg_query:
+        spg_cards = fetch_scryfall_set("spg", store_as=target, query=spg_query)
+        print(f"  {len(spg_cards)} Special Guests ({spg_query})")
+        all_cards.extend(spg_cards)
+
+    # 4. Supabase
     populate_table(all_cards)
 
     print(f"\n✨ Terminé en {round(time.time() - start_time, 2)}s.")

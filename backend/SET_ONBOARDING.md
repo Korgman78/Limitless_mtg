@@ -124,10 +124,14 @@ dépendent PAS de 17Lands, donc faisables dès que le spoiler est sur Scryfall.
   ```bash
   python backend/scryfall_enrichment.py   # éditer TARGET_SET = "MSH"
   ```
-- [ ] **Arena IDs** (import MTGA) — dépend des arena ids publiés par 17Lands :
+- [ ] **Arena IDs — obligatoire, dès le jour J** (17Lands publie les `mtga_id`
+  dès la sortie). Le Training Diary, l'overlay et l'import MTGA en dépendent :
+  sans eux, les drafts du diary sont enregistrés sans noms ni images (cf. FRA).
   ```bash
-  python backend/enrichment/populate_arena_ids.py MSH
+  PYTHONIOENCODING=utf-8 python backend/enrichment/populate_arena_ids.py MSH
   ```
+  Contrôle : tout `card_list` du set doit avoir un `arena_id`, sauf les 5
+  terrains de base.
 - [ ] **UMAP** trophy & card maps prennent le set automatiquement (ciblage `[]`)
   à leur cron (tous les 3 jours). Rien à faire.
 - [ ] **Lever l'embargo** : retirer le code de `EMBARGOED_SETS` + commit /
@@ -195,8 +199,7 @@ puis `enrich_card_tags.py` (26 removal, 22 producteurs de mana, 50 support tags)
   deux marqueurs +1/+1, la règle les attrape sur « Sacrifice this land … target ».
 - [ ] `scryfall_enrichment.py` — débloqué dès le 1er `daily_etl` sur HOB, puisqu'il
   enrichit des lignes `card_stats` existantes et ne sait pas en créer.
-- [ ] `populate_arena_ids.py HOB` — seulement si tu utilises l'overlay Arena ou le
-  mapping des logs MTGA du sealed optimizer ; le front web ne lit jamais `arena_id`.
+- [x] `populate_arena_ids.py HOB` — fait (188/193, les 5 terrains de base en moins).
 - [ ] Retirer `MSH` des 5 ciblages ETL une fois qu'il ne sort plus de trophy decks.
   Ça supprime 93 appels 17Lands/jour à vide, et surtout ça fige son
   `win_rate_history` : `daily_etl` continue sinon d'y empiler des valeurs
@@ -214,10 +217,14 @@ Vérifications faites le 2026-09-20 :
   (`FRA` déjà listé dans `https://www.17lands.com/data/expansions`,
   `card_ratings` renvoie `[]`, normal avant la sortie).
   ⚠️ Le set s'appelle « Reality Fractur**e** », pas « Reality Fractured ».
-- **Pas de bonus sheet à rattacher.** Les sets enfants sont `tfra` / `tfrc`
-  (tokens) et `frc` « Reality Fracture Commander » (`set_type: commander`,
-  hors boosters de draft). `fetch_bonus_sheet_codes` ne retient que
-  `masterpiece`/`bonus` → rien à faire, même schéma que HOB et TLA.
+- **Pas de set enfant bonus**, mais une tranche **Special Guests** : les sets
+  enfants sont `tfra` / `tfrc` (tokens) et `frc` « Reality Fracture Commander »
+  (`set_type: commander`, hors boosters de draft). ⚠️ Corrigé le 2026-10-16 :
+  10 Special Guests (`spg` n° 159→168 — Eye of Ugin, Splinter Twin, Consider…)
+  sont bien dans les boosters Arena. `spg` est un set permanent sans
+  `parent_set_code`, donc invisible pour `fetch_bonus_sheet_codes` ;
+  `populate_card_list.py` les récupère désormais par date de sortie
+  (`set:spg date=<released_at du set>`).
 - **Spoiler complet** : 461 prints, collector numbers **1→461 sans aucun trou**.
   La requête du script (`q=set:fra`, dédoublonnée par carte) ramène
   **285 cartes** — 86C / 109U / 64R / 26M —, du même ordre que MSH (281 en base)
@@ -278,9 +285,12 @@ update sets set active = true where code = 'FRA';
 - [x] Phase 1 : `populate_card_list.py` + `enrichment/enrich_card_tags.py`.
 - [x] `corrections/correct_fra_tags.py` — écrit et appliqué.
 - [ ] J : `update sets set active = true where code = 'FRA';`
-- [ ] J+1/J+3 : `scryfall_enrichment.py` (après le 1er `daily_etl` sur FRA),
-      puis `populate_arena_ids.py FRA` si l'overlay Arena / le mapping MTGA est
-      utilisé.
+- [ ] J+1/J+3 : `scryfall_enrichment.py` (après le 1er `daily_etl` sur FRA).
+- [x] `populate_arena_ids.py FRA` — oublié jusqu'au 2026-10-16 : les 3 drafts FRA
+      du diary avaient été synchronisés sans noms de cartes, donc sans images, et
+      leurs decks ne contenaient que les terrains de base. Lancé (290/295, les
+      5 terrains de base en moins), Special Guests ajoutés, puis
+      `node --use-system-ca diary/sync/backfill-names.js FRA` (123 picks réparés).
 - [x] Retirer `HOB` des 5 ciblages ETL — fait sur GitHub (commits a916396 et
       précédents).
 - [x] Calibrer le sealed optimizer sur FRA (584 trophy decks Sealed au
@@ -319,6 +329,15 @@ soit on l'écrit, soit on l'assume puisque HOB sort bientôt de la fenêtre chau
 ---
 
 ## Gotchas
+- **`populate_arena_ids.py` est obligatoire dès J** (17Lands publie les
+  `mtga_id` dès la sortie). Le Training Diary traduit les `grpId` du Player.log
+  en noms via `card_list.arena_id` : sans eux, picks et decks sont enregistrés
+  sans nom et sans image. Rattrapage : `node diary/sync/backfill-names.js SET`
+  pour les picks ; les decks se refont en resynchronisant, tant que le draft est
+  encore dans le Player.log.
+- **Special Guests** (`spg`) : pas de `parent_set_code`, donc à vérifier à part
+  (`populate_card_list.py` les gère). Repère : 17Lands liste plus de cartes que
+  `card_list`.
 - **Code 17Lands ≠ Scryfall** possible → vérifier avant tout (sinon scrap vide).
 - **Set enfant `eternal`** (ex. `hoc` pour HOB, `tle` pour TLA) : ce n'est PAS une
   bonus sheet de draft (`booster: false`) → à ne pas ajouter à `card_list`.
