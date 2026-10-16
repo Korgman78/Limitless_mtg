@@ -16,7 +16,7 @@ import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
 import { useCardImages } from './queries/useCardImages';
 import { useFormatFlex } from './queries/useFormatFlex';
-import { useFormatNiche, isNicheFormat } from './queries/useFormatNiche';
+import { useFormatNiche, isNicheFormat, describeNiche } from './queries/useFormatNiche';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
 
@@ -1074,7 +1074,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         onClick={toggleNiche}
                         disabled={!nicheAvailable}
                         title={nicheAvailable
-                          ? 'Niche cards — mono-colour commons & uncommons that over-perform in one pair of their colour only (hidden gold cards)'
+                          ? 'Niche cards — commons & uncommons that over-perform alongside one specific colour and are ordinary without it (hidden gold cards)'
                           : 'Niche cards — draft formats only (Sealed samples per archetype are too small)'}
                         className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${nicheActive ? 'bg-teal-500 border-teal-400 text-slate-950 shadow-lg shadow-teal-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-teal-500/60 hover:text-teal-300'} disabled:opacity-40 disabled:pointer-events-none`}
                       >
@@ -1100,7 +1100,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         <span>No niche cards match the current filters.</span>
                       ) : (
                         <span>
-                          <strong className="font-bold text-teal-300">Niche cards</strong> &mdash; mono-colour commons &amp; uncommons that over-perform in one pair of their colour and fall back to ordinary in the others. Badge: home pair and win-rate gap vs the other pairs.
+                          <strong className="font-bold text-teal-300">Niche cards</strong> &mdash; commons &amp; uncommons that over-perform alongside one specific colour (2- and 3-colour decks) and fall back to ordinary without it; colourless cards are compared pair by pair. Badge: home pair and win-rate gap.
                         </span>
                       )}
                     </div>
@@ -1150,7 +1150,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                               <ManaIcons colors={card.colors} size="sm" />
                               {nicheByName?.[card.name] && (
                                 <span
-                                  title={`Best in ${sortColorsWUBRG(nicheByName[card.name].home)}: ${nicheByName[card.name].homeDelta >= 0 ? '+' : ''}${nicheByName[card.name].homeDelta.toFixed(1)} pts vs the archetype, ${nicheByName[card.name].othersDelta >= 0 ? '+' : ''}${nicheByName[card.name].othersDelta.toFixed(1)} in its other pairs`}
+                                  title={describeNiche(nicheByName[card.name])}
                                   className="flex items-center gap-1 rounded border border-teal-500/40 bg-teal-500/10 px-1 py-px text-[9px] font-black text-teal-300"
                                 >
                                   <ManaIcons colors={sortColorsWUBRG(nicheByName[card.name].home)} size="sm" />
