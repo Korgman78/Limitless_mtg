@@ -1131,7 +1131,10 @@ export default function MTGLimitedApp(): React.ReactElement {
                 <div className="p-2 md:p-0 pt-2 space-y-1 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4 md:mt-4">
                   {!loading && filteredCards.slice(0, visibleCardsCount).map((card, idx) => (
                     <motion.button
-                      layoutId={`card-${card.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                      // Pas de fondu par carte : l'onglet a déjà le sien, et 40 fondus
+                      // WAAPI simultanés retombaient à opacity 0 une frame en fin
+                      // d'animation (tressautement au chargement).
+                      layoutId={`card-${card.id}`}
                       whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
                       key={card.id} onClick={() => setSelectedCard(card)}
                       className="w-full flex md:flex-row items-center gap-3 bg-slate-900/40 p-2 md:p-3 rounded-lg border border-slate-800/50 hover:bg-slate-800 hover:border-slate-600 transition-all group md:shadow-md relative"
