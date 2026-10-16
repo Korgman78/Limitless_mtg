@@ -7,6 +7,11 @@ export interface TrophyMapPoint {
   archetype: string | null
   colors: string | null
   wins: number | null
+  /** Profil du deck (ETL) — absents tant que la migration n'est pas passée. */
+  losses?: number | null
+  trophy_time?: string | null
+  rare_count?: number | null
+  avg_cmc?: number | null
   x: number
   y: number
   is_archetypal: boolean
@@ -40,7 +45,9 @@ export function useTrophyDeckMap(activeSet: string, activeFormat: string, enable
       const requests = Array.from({ length: pages }, (_, i) =>
         supabase
           .from('trophy_deck_map')
-          .select('aggregate_id,archetype,colors,wins,x,y,is_archetypal')
+          // `*` plutôt qu'une liste : la carte reste lisible avant comme après
+          // l'ajout des colonnes de profil (losses, trophy_time, rare_count, avg_cmc).
+          .select('*')
           .eq('set_code', activeSet)
           .eq('format', activeFormat)
           .order('aggregate_id', { ascending: true })

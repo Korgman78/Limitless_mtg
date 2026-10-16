@@ -25,6 +25,8 @@ RSS_FEED_URL = (
     "&feed_6=https%3A%2F%2Fwww.youtube.com%2Ffeeds%2Fvideos.xml%3Fchannel_id%3DUCheVPpgNql8JjZlYGcbjyGw"
     "&feed_7=https%3A%2F%2Fwww.youtube.com%2Ffeeds%2Fvideos.xml%3Fchannel_id%3DUCkfWtgQSg3yp7vmIj3Z5W0A"
     "&feed_8=https%3A%2F%2Fwww.youtube.com%2Ffeeds%2Fvideos.xml%3Fchannel_id%3DUC9LX2KnB85WKpcotB0iEa2Q"
+    # Sierkovitz (podcast Magic Numbers, analyses de données 17Lands)
+    "&feed_9=https%3A%2F%2Fwww.youtube.com%2Ffeeds%2Fvideos.xml%3Fchannel_id%3DUCMvOAsGWrS6Cb6dhgzWqShA"
     "&limit=15&format=Atom"
 )
 

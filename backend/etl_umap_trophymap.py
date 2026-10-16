@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import requests
+import time
 import numpy as np
 
 # Console Windows (cp1252) : forcer l'UTF-8 pour ne pas crasher sur les emojis.
@@ -82,31 +83,87 @@ def get_active_sets():
     return []
 
 def fetch_trophy_decks(set_code, fmt):
-    """Recupere tous les decks trophees (pagine) pour un set/format."""
+    """Recupere tous les decks trophees (pagine) pour un set/format.
+
+    Pagination par curseur (id > dernier id vu) : avec un offset, Postgres
+    relit toutes les lignes precedentes a chaque page et les gros sets
+    finissent en statement timeout.
+    """
     decks = []
-    page_size = 1000
-    offset = 0
+    page_size = 500
+    last_id = None
     while True:
+        cursor = f"&id=gt.{last_id}" if last_id is not None else ""
         url = (
             f"{SUPABASE_URL}/rest/v1/trophy_decks"
-            f"?set_code=eq.{set_code}&format=eq.{fmt}"
-            f"&select=aggregate_id,archetype,cardlist,wins"
-            f"&order=id&limit={page_size}&offset={offset}"
+            f"?set_code=eq.{set_code}&format=eq.{fmt}{cursor}"
+            f"&select=id,aggregate_id,archetype,cardlist,wins,losses,trophy_time"
+            f"&order=id&limit={page_size}"
         )
-        try:
-            r = requests.get(url, headers=HEADERS_SUPABASE)
-            if r.status_code != 200:
-                print(f"   ❌ Erreur fetch decks (offset {offset}): {r.text}")
-                break
-            batch = r.json()
-        except Exception as e:
-            print(f"   ❌ Exception fetch decks: {e}")
-            break
+        batch = None
+        for attempt in range(5):
+            if attempt:
+                time.sleep(3 * attempt)  # la 1re page expire parfois a froid
+            try:
+                r = requests.get(url, headers=HEADERS_SUPABASE, timeout=60)
+                if r.status_code == 200:
+                    batch = r.json()
+                    break
+                print(f"   ⚠️ Erreur fetch decks (apres id {last_id}, tentative {attempt + 1}): {r.text[:150]}")
+            except Exception as e:
+                print(f"   ⚠️ Exception fetch decks (tentative {attempt + 1}): {e}")
+        if batch is None:
+            print("   ❌ Fetch decks abandonne : carte non mise a jour pour ce format")
+            return []
         decks.extend(batch)
         if len(batch) < page_size:
             break
-        offset += page_size
+        last_id = batch[-1]["id"]
     return decks
+
+
+def fetch_card_meta(set_code):
+    """Rarete, CMC et type par nom de carte (face avant comprise pour les DFC)."""
+    url = (
+        f"{SUPABASE_URL}/rest/v1/card_list"
+        f"?set_code=eq.{set_code}&select=card_name,rarity,card_cmc,card_type"
+    )
+    meta = {}
+    try:
+        r = requests.get(url, headers=HEADERS_SUPABASE, timeout=60)
+        if r.status_code == 200:
+            for row in r.json():
+                name = row.get("card_name") or ""
+                for key in {name, name.split(" // ")[0]}:
+                    meta.setdefault(key, row)
+    except Exception as e:
+        print(f"   ⚠️ Erreur fetch card_list: {e}")
+    return meta
+
+
+def deck_profile(spells, meta):
+    """(nombre de rares+mythiques, CMC moyen des sorts non-terrains) d'un deck.
+
+    Alimente les modes "Color by" de la carte. Les cartes absentes de
+    card_list sont ignorees ; None si rien n'est mesurable.
+    """
+    rares = 0
+    cmc_total, cmc_count = 0.0, 0
+    known = False
+    for name, qty in spells.items():
+        row = meta.get(name)
+        if not row:
+            continue
+        known = True
+        q = int(qty or 0)
+        if str(row.get("rarity") or "").lower() in ("rare", "mythic"):
+            rares += q
+        if "Land" not in (row.get("card_type") or "") and row.get("card_cmc") is not None:
+            cmc_total += float(row["card_cmc"]) * q
+            cmc_count += q
+    if not known:
+        return None, None
+    return rares, (round(cmc_total / cmc_count, 2) if cmc_count else None)
 
 def extract_colors(archetype):
     """Extrait le code couleur WUBRG canonique depuis le champ archetype."""
@@ -235,8 +292,10 @@ def process(set_code, fmt):
         })
 
     # --- Construction des enregistrements (decks reels) ---
+    meta = fetch_card_meta(set_code)
     records = []
     for i, d in enumerate(kept):
+        rare_count, avg_cmc = deck_profile(d["_spells"], meta)
         records.append({
             "aggregate_id": d["aggregate_id"],
             "set_code": set_code,
@@ -244,6 +303,10 @@ def process(set_code, fmt):
             "archetype": d.get("archetype"),
             "colors": extract_colors(d.get("archetype")),
             "wins": d.get("wins"),
+            "losses": d.get("losses"),
+            "trophy_time": d.get("trophy_time"),
+            "rare_count": rare_count,
+            "avg_cmc": avg_cmc,
             "x": round(float(coords[i, 0]), 4),
             "y": round(float(coords[i, 1]), 4),
             "is_archetypal": False,
@@ -270,6 +333,10 @@ def process(set_code, fmt):
                 "archetype": name,
                 "colors": extract_colors(name),
                 "wins": None,
+                "losses": None,
+                "trophy_time": None,
+                "rare_count": None,
+                "avg_cmc": None,
                 "x": round(float(arch_coords[i, 0]), 4),
                 "y": round(float(arch_coords[i, 1]), 4),
                 "is_archetypal": True,
