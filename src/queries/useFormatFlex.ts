@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../supabase'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from './keys'
+import { fetchFormatContexts, colorKey, AGGREGATE_NAMES } from './formatContexts'
 import { normalizeRarity } from '../utils/helpers'
 
 /**
@@ -51,16 +51,6 @@ const MIN_META_COVERAGE = 25
 // level on average (within ~1.25%), so a consistent under-performer can't qualify.
 const MIN_MEAN_DELTA = -1.25
 
-// Sorted colour identity of an archetype code/colours string, e.g. "RU" -> "RU".
-const colorKey = (s: string | null | undefined) =>
-  String(s ?? '').replace(' + Splash', '').replace(/[^WUBRG]/g, '').split('').sort().join('')
-
-// archetype_stats aggregate rows that are not individual decks.
-const AGGREGATE_NAMES = new Set([
-  'All Decks', 'Two-color', 'Two-color + Splash', 'Three-color',
-  'Three-color + Splash', 'Mono-color', 'Mono-color + Splash',
-])
-
 export interface FormatFlexResult {
   flexNames: Set<string>
   /** Final flex ranking score = Borda average of the consistency rank and the
@@ -75,41 +65,13 @@ export interface FormatFlexResult {
 const EMPTY: FormatFlexResult = { flexNames: new Set(), flexScoreByName: {}, flexRanksByName: {}, flexPoolSize: 0 }
 
 export function useFormatFlex(activeSet: string, activeFormat: string, enabled: boolean) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: queryKeys.formatFlex(activeSet, activeFormat),
     queryFn: async (): Promise<FormatFlexResult> => {
       if (!activeSet) return EMPTY
 
-      // A set/format holds ~7k card_stats rows (≈250 cards × ~20 archetype
-      // contexts), well over the server's hard 1000-row cap, so we must page.
-      // Ordering is by (card_name, filter_context) — a deterministic total
-      // order so range paging never skips/duplicates rows. (Ordering by `id`
-      // is NOT indexed for this filter and times out.)
-      const COLS = 'card_name, rarity, filter_context, gih_wr, img_count'
-      const PAGE = 1000
-      const page = (from: number, withCount: boolean) =>
-        supabase
-          .from('card_stats')
-          .select(COLS, withCount ? { count: 'exact' } : undefined)
-          .eq('set_code', activeSet)
-          .eq('format', activeFormat)
-          .order('card_name', { ascending: true })
-          .order('filter_context', { ascending: true })
-          .range(from, from + PAGE - 1)
-
-      // Archetype stats (baseline WR + per-archetype meta shares) + first card
-      // page (with total count), in parallel.
-      const [archResult, firstPage] = await Promise.all([
-        supabase
-          .from('archetype_stats')
-          .select('archetype_name, colors, win_rate, games_count')
-          .eq('set_code', activeSet)
-          .eq('format', activeFormat),
-        page(0, true),
-      ])
-
-      if (archResult.error) throw archResult.error
-      const archRows = (archResult.data ?? []) as any[]
+      const { rows, archRows } = await fetchFormatContexts(queryClient, activeSet, activeFormat)
       const globalMeanWR = archRows.find(a => a.archetype_name === 'All Decks')?.win_rate ?? 55.0
       const individualDecks = archRows.filter(a => !AGGREGATE_NAMES.has(a.archetype_name))
       const totalGames = individualDecks.reduce((s, d) => s + (d.games_count || 0), 0) || 1
@@ -123,18 +85,6 @@ export function useFormatFlex(activeSet: string, activeFormat: string, enabled: 
         const k = colorKey(d.colors)
         metaShareByColors[k] = (metaShareByColors[k] || 0) + (d.games_count || 0) / totalGames * 100
         if (!String(d.colors).includes('Splash') && d.win_rate != null) archetypeWRByColors[k] = d.win_rate
-      }
-
-      if (firstPage.error) throw firstPage.error
-      const total = firstPage.count ?? firstPage.data?.length ?? 0
-      const rows: any[] = [...(firstPage.data ?? [])]
-
-      // Remaining pages fetched in parallel (count is known up front).
-      const reqs = []
-      for (let from = PAGE; from < total; from += PAGE) reqs.push(page(from, false))
-      for (const res of await Promise.all(reqs)) {
-        if (res.error) throw res.error
-        rows.push(...(res.data ?? []))
       }
 
       if (rows.length === 0) return EMPTY

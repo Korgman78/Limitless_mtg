@@ -73,6 +73,7 @@ const SECTIONS: GuideSection[] = [
       { b: 'Open Card Synergies', t: ' — the format’s best pairs, straight from trophy decks: the top combos by synergy (lift) next to the top “often played together”. Type one card for its 10 best partners, or two cards to score that exact pair.' },
       { b: 'Open Card Graphs', t: ' — three views in one: the WR / ALSA scatter (undervalued cards jump out), a Map where cards cluster by how often they share trophy decks, and Communities that auto-group cards into synergy packages.' },
       { b: 'Toggle FLEX', t: ' — filter to the format’s flex cards: commons & uncommons with above-average win rate that perform the most consistently across every archetype (the safe, flexible picks).' },
+      { b: 'Toggle NICHE', t: ' — the opposite of FLEX: mono-colour commons & uncommons that over-perform in one pair of their colour and are ordinary elsewhere (hidden gold cards). The badge shows that pair and the win-rate gap. Draft formats only.' },
     ],
     proTip: 'Sort by ALSA, then look for high win-rate cards that are picked late — those are your sleeper value picks.',
     cta: { tab: 'cards', label: 'Open Cards Ratings' },

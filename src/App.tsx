@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Layers, Zap, ChevronRight, ArrowUpDown,
-  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Network, Trophy, Activity, BookOpen, Anchor, Link2
+  X, Repeat, Newspaper, ArrowUp, RefreshCw, TrendingUp, TrendingDown, Network, Trophy, Activity, BookOpen, Anchor, Link2, Crosshair
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -16,6 +16,7 @@ import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
 import { useCardImages } from './queries/useCardImages';
 import { useFormatFlex } from './queries/useFormatFlex';
+import { useFormatNiche, isNicheFormat } from './queries/useFormatNiche';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
 
@@ -266,8 +267,29 @@ export default function MTGLimitedApp(): React.ReactElement {
   const toggleFlex = useCallback(() => {
     haptics.light();
     setFlexQueryEnabled(true);
+    setNicheActive(false);
     setFlexActive(prev => !prev);
   }, []);
+
+  // --- Niche cards filter (Cards tab) — the opposite of FLEX ---
+  // Mono-colour C/U that shine in one pair of their colour only. Same lazy
+  // loading; FLEX and NICHE are mutually exclusive. Draft formats only.
+  const [nicheActive, setNicheActive] = useState<boolean>(false);
+  const [nicheQueryEnabled, setNicheQueryEnabled] = useState<boolean>(false);
+  const nicheAvailable = isNicheFormat(activeFormat);
+  const { data: nicheData, isLoading: nicheLoading } = useFormatNiche(activeSet, activeFormat, nicheQueryEnabled);
+  const nicheByName = nicheActive && nicheAvailable ? nicheData?.nicheByName : undefined;
+
+  const toggleNiche = useCallback(() => {
+    haptics.light();
+    setNicheQueryEnabled(true);
+    setFlexActive(false);
+    setNicheActive(prev => !prev);
+  }, []);
+
+  useEffect(() => {
+    if (!nicheAvailable) setNicheActive(false);
+  }, [nicheAvailable]);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showMatrixView, setShowMatrixView] = useState<boolean>(false);
@@ -416,6 +438,11 @@ export default function MTGLimitedApp(): React.ReactElement {
       res = res.filter((c: Card) => flexNames.has(c.name));
     }
 
+    if (nicheActive) {
+      if (!nicheByName) return [];   // same as FLEX: wait for the data
+      res = res.filter((c: Card) => nicheByName[c.name] != null);
+    }
+
     if (rarityFilter.length > 0) {
       res = res.filter((c: Card) => rarityFilter.includes(normalizeRarity(c.rarity)));
     }
@@ -448,6 +475,13 @@ export default function MTGLimitedApp(): React.ReactElement {
       return res;
     }
 
+    // Filtre NICHE actif : tri fixe par écart décroissant entre la paire
+    // maison et les autres paires de la couleur.
+    if (nicheByName) {
+      res.sort((a: Card, b: Card) => (nicheByName[b.name]?.gap ?? 0) - (nicheByName[a.name]?.gap ?? 0));
+      return res;
+    }
+
     res.sort((a: Card, b: Card) => {
       // TRI PAR NOM
       if (sortConfig.key === 'name') return sortConfig.dir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -474,12 +508,12 @@ export default function MTGLimitedApp(): React.ReactElement {
       return sortConfig.dir === 'asc' ? valA - valB : valB - valA;
     });
     return res;
-  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, flexActive, flexNames, flexScores]);
+  }, [cards, debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, flexActive, flexNames, flexScores, nicheActive, nicheByName]);
 
   // Reset lazy load when filters change
   useEffect(() => {
     setVisibleCardsCount(40);
-  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat, flexActive, flexNames]);
+  }, [debouncedSearchTerm, rarityFilter, colorFilters, sortConfig, archetypeFilter, activeSet, activeFormat, flexActive, flexNames, nicheActive, nicheByName]);
 
 
   // Scroll to top FAB visibility
@@ -993,8 +1027,8 @@ export default function MTGLimitedApp(): React.ReactElement {
                     <div className="hidden md:block w-[1px] h-6 bg-slate-800 mx-2"></div>
 
                     {/* STATS FILTERS (Row 3 on Mobile) */}
-                    <div className="flex gap-1.5 md:gap-2 w-full md:w-auto">
-                      <button onClick={() => handleSort('gih_wr')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                    <div className="flex gap-1 md:gap-1.5 w-full md:w-auto md:flex-1 min-w-0">
+                      <button onClick={() => handleSort('gih_wr')} className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'gih_wr' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         GIH
                         {sortConfig.key === 'gih_wr' ? (
                           <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
@@ -1003,7 +1037,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                       </button>
 
-                      <button onClick={() => handleSort('alsa')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <button onClick={() => handleSort('alsa')} className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'alsa' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         ALSA
                         {sortConfig.key === 'alsa' ? (
                           <ArrowUp size={10} className={`transition-transform duration-200 ${sortConfig.dir === 'desc' ? 'rotate-180' : ''}`} />
@@ -1012,7 +1046,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                       </button>
 
-                      <button onClick={() => handleSort('trend')} className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'trend' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <button onClick={() => handleSort('trend')} className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${sortConfig.key === 'trend' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                         TREND
                         {sortConfig.key === 'trend' ? (
                           sortConfig.dir === 'asc' ? <TrendingDown size={10} /> : <TrendingUp size={10} />
@@ -1025,7 +1059,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                       <button
                         onClick={toggleFlex}
                         title="Format flex cards — commons & uncommons with above-average win rate and the most consistent performance across archetypes"
-                        className={`flex-1 md:flex-none flex items-center justify-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${flexActive ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/60 hover:text-amber-300'}`}
+                        className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${flexActive ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/60 hover:text-amber-300'}`}
                       >
                         {flexActive && flexLoading ? (
                           <RefreshCw size={10} className="animate-spin" />
@@ -1034,9 +1068,44 @@ export default function MTGLimitedApp(): React.ReactElement {
                         )}
                         FLEX
                       </button>
+
+                      {/* NICHE — mono-colour cards that shine in one pair only (opposite of FLEX) */}
+                      <button
+                        onClick={toggleNiche}
+                        disabled={!nicheAvailable}
+                        title={nicheAvailable
+                          ? 'Niche cards — mono-colour commons & uncommons that over-perform in one pair of their colour only (hidden gold cards)'
+                          : 'Niche cards — draft formats only (Sealed samples per archetype are too small)'}
+                        className={`flex-1 min-w-0 flex items-center justify-center gap-1 px-1 md:px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${nicheActive ? 'bg-teal-500 border-teal-400 text-slate-950 shadow-lg shadow-teal-500/20' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-teal-500/60 hover:text-teal-300'} disabled:opacity-40 disabled:pointer-events-none`}
+                      >
+                        {nicheActive && nicheLoading ? (
+                          <RefreshCw size={10} className="animate-spin" />
+                        ) : (
+                          <Crosshair size={10} className={nicheActive ? '' : 'text-teal-400/80'} />
+                        )}
+                        NICHE
+                      </button>
                     </div>
                   </div>
                 </div>
+
+                {/* Niche cards info bar */}
+                {nicheActive && (
+                  <div className="px-2 md:px-0 pt-3">
+                    <div className="flex items-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/[0.07] px-3 py-2 text-[11px] text-teal-200/90">
+                      <Crosshair size={13} className="text-teal-400 flex-shrink-0" />
+                      {nicheLoading || !nicheByName ? (
+                        <span>Finding the format&rsquo;s niche cards&hellip;</span>
+                      ) : filteredCards.length === 0 ? (
+                        <span>No niche cards match the current filters.</span>
+                      ) : (
+                        <span>
+                          <strong className="font-bold text-teal-300">Niche cards</strong> &mdash; mono-colour commons &amp; uncommons that over-perform in one pair of their colour and fall back to ordinary in the others. Badge: home pair and win-rate gap vs the other pairs.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Flex cards info bar */}
                 {flexActive && (
@@ -1079,6 +1148,15 @@ export default function MTGLimitedApp(): React.ReactElement {
                             <div className="flex items-center gap-2">
                               <span className={`text-[9px] px-1.5 rounded border font-black ${RARITY_STYLES[normalizeRarity(card.rarity)]}`}>{normalizeRarity(card.rarity)}</span>
                               <ManaIcons colors={card.colors} size="sm" />
+                              {nicheByName?.[card.name] && (
+                                <span
+                                  title={`Best in ${sortColorsWUBRG(nicheByName[card.name].home)}: ${nicheByName[card.name].homeDelta >= 0 ? '+' : ''}${nicheByName[card.name].homeDelta.toFixed(1)} pts vs the archetype, ${nicheByName[card.name].othersDelta >= 0 ? '+' : ''}${nicheByName[card.name].othersDelta.toFixed(1)} in its other pairs`}
+                                  className="flex items-center gap-1 rounded border border-teal-500/40 bg-teal-500/10 px-1 py-px text-[9px] font-black text-teal-300"
+                                >
+                                  <ManaIcons colors={sortColorsWUBRG(nicheByName[card.name].home)} size="sm" />
+                                  +{nicheByName[card.name].gap.toFixed(1)}
+                                </span>
+                              )}
                             </div>
                             <span className="text-[10px] text-slate-500 font-mono hidden md:block">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
                           </div>

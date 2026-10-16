@@ -6,6 +6,10 @@ export const queryKeys = {
   cardImages: (set: string) => ['cardImages', set] as const,
   formatFlex: (set: string, format: string) =>
     ['formatFlex', set, format] as const,
+  formatNiche: (set: string, format: string) =>
+    ['formatNiche', set, format] as const,
+  formatContexts: (set: string, format: string) =>
+    ['formatContexts', set, format] as const,
   archetypeCards: (set: string, format: string, colors: string) =>
     ['archetypeCards', set, format, colors] as const,
   cardCrossPerf: (set: string, format: string, cardName: string) =>
