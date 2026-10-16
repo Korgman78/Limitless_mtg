@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../supabase'
 import { queryKeys } from './keys'
+import { MIN_SIGNIFICANT_LIFT } from './useDraftPractice'
 
 const SYNERGY_COLUMNS =
     'card_a, card_b, synergy_score, lift_score, co_occurrence_count, confidence_a_to_b, confidence_b_to_a'
@@ -19,7 +20,7 @@ export interface CardSynergy {
 export interface CardSynergiesResult {
     /** Toutes les synergies de la carte, triées par confidence décroissante */
     topConfidence: CardSynergy[]
-    /** Toutes les synergies de la carte, triées par lift décroissant */
+    /** Synergies significatives de la carte (lift ≥ MIN_SIGNIFICANT_LIFT), triées par lift décroissant */
     topSynergy: CardSynergy[]
 }
 
@@ -87,7 +88,12 @@ export function useCardSynergies(
                 })
 
                 const topConfidence = [...synergies].sort((a, b) => b.confidence - a.confidence)
-                const topSynergy = [...synergies].sort((a, b) => b.lift_score - a.lift_score)
+                // La table garde aussi des paires retenues par le lift global ou la
+                // confidence : en "synergie", on n'affiche que les lifts par
+                // archétype significatifs.
+                const topSynergy = synergies
+                    .filter(s => s.lift_score >= MIN_SIGNIFICANT_LIFT)
+                    .sort((a, b) => b.lift_score - a.lift_score)
 
                 return { topConfidence, topSynergy }
             } catch (err) {
@@ -152,7 +158,7 @@ export function useTopFormatSynergies(
             // La confidence max d'une paire peut être dans l'un ou l'autre sens :
             // on récupère les meilleurs de chaque colonne puis on fusionne.
             const [liftRes, abRes, baRes] = await Promise.all([
-                base().order('lift_score', { ascending: false }).limit(limit),
+                base().gte('lift_score', MIN_SIGNIFICANT_LIFT).order('lift_score', { ascending: false }).limit(limit),
                 base().order('confidence_a_to_b', { ascending: false }).limit(limit),
                 base().order('confidence_b_to_a', { ascending: false }).limit(limit),
             ])

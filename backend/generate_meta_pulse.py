@@ -162,10 +162,14 @@ def fetch_format_balance(set_code: str, fmt: str) -> dict | None:
 
 
 def fetch_synergies(set_code: str, fmt: str, limit: int = 5) -> list[dict]:
+    # lift_score = lift par archétype (cf. etl_script_synergy) : celui qu'on
+    # affiche comme synergie. synergy_score, global, est biaisé par la couleur.
+    # (La table n'a pas de colonne `archetype` : la demander faisait échouer
+    # la requête, et l'encart restait vide.)
     params = (
         f"set_code=eq.{set_code}&format=eq.{fmt}"
-        f"&select=card_a,card_b,synergy_score,archetype"
-        f"&order=synergy_score.desc&limit={limit}"
+        f"&select=card_a,card_b,lift_score"
+        f"&order=lift_score.desc&limit={limit}"
     )
     url = f"{SUPABASE_URL}/rest/v1/synergy_scores?{params}"
     resp = requests.get(url, headers=HEADERS_SUPABASE)
@@ -532,7 +536,7 @@ def build_pulse(set_code: str, set_name: str, fmt: str, min_games: int) -> dict 
         synergies.append({
             "card_a": s.get("card_a", ""),
             "card_b": s.get("card_b", ""),
-            "lift": round(safe_float(s.get("synergy_score")), 2),
+            "lift": round(safe_float(s.get("lift_score")), 2),
             "archetype": s.get("archetype", ""),
         })
 

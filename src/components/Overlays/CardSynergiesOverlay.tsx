@@ -43,8 +43,9 @@ type ColorScope = 'any' | 'both';
 
 const TOP_LIMIT = 20;
 const CARD_LIMIT = 10;
-/** Lift à partir duquel une partenaire compte dans le score de "colle". */
-const GLUE_LIFT = 1.5;
+/** Lift à partir duquel une partenaire compte dans le score de "colle".
+ *  Échelle du lift par archétype : ~10 % des paires significatives le passent. */
+const GLUE_LIFT = 1.4;
 /** Nombre de meilleures partenaires moyennées pour noter une carte. */
 const HUB_TOP_N = 5;
 const FILTER_COLORS = ['W', 'U', 'B', 'R', 'G', 'C'] as const;
@@ -460,7 +461,8 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
   const { data: pairMap, isLoading: pairMapLoading } = useFormatSynergies(
     activeSet,
     activeFormat,
-    mode === 'global' && topView === 'cards'
+    mode === 'global' && topView === 'cards',
+    'lift_score'
   );
 
   /**
@@ -621,10 +623,11 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
               <div>
                 <span className="font-black text-emerald-400 uppercase tracking-wider">Synergy (lift)</span>
                 <p className="mt-1">
-                  How much more often two cards appear together than pure chance would predict.
-                  <strong className="text-slate-300"> x2.00</strong> means twice as often as expected — a real build-around,
-                  not just two good cards. A card played in half the decks is capped near x2 by construction, so this
-                  ranking favours specific, lower-played packages.
+                  How much more often two cards appear together than chance would predict,
+                  <strong className="text-slate-300"> compared within each archetype</strong>: the colour effect is removed,
+                  so two cards of the same rare colour pair don&rsquo;t rank high just for sharing decks.
+                  <strong className="text-slate-300"> x2.00</strong> means twice as often as other cards of the same decks — a real build-around,
+                  not just two good cards. Pairs below x1.20 aren&rsquo;t shown.
                 </p>
               </div>
               <div>
@@ -635,9 +638,9 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                   without a dedicated synergy.
                 </p>
                 <p className="mt-2 text-slate-500">
-                  Colour is the biggest driver of co-occurrence in Limited — two cards share decks partly because
+                  Unlike the lift, this one keeps the colour effect: two cards share decks partly because
                   their colour pair exists. Filter on a colour and switch to <strong className="text-slate-400">Both cards</strong> to
-                  strip that effect out.
+                  narrow it down.
                 </p>
               </div>
             </div>
@@ -859,7 +862,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 <ColumnHeader
                   icon={<Trophy size={12} />}
                   label="Strongest synergies"
-                  help="Cards that appear alongside this one far more often than chance would predict. Higher lift = stronger build-around."
+                  help="Cards that appear alongside this one more often than other cards of the same archetypes. Higher lift = stronger build-around."
                   accent="text-emerald-400"
                 />
                 {cardLoading ? (
@@ -940,7 +943,7 @@ export const CardSynergiesOverlay: React.FC<CardSynergiesOverlayProps> = ({
                 <ColumnHeader
                   icon={<Trophy size={12} />}
                   label={`Top ${TOP_LIMIT} synergies (lift)`}
-                  help="Pairs that appear together far more often than chance would predict. The format's real build-arounds. Very popular cards can't rank high here — their lift is capped by how often they're played."
+                  help="Pairs that appear together more often than other cards of the same archetypes — colour effect removed. The format's real build-arounds."
                   accent="text-emerald-400"
                 />
                 {topLoading ? (

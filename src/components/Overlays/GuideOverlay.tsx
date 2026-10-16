@@ -153,7 +153,7 @@ const GLOSSARY: { term: string; def: string }[] = [
   { term: 'Meta share', def: 'The percentage of all games played by a given archetype.' },
   { term: 'Trophy deck', def: 'A 7-win (7-X) run on Arena. These decks are the dataset behind Trophy Decks and the Trophies Map.' },
   { term: 'Core card', def: 'One of the highest-frequency pillars that defines an archetype’s skeleton — the cards you almost always run.' },
-  { term: 'Lift (synergy)', def: 'How much more often two cards appear together in trophy decks than chance would predict (lift > 1 = they go together). Averaged across a pool, it measures cohesion — used in Card Synergies, Draft Practice and Card Graphs.' },
+  { term: 'Lift (synergy)', def: 'How much more often two cards appear together in trophy decks than chance would predict, compared within each archetype so that sharing a colour pair doesn’t count (lift > 1 = they go together). Averaged across a pool, it measures cohesion — used in Card Synergies, Draft Practice and Card Graphs.' },
   { term: 'Often played with', def: 'Raw co-occurrence, read in one direction: when card A is in a trophy deck, card B is there X% of the time. Staples score high here even without a dedicated synergy — unlike lift.' },
 ];
 

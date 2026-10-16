@@ -120,7 +120,9 @@ def fetch_synergies(set_code, fmt):
         url = (
             f"{SUPABASE_URL}/rest/v1/synergy_scores"
             f"?set_code=eq.{set_code}&format=eq.{fmt}"
-            f"&select=card_a,card_b,lift_score&limit={page_size}&offset={offset}"
+            # Lift global : la carte regroupe volontairement par decks partagés,
+            # couleur comprise (lift_score, par archétype, efface cet effet).
+            f"&select=card_a,card_b,synergy_score&limit={page_size}&offset={offset}"
         )
         try:
             r = requests.get(url, headers=HEADERS_SUPABASE)
@@ -193,7 +195,7 @@ def detect_communities(edges, vocab):
     for e in edges:
         a, b = e.get("card_a"), e.get("card_b")
         if a in vocab_set and b in vocab_set and a != b:
-            w = float(e.get("lift_score") or 1.0)
+            w = float(e.get("synergy_score") or 1.0)
             G.add_edge(a, b, weight=w)
 
     degree_of = {name: G.degree(name) for name in vocab}

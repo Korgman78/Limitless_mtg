@@ -74,10 +74,18 @@ export const MIN_SIGNIFICANT_LIFT = 1.2
  * Charge toutes les synergies (lift par paire) d'un set/format et renvoie une
  * matrice paire→score. Sert à mesurer la *cohésion* d'un pool dans le recap
  * (synergie moyenne entre les cartes piochées, en complément du WR).
+ *
+ * `column` choisit le lift : `synergy_score` (global, celui du scoring de
+ * pool) ou `lift_score` (par archétype, celui qu'on affiche comme synergie).
  */
-export function useFormatSynergies(activeSet: string, activeFormat: string, enabled = true) {
+export function useFormatSynergies(
+  activeSet: string,
+  activeFormat: string,
+  enabled = true,
+  column: 'synergy_score' | 'lift_score' = 'synergy_score',
+) {
   return useQuery({
-    queryKey: queryKeys.formatSynergies(activeSet, activeFormat),
+    queryKey: [...queryKeys.formatSynergies(activeSet, activeFormat), column],
     queryFn: async (): Promise<PairMap> => {
       if (!activeSet) return {}
       const PAGE = 1000
@@ -85,10 +93,11 @@ export function useFormatSynergies(activeSet: string, activeFormat: string, enab
       for (let offset = 0; ; offset += PAGE) {
         const { data, error } = await supabase
           .from('synergy_scores')
-          .select('card_a, card_b, synergy_score')
+          // Alias : buildPairMap lit toujours `synergy_score`.
+          .select(column === 'synergy_score' ? 'card_a, card_b, synergy_score' : 'card_a, card_b, synergy_score:lift_score')
           .eq('set_code', activeSet)
           .eq('format', activeFormat)
-          .gte('synergy_score', MIN_SIGNIFICANT_LIFT)
+          .gte(column, MIN_SIGNIFICANT_LIFT)
           .order('card_a', { ascending: true })
           .range(offset, offset + PAGE - 1)
         if (error) throw error

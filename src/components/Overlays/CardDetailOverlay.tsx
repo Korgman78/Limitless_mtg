@@ -1089,7 +1089,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                       <div className="flex items-center gap-2 mb-4">
                         <Trophy size={12} className="text-emerald-400" />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Synergizes with</span>
-                        <Tooltip content="These cards appear together more often than expected by chance. Higher lift = stronger synergy.">
+                        <Tooltip content="These cards appear together more often than other cards of the same archetypes (colour effect removed). Higher lift = stronger synergy.">
                           <HelpCircle size={12} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                         </Tooltip>
                       </div>

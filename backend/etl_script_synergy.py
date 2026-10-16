@@ -19,6 +19,21 @@ TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]
 # Seuils pour filtrer les résultats (valeurs par défaut, recalculées dynamiquement)
 MIN_LIFT_SCORE = 1.2  # Ne garder que les synergies significatives (lift > 1.2)
 
+# Deux lifts sont calculés pour chaque paire :
+#
+#   synergy_score — lift GLOBAL : co-occurrence observée / attendue sur tout le
+#     corpus. Il mélange synergie et couleur : deux cartes d'une paire jouée dans
+#     7 % des decks ont un lift de ~14 par construction, même sans aucun lien.
+#     Conservé tel quel pour le scoring (sealed optimizer calibré dessus, analyse
+#     de deck, decks archétypaux, Draft Practice).
+#
+#   lift_score — lift PAR ARCHÉTYPE : co-occurrence observée / attendue si les
+#     deux cartes étaient indépendantes À L'INTÉRIEUR de chaque archétype
+#     (attendu = Σ_archétypes nA × nB / nDecks). L'effet couleur disparaît : une
+#     paire ne ressort que si les joueurs l'associent plus que les autres cartes
+#     de leurs decks. C'est celui qu'affichent Card Synergies, Card Analysis, la
+#     carte UMAP et le Meta Pulse.
+
 # Une paire est aussi conservée si l'une des deux cartes en entraîne l'autre au
 # moins la moitié du temps, MÊME si son lift est faible. Sans ça, les cartes
 # très jouées disparaissent de la table : leur lift plafonne à 1/P(carte), donc
@@ -107,7 +122,7 @@ def get_trophy_decks(set_code, fmt):
     page_size = 1000
 
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist&order=id&limit={page_size}&offset={offset}"
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist,archetype&order=id&limit={page_size}&offset={offset}"
         response = _get_with_retry(url)
         if response is None:
             print(f"   ❌ Fetch decks abandonné après retries (offset={offset})")
@@ -179,7 +194,7 @@ def save_synergies(synergies, set_code, fmt):
             "card_a": card_a,
             "card_b": card_b,
             "synergy_score": round(data['lift'], 4),
-            "lift_score": round(data['lift'], 4),
+            "lift_score": round(data['archetype_lift'], 4),
             "co_occurrence_count": data['co_occurrence'],
             "confidence_a_to_b": round(conf_a_to_b, 4),
             "confidence_b_to_a": round(conf_b_to_a, 4),
@@ -254,16 +269,17 @@ def delete_old_synergies(set_code, fmt):
 # 3. CALCUL DU LIFT SCORE
 # ==============================================================================
 
+def archetype_key(archetype):
+    """Identité de couleur d'un trophy deck, ex. "UBG" → "BGU" (ordre stable)."""
+    return ''.join(sorted(c for c in str(archetype or '') if c in 'WUBRG'))
+
+
 def calculate_lift_scores(decks):
     """
-    Calcule le lift score pour chaque paire de cartes.
+    Calcule les deux lifts de chaque paire de cartes (cf. en-tête du fichier).
 
-    Lift(A,B) = P(A ∩ B) / (P(A) × P(B))
-
-    Où :
-    - P(A ∩ B) = nombre de decks avec A ET B / total decks
-    - P(A) = nombre de decks avec A / total decks
-    - P(B) = nombre de decks avec B / total decks
+    Lift global      = P(A ∩ B) / (P(A) × P(B)), sur tout le corpus
+    Lift archétype   = co-occurrence / Σ_k (nA_k × nB_k / n_k), k = archétype
     """
     if not decks:
         return {}
@@ -282,6 +298,10 @@ def calculate_lift_scores(decks):
     # Compter les co-occurrences de paires de cartes
     pair_occurrence = defaultdict(int)
 
+    # Mêmes comptes par archétype, pour le lift par archétype
+    decks_by_archetype = defaultdict(int)
+    card_occurrence_by_archetype = defaultdict(lambda: defaultdict(int))
+
     for deck in decks:
         cardlist = deck.get('cardlist', {})
         if not cardlist:
@@ -291,8 +311,11 @@ def calculate_lift_scores(decks):
         cards_in_deck = [card for card in cardlist.keys() if card not in BASIC_LANDS]
 
         # Compter l'occurrence de chaque carte
+        arch = archetype_key(deck.get('archetype'))
+        decks_by_archetype[arch] += 1
         for card in cards_in_deck:
             card_occurrence[card] += 1
+            card_occurrence_by_archetype[arch][card] += 1
 
         # Compter les co-occurrences (paires)
         for card_a, card_b in combinations(sorted(cards_in_deck), 2):
@@ -341,6 +364,15 @@ def calculate_lift_scores(decks):
         else:
             lift = 0
 
+        # Lift par archétype : co-occurrence attendue si A et B étaient
+        # indépendantes dans chaque archétype, sommée sur les archétypes.
+        expected_in_archetypes = sum(
+            occ[card_a] * occ[card_b] / decks_by_archetype[arch]
+            for arch, occ in card_occurrence_by_archetype.items()
+            if card_a in occ and card_b in occ
+        )
+        archetype_lift = co_count / expected_in_archetypes if expected_in_archetypes > 0 else 0
+
         # Calculer les confidences (asymétriques)
         # Confidence(A→B) = P(B|A) = co_occurrence / occurrence_A
         confidence_a_to_b = co_count / count_a if count_a > 0 else 0
@@ -351,9 +383,12 @@ def calculate_lift_scores(decks):
         # forte dans au moins un sens (confidence). La seconde rattrape les
         # staples, dont le lift est mécaniquement écrasé par leur popularité.
         max_confidence = max(confidence_a_to_b, confidence_b_to_a)
-        if lift >= MIN_LIFT_SCORE or max_confidence >= MIN_CONFIDENCE:
+        # Le lift par archétype est une troisième porte : une vraie synergie
+        # d'une paire très jouée n'a pas forcément un lift global élevé.
+        if lift >= MIN_LIFT_SCORE or archetype_lift >= MIN_LIFT_SCORE or max_confidence >= MIN_CONFIDENCE:
             synergies[(card_a, card_b)] = {
                 'lift': lift,
+                'archetype_lift': archetype_lift,
                 'co_occurrence': co_count,
                 'confidence_a_to_b': confidence_a_to_b,
                 'confidence_b_to_a': confidence_b_to_a
@@ -391,10 +426,10 @@ def process_synergies(set_code, formats):
 
         # Calculer les lift scores
         synergies = calculate_lift_scores(decks)
-        by_lift = sum(1 for d in synergies.values() if d['lift'] >= MIN_LIFT_SCORE)
+        by_lift = sum(1 for d in synergies.values() if d['archetype_lift'] >= MIN_LIFT_SCORE)
         print(f"   🎯 {len(synergies)} paires retenues "
-              f"({by_lift} par lift >= {MIN_LIFT_SCORE}, "
-              f"{len(synergies) - by_lift} par confidence >= {MIN_CONFIDENCE:.0%})")
+              f"({by_lift} par lift archétype >= {MIN_LIFT_SCORE}, "
+              f"les autres par lift global ou confidence >= {MIN_CONFIDENCE:.0%})")
 
         if synergies:
             # Supprimer les anciennes synergies
@@ -407,11 +442,11 @@ def process_synergies(set_code, formats):
             print(f"   ✅ {saved} synergies sauvegardées")
 
             # === LOGS: Top 10 par Lift Score ===
-            top_by_lift = sorted(synergies.items(), key=lambda x: x[1]['lift'], reverse=True)[:10]
-            print(f"\n   🏆 Top 10 LIFT (synergies les plus fortes):")
+            top_by_lift = sorted(synergies.items(), key=lambda x: x[1]['archetype_lift'], reverse=True)[:10]
+            print(f"\n   🏆 Top 10 LIFT PAR ARCHÉTYPE (synergies les plus fortes):")
             for i, ((card_a, card_b), data) in enumerate(top_by_lift, 1):
                 print(f"      {i:2}. {card_a} + {card_b}")
-                print(f"          lift={data['lift']:.2f} | co={data['co_occurrence']} | conf(A→B)={data['confidence_a_to_b']:.0%} conf(B→A)={data['confidence_b_to_a']:.0%}")
+                print(f"          lift archétype={data['archetype_lift']:.2f} (global {data['lift']:.2f}) | co={data['co_occurrence']} | conf(A→B)={data['confidence_a_to_b']:.0%} conf(B→A)={data['confidence_b_to_a']:.0%}")
 
             # === LOGS: Top 10 par Confidence A→B ===
             top_by_conf_ab = sorted(synergies.items(), key=lambda x: x[1]['confidence_a_to_b'], reverse=True)[:10]

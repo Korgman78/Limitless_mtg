@@ -46,7 +46,7 @@ export const SynergySpotlight: React.FC<Props> = ({ synergies }) => {
               className="w-16 h-auto rounded flex-shrink-0"
             />
             <div className="flex flex-col gap-0.5 ml-auto text-right flex-shrink-0">
-              <span className="text-sm font-bold text-amber-400">+{syn.lift.toFixed(0)}%</span>
+              <span className="text-sm font-bold text-amber-400">x{syn.lift.toFixed(2)}</span>
               {syn.archetype && (
                 <span className="text-xs text-slate-500">{syn.archetype}</span>
               )}
