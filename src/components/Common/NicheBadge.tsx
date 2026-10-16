@@ -6,7 +6,7 @@ import { sortColorsWUBRG } from '../../utils/helpers';
 
 interface NicheBadgeProps {
   info: NicheInfo;
-  /** "list": partner + gap, for the Cards-tab rows. "detail": NICHE label, as the FLEX badge. */
+  /** "list": partner colour (or pair) and gap, for the Cards-tab rows. "detail": NICHE label, as the FLEX badge. */
   variant?: 'list' | 'detail';
 }
 
@@ -51,7 +51,6 @@ export const NicheBadge: React.FC<NicheBadgeProps> = ({ info, variant = 'list' }
           </>
         ) : (
           <>
-            {info.partner && '+'}
             <Symbols colors={shown} />
             +{info.gap.toFixed(1)}
           </>
