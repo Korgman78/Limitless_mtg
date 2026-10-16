@@ -16,7 +16,7 @@ import { useDecks } from './queries/useDecks';
 import { useCards } from './queries/useCards';
 import { useCardImages } from './queries/useCardImages';
 import { useFormatFlex } from './queries/useFormatFlex';
-import { useFormatNiche, isNicheFormat, describeNiche } from './queries/useFormatNiche';
+import { useFormatNiche, isNicheFormat } from './queries/useFormatNiche';
 import { queryKeys } from './queries/keys';
 import { supabase } from './supabase';
 
@@ -35,7 +35,7 @@ import { haptics } from './utils/haptics';
 import { areColorsEqual, extractColors, normalizeRarity, getDeltaStyle, getCardImage, normalizeArchetypeName, sortColorsWUBRG } from './utils/helpers';
 
 // Components
-import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper, CardImage } from './components/Common';
+import { ManaIcons, ErrorBanner, Skeleton, CardSkeleton, DeckSkeleton, CoachMarkWrapper, CardImage, NicheBadge } from './components/Common';
 import { TrendIndicator } from './components/Charts/TrendIndicator';
 import { MetagamePieChart, PairBreakdownChart, Sparkline } from './components/Charts';
 import { ArchetypeDashboard, CardDetailOverlay, MatrixViewOverlay, CardSynergiesOverlay, SwipeableOverlay, GuideOverlay } from './components/Overlays';
@@ -1148,15 +1148,7 @@ export default function MTGLimitedApp(): React.ReactElement {
                             <div className="flex items-center gap-2">
                               <span className={`text-[9px] px-1.5 rounded border font-black ${RARITY_STYLES[normalizeRarity(card.rarity)]}`}>{normalizeRarity(card.rarity)}</span>
                               <ManaIcons colors={card.colors} size="sm" />
-                              {nicheByName?.[card.name] && (
-                                <span
-                                  title={describeNiche(nicheByName[card.name])}
-                                  className="flex items-center gap-1 rounded border border-teal-500/40 bg-teal-500/10 px-1 py-px text-[9px] font-black text-teal-300"
-                                >
-                                  <ManaIcons colors={sortColorsWUBRG(nicheByName[card.name].home)} size="sm" />
-                                  +{nicheByName[card.name].gap.toFixed(1)}
-                                </span>
-                              )}
+                              {nicheByName?.[card.name] && <NicheBadge info={nicheByName[card.name]} />}
                             </div>
                             <span className="text-[10px] text-slate-500 font-mono hidden md:block">ALSA {card.alsa ? card.alsa.toFixed(2) : '-'}</span>
                           </div>

@@ -14,6 +14,8 @@ import { Sparkline } from '../Charts/Sparkline';
 import { useCardCrossPerf } from '../../queries/useCardCrossPerf';
 import { useCardSynergies, type CardSynergy } from '../../queries/useCardSynergies';
 import { useFormatFlex } from '../../queries/useFormatFlex';
+import { useFormatNiche } from '../../queries/useFormatNiche';
+import { NicheBadge } from '../Common/NicheBadge';
 
 // --- BLOC D'ÉVALUATION ---
 interface CardEvaluationBlockProps {
@@ -780,6 +782,10 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
     return { rank, pool: flexData.flexPoolSize, stdRank: ranks?.std, covRank: ranks?.coverage };
   }, [flexData, card.name]);
 
+  // Niche status — same cached query as the Cards-tab NICHE filter
+  const { data: nicheData } = useFormatNiche(activeSet, activeFormat, true);
+  const nicheInfo = nicheData?.nicheByName[card.name] ?? null;
+
   const fetchError = error ? 'Failed to load card data' : null;
 
   const sortedPerf = useMemo(() => {
@@ -873,6 +879,7 @@ const CardDetailOverlayComponent: React.FC<CardDetailOverlayProps> = ({ card, ac
                         </span>
                       </Tooltip>
                     )}
+                    {nicheInfo && <NicheBadge info={nicheInfo} variant="detail" />}
                   </div>
                 </div>
 
