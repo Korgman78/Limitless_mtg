@@ -118,14 +118,18 @@ def get_trophy_decks(set_code, fmt):
     synergies existantes plutôt que d'insérer des données partielles/fausses.
     """
     all_decks = []
-    offset = 0
-    page_size = 1000
+    last_id = None
+    page_size = 500
 
+    # Pagination par curseur (id > dernier id vu) plutôt que par offset : avec
+    # un offset, Postgres relit et jette toutes les lignes précédentes à chaque
+    # page, et les gros sets (MSH, SOS) finissaient en statement timeout.
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=cardlist,archetype&order=id&limit={page_size}&offset={offset}"
+        cursor = f"&id=gt.{last_id}" if last_id is not None else ""
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}{cursor}&select=id,cardlist,archetype&order=id&limit={page_size}"
         response = _get_with_retry(url)
         if response is None:
-            print(f"   ❌ Fetch decks abandonné après retries (offset={offset})")
+            print(f"   ❌ Fetch decks abandonné après retries (après id={last_id})")
             return None  # échec dur
 
         data = response.json()
@@ -133,11 +137,11 @@ def get_trophy_decks(set_code, fmt):
             break
 
         all_decks.extend(data)
+        last_id = data[-1]['id']
 
         if len(data) < page_size:
             break  # Dernière page
 
-        offset += page_size
         print(f"   📄 {len(all_decks)} decks chargés...")
 
     return all_decks
