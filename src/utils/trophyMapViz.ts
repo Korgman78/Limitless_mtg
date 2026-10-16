@@ -1,9 +1,8 @@
 import type { TrophyMapPoint } from '../queries/useTrophyDeckMap';
 
 /**
- * Encodages de la Trophies Map : coloration par une mesure du deck (rampe
- * séquentielle), regroupement par semaine (curseur de temps) et zones de
- * densité par archétype.
+ * Coloration de la Trophies Map par une mesure du deck (rares, CMC moyen,
+ * défaites), sur une échelle divergente centrée sur le deck médian.
  */
 
 // ─── Coloration par mesure ──────────────────────────────────────────────────
@@ -70,111 +69,4 @@ export function buildColorScale(def: ColorModeDef, points: TrophyMapPoint[]): Co
     ? 0.5 * (mid > lo ? (v - lo) / (mid - lo) : 1)
     : 0.5 + 0.5 * (hi > mid ? (v - mid) / (hi - mid) : 0));
   return { def, lo, mid, hi, colorOf: p => { const v = def.value(p); return v == null ? null : scaleColor(toT(v)); } };
-}
-
-// ─── Curseur de temps ───────────────────────────────────────────────────────
-
-const WEEK_MS = 7 * 24 * 3600 * 1000;
-
-export interface Timeline {
-  /** Début (ms) de chaque semaine, de la première à la dernière. */
-  weekStarts: number[];
-  /** Semaine de chaque point (même index que `points`), null sans date. */
-  weekOf: (number | null)[];
-}
-
-/** Semaines glissantes depuis le premier trophée ; null s'il n'y a pas de dates. */
-export function buildTimeline(points: TrophyMapPoint[]): Timeline | null {
-  const times = points.map(p => (p.trophy_time ? Date.parse(p.trophy_time) : NaN));
-  const valid = times.filter(t => Number.isFinite(t));
-  if (valid.length === 0) return null;
-  const t0 = Math.min(...valid);
-  const weekOf = times.map(t => (Number.isFinite(t) ? Math.floor((t - t0) / WEEK_MS) : null));
-  const last = Math.max(...weekOf.filter((w): w is number => w != null));
-  if (last < 1) return null; // une seule semaine : rien à animer
-  return { weekStarts: Array.from({ length: last + 1 }, (_, i) => t0 + i * WEEK_MS), weekOf };
-}
-
-// ─── Zones de densité ───────────────────────────────────────────────────────
-
-export interface Bounds { minX: number; maxX: number; minY: number; maxY: number }
-
-const GRID = 128;
-const SIGMA = 1.7;   // en cellules : assez pour lisser, pas pour baver sur les voisins
-const MIN_DECKS = 25; // un archétype plus petit ne dessine pas de zone
-
-const KERNEL = (() => {
-  const r = Math.ceil(SIGMA * 3);
-  const k = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * SIGMA * SIGMA)));
-  const s = k.reduce((a, b) => a + b, 0);
-  return { r, k: k.map(v => v / s) };
-})();
-
-function blur(src: Float32Array): Float32Array {
-  const { r, k } = KERNEL;
-  const tmp = new Float32Array(GRID * GRID), out = new Float32Array(GRID * GRID);
-  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
-    let s = 0;
-    for (let i = -r; i <= r; i++) { const xx = x + i; if (xx >= 0 && xx < GRID) s += src[y * GRID + xx] * k[i + r]; }
-    tmp[y * GRID + x] = s;
-  }
-  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
-    let s = 0;
-    for (let i = -r; i <= r; i++) { const yy = y + i; if (yy >= 0 && yy < GRID) s += tmp[yy * GRID + x] * k[i + r]; }
-    out[y * GRID + x] = s;
-  }
-  return out;
-}
-
-/**
- * Une image GRID×GRID par archétype : densité lissée de ses decks, dans la
- * couleur de l'archétype, opacité croissante avec la densité. Les images sont
- * en coordonnées UMAP (ligne 0 = maxY) : le rendu les étire sur la zone du
- * graphe, zoom et déplacement compris. Les plus gros archétypes d'abord, pour
- * que les petits restent visibles par-dessus.
- */
-export function buildDensityLayers(
-  points: TrophyMapPoint[],
-  visible: (i: number) => boolean,
-  bounds: Bounds,
-  keyOf: (p: TrophyMapPoint) => string,
-  rgbOf: (p: TrophyMapPoint) => [number, number, number],
-): HTMLCanvasElement[] {
-  const spanX = (bounds.maxX - bounds.minX) || 1, spanY = (bounds.maxY - bounds.minY) || 1;
-  const groups = new Map<string, { rgb: [number, number, number]; cells: Float32Array; n: number }>();
-  points.forEach((p, i) => {
-    if (p.is_archetypal || !visible(i)) return;
-    const key = keyOf(p);
-    let g = groups.get(key);
-    if (!g) { g = { rgb: rgbOf(p), cells: new Float32Array(GRID * GRID), n: 0 }; groups.set(key, g); }
-    const gx = Math.min(GRID - 1, Math.max(0, Math.floor(((p.x - bounds.minX) / spanX) * (GRID - 1))));
-    const gy = Math.min(GRID - 1, Math.max(0, Math.floor(((bounds.maxY - p.y) / spanY) * (GRID - 1))));
-    g.cells[gy * GRID + gx] += 1;
-    g.n++;
-  });
-
-  return [...groups.values()]
-    .filter(g => g.n >= MIN_DECKS)
-    .sort((a, b) => b.n - a.n)
-    .map(g => {
-      const d = blur(g.cells);
-      let max = 0;
-      for (const v of d) if (v > max) max = v;
-      const canvas = document.createElement('canvas');
-      canvas.width = GRID; canvas.height = GRID;
-      const ctx = canvas.getContext('2d')!;
-      const img = ctx.createImageData(GRID, GRID);
-      for (let i = 0; i < d.length; i++) {
-        const t = max > 0 ? d[i] / max : 0;
-        if (t < 0.2) continue; // coupe la traîne : des zones nettes plutôt qu'un voile
-        img.data[i * 4] = g.rgb[0];
-        img.data[i * 4 + 1] = g.rgb[1];
-        img.data[i * 4 + 2] = g.rgb[2];
-        // Opacité nulle au seuil puis croissante : bord adouci, pas d'escalier.
-        // Assez opaque pour se lire seule : les points sont masqués en densité.
-        img.data[i * 4 + 3] = Math.round(255 * 0.85 * Math.pow((t - 0.2) / 0.8, 0.5));
-      }
-      ctx.putImageData(img, 0, 0);
-      return canvas;
-    });
 }

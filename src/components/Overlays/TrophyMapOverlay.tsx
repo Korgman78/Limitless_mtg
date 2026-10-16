@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search, List, ChevronUp, Play, Pause, Layers } from 'lucide-react';
+import { X, Network, Trophy, Loader2, Info, Maximize2, Sparkles, Search, List, ChevronUp } from 'lucide-react';
 import { FORMAT_OPTIONS, PAIRS, TRIOS } from '../../constants';
 import { getCardImage, sortColorsWUBRG } from '../../utils/helpers';
 import CardImage from '../Common/CardImage';
@@ -8,7 +8,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { useTrophyDeckMap, useTrophyDeckCardlist, type TrophyMapPoint } from '../../queries/useTrophyDeckMap';
 import { useTrophyArchetypeCards, useDecksWithCard, useSetCardNames } from '../../queries/useTrophyClusters';
 import type { ArchetypalSkeleton } from '../../queries/useSkeletons';
-import { COLOR_MODES, buildColorScale, buildTimeline, buildDensityLayers, scaleColor, type ColorMode } from '../../utils/trophyMapViz';
+import { COLOR_MODES, buildColorScale, scaleColor, type ColorMode } from '../../utils/trophyMapViz';
 
 interface TrophyMapOverlayProps {
   activeSet: string;
@@ -67,19 +67,15 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
   const [showArch, setShowArch] = useState(false);
   const [selected, setSelected] = useState<TrophyMapPoint | null>(null);
   const [showInfo, setShowInfo] = useState(false);
-  const [legendOpen, setLegendOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [isTransformed, setIsTransformed] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; point: TrophyMapPoint } | null>(null);
   const [cardInput, setCardInput] = useState('');
   const [activeColors, setActiveColors] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>('archetype');
-  // Zones de densité : jamais par défaut, la carte reste un nuage de points.
-  const [showDensity, setShowDensity] = useState(false);
-  // Curseur de temps : null = tous les decks ; sinon la semaine choisie, ou
-  // toutes les semaines jusqu'à elle en mode cumulé.
-  const [timeWeek, setTimeWeek] = useState<number | null>(null);
-  const [cumulative, setCumulative] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  // Légende repliée par défaut, mais ouverte dès qu'on colore par une mesure :
+  // c'est elle qui porte l'échelle, sans elle les couleurs ne se lisent pas.
+  useEffect(() => { if (colorMode !== 'archetype') setLegendOpen(true); }, [colorMode]);
 
   const namesSet = useMemo(() => new Set(cardNames), [cardNames]);
   const debouncedCard = useDebounce(cardInput, 250);
@@ -129,35 +125,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     return `rgb(${r},${g},${b})`;
   }, [scale]);
 
-  const timeline = useMemo(() => buildTimeline(points), [points]);
-  const visible = useMemo<boolean[] | null>(() => {
-    if (!timeline || timeWeek == null) return null;
-    return timeline.weekOf.map(w => w != null && (cumulative ? w <= timeWeek : w === timeWeek));
-  }, [timeline, timeWeek, cumulative]);
-  const isVisible = useCallback((i: number) => !visible || visible[i], [visible]);
-  const visibleCount = useMemo(
-    () => (visible ? points.reduce((n, p, i) => n + (!p.is_archetypal && visible[i] ? 1 : 0), 0) : realPoints.length),
-    [visible, points, realPoints],
-  );
-
-  // Lecture : une semaine toutes les 0,9 s, arrêt sur la dernière.
-  useEffect(() => {
-    if (!playing || !timeline) return;
-    const last = timeline.weekStarts.length - 1;
-    const id = window.setInterval(() => {
-      setTimeWeek(w => {
-        const next = w == null ? 0 : w + 1;
-        if (next >= last) { setPlaying(false); return last; }
-        return next;
-      });
-    }, 900);
-    return () => window.clearInterval(id);
-  }, [playing, timeline]);
-
-  const densityLayers = useMemo(() => {
-    if (!showDensity || !bounds) return [];
-    return buildDensityLayers(points, isVisible, bounds, p => sortColorsWUBRG(p.colors || '') || '-', p => archetypeRgb(p.colors));
-  }, [showDensity, points, isVisible, bounds]);
 
   const legend = useMemo(() => {
     const groups = new Map<string, { key: string; label: string; color: string; count: number }>();
@@ -226,26 +193,13 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
       ctx.textBaseline = 'middle'; ctx.fillText('UMAP 2', 0, 0); ctx.restore();
     }
 
-    if (densityLayers.length) {
-      // Les images de densité sont en coordonnées UMAP : on les étire sur la
-      // zone du graphe, zoom et déplacement compris.
-      const x0 = toX(bounds.minX), x1 = toX(bounds.maxX), y0 = toY(bounds.maxY), y1 = toY(bounds.minY);
-      ctx.save();
-      ctx.beginPath(); ctx.rect(mL, mT, W - mL - mR, H - mT - mB); ctx.clip();
-      ctx.imageSmoothingEnabled = true;
-      for (const layer of densityLayers) ctx.drawImage(layer, x0, y0, x1 - x0, y1 - y0);
-      ctx.restore();
-    }
-
     const hl = highlightIds;
     const radius = (realPoints.length > 5000 ? 2.2 : realPoints.length > 1500 ? 2.8 : 3.6) * dpr;
-    // En densité, les zones remplacent les points : superposés, ils les noyaient.
-    const showDots = densityLayers.length === 0;
     const pixels: Array<{ px: number; py: number }> = new Array(points.length);
     points.forEach((p, i) => {
       const px = toX(p.x), py = toY(p.y);
       pixels[i] = { px, py };
-      if (p.is_archetypal || !isVisible(i) || !showDots) return;
+      if (p.is_archetypal) return;
       const member = !hl || hl.has(p.aggregate_id);
       ctx.globalAlpha = member ? 0.85 : 0.05;
       ctx.beginPath();
@@ -275,7 +229,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
         ctx.fillStyle = '#fff'; ctx.fillText(label, lx, py + dpr);
       });
     }
-  }, [points, realPoints, bounds, dims, colorOf, showArch, highlightIds, densityLayers, isVisible]);
+  }, [points, realPoints, bounds, dims, colorOf, showArch, highlightIds]);
 
   const composite = useCallback(() => {
     const main = mainRef.current, base = baseRef.current;
@@ -364,7 +318,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
     }
     let best = -1, bd = (9 * dpr) ** 2;
     for (let i = 0; i < points.length; i++) {
-      if (points[i].is_archetypal || !px[i] || !isVisible(i) || showDensity) continue;
+      if (points[i].is_archetypal || !px[i]) continue;
       const d = (px[i].px - mx) ** 2 + (px[i].py - my) ** 2;
       if (d < bd) { bd = d; best = i; }
     }
@@ -482,7 +436,7 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
           <Network className="text-indigo-400 shrink-0" size={22} />
           <div className="min-w-0">
             <h2 className="text-sm md:text-lg font-black text-white tracking-tight truncate">TROPHIES MAP</h2>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{activeSet} · {formatLabel} · {visible ? `${visibleCount} / ${realPoints.length}` : realPoints.length} decks</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{activeSet} · {formatLabel} · {realPoints.length} decks</p>
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3">
@@ -495,42 +449,17 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
         </div>
       </div>
 
-      {/* Encodages : couleur, densité, temps */}
-      {!isLoading && realPoints.length > 0 && (availableModes.length > 0 || timeline) && (
-        <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-2 border-b border-slate-800 flex-shrink-0">
-          {availableModes.length > 0 && (
-            <label className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-wide">
-              Color by
-              <select value={colorMode} onChange={e => setColorMode(e.target.value as ColorMode)}
-                className="bg-slate-900 border border-slate-700 text-slate-200 rounded-md px-1.5 py-1 text-[10px] font-bold normal-case tracking-normal focus:outline-none focus:border-indigo-500">
-                <option value="archetype">Archetype</option>
-                {availableModes.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-              </select>
-            </label>
-          )}
-          <button onClick={() => setShowDensity(v => !v)} title="Smoothed areas where each archetype's decks concentrate"
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[9px] md:text-[10px] font-black uppercase tracking-wide transition-all ${showDensity ? 'bg-indigo-500/20 border-indigo-400/50 text-indigo-200' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}>
-            <Layers size={12} /> Density
-          </button>
-          {timeline && (
-            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-              <button onClick={() => { if (!playing && (timeWeek == null || timeWeek >= timeline.weekStarts.length - 1)) setTimeWeek(0); setPlaying(pl => !pl); }}
-                title={playing ? 'Pause' : 'Play the format week by week'}
-                className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300 hover:text-white">
-                {playing ? <Pause size={12} /> : <Play size={12} />}
-              </button>
-              <input type="range" min={0} max={timeline.weekStarts.length} value={timeWeek == null ? timeline.weekStarts.length : timeWeek}
-                onChange={e => { setPlaying(false); const v = Number(e.target.value); setTimeWeek(v >= timeline.weekStarts.length ? null : v); }}
-                className="flex-1 accent-indigo-500" aria-label="Week" />
-              <span className="text-[10px] font-bold text-slate-300 tabular-nums whitespace-nowrap w-[92px] text-right">
-                {timeWeek == null ? 'All weeks' : `${cumulative ? 'Until' : 'Week of'} ${new Date(timeline.weekStarts[timeWeek]).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
-              </span>
-              <button onClick={() => setCumulative(c => !c)} title="Show only the chosen week, or every week up to it"
-                className={`px-2 py-1 rounded-md border text-[9px] font-black uppercase tracking-wide ${cumulative ? 'bg-indigo-500/20 border-indigo-400/50 text-indigo-200' : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white'}`}>
-                {cumulative ? 'Cumulative' : 'Week only'}
-              </button>
-            </div>
-          )}
+      {/* Coloration par mesure du deck */}
+      {!isLoading && availableModes.length > 0 && (
+        <div className="flex items-center gap-2 px-4 md:px-6 py-2 border-b border-slate-800 flex-shrink-0">
+          <label className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-wide">
+            Color by
+            <select value={colorMode} onChange={e => setColorMode(e.target.value as ColorMode)}
+              className="bg-slate-900 border border-slate-700 text-slate-200 rounded-md px-1.5 py-1 text-[10px] font-bold normal-case tracking-normal focus:outline-none focus:border-indigo-500">
+              <option value="archetype">Archetype</option>
+              {availableModes.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </label>
         </div>
       )}
 
@@ -712,7 +641,6 @@ export const TrophyMapOverlay: React.FC<TrophyMapOverlayProps> = ({ activeSet, a
                 <li>• <strong className="text-slate-200">Each dot</strong> = one real 7-win trophy deck. <strong className="text-slate-200">Distance</strong> = card similarity (UMAP axes are meaningless).</li>
                 <li>• <strong className="text-slate-200">Color</strong> = the deck's color identity. Click an archetype in the legend to highlight it and see its <strong className="text-indigo-300">signature cards</strong>.</li>
                 <li>• <strong className="text-slate-200">Color by</strong> switches to a measure of each deck: rares &amp; mythics, average mana value, losses. Blue = below the median deck, red = above, gray = typical (7-0 blue, 7-2 red).</li>
-                <li>• <strong className="text-slate-200">Density</strong> shades where each archetype's decks concentrate (dots are hidden). The <strong className="text-slate-200">timeline</strong> replays the format week by week.</li>
                 <li>• <strong className="text-indigo-300">Search a card</strong> (top-left) to highlight every deck that plays it.</li>
                 <li>• <strong className="text-amber-300">◆ See archetypal</strong> overlays our skeletons. <strong className="text-slate-200">Scroll</strong> zoom · <strong className="text-slate-200">drag</strong> pan · double-click reset.</li>
               </ul>
