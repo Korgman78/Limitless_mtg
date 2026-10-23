@@ -807,11 +807,18 @@ const getConsistencyCardWeight = (cmc: number, qty: number): number => {
 // (splash actif compris). Exporte pour les bancs locaux.
 // 2026-10-07 : remis a parite avec les bicolores (avant : 4.5 / 1.5 / 6.0 / 3.8),
 // le score sous-notait les tricolores de ~3-4 pts a resultats egaux (MSH, HOB).
+// 2026-10-23 : allege SOUS la parite (avant : 3.5 / 0 / 4.5 / 2.8). Sur FRA
+// (38 % de decks tricolores), le score les sous-notait encore de 4.3 pts,
+// significatif. Banc outcome_calibration : FRA predit mieux (significatif),
+// MSH et HOB sans difference distinguable, biais tricolore ~0 sur les trois
+// (rapports *_2026-10-23_multi_leger*). Un tricolore est donc moins penalise
+// qu'un bicolore pour le meme deficit de sources : correction empirique, la
+// cause de fond (cartes plus fortes ? fixing sous-estime ?) reste a trouver.
 export const MULTICOLOR_CONSISTENCY = {
-  deficitFactor: 3.5,
+  deficitFactor: 1.5,
   deficitMaxFactor: 0,
-  earlyFloorFactor: 4.5,
-  midFloorFactor: 2.8,
+  earlyFloorFactor: 2.0,
+  midFloorFactor: 1.2,
 };
 
 const computeConsistencyScoreFromCastability = (
