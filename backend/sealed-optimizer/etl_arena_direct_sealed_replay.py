@@ -57,7 +57,10 @@ HEADERS_17LANDS = {
     ),
     "Accept": "application/json",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Pas de "br" : depuis octobre 2026, 17Lands repond en Brotli quand on
+    # l'annonce, et requests ne sait pas le decoder sans le paquet `brotli`.
+    # Chaque reponse devenait du JSON illisible, sans aucune erreur visible.
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
     "Cache-Control": "no-cache",
     "Origin": "https://www.17lands.com",

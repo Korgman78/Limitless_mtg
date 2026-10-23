@@ -22,6 +22,11 @@ TARGET_FORMATS = ["PremierDraft", "TradDraft", "ArenaDirect_Sealed"]  # Formats 
 # Date cible (None = dernières 24h, ou "YYYY-MM-DD" pour une date spécifique)
 TARGET_DATE = None  # Ex: "2025-01-20" pour scraper les decks du 20 janvier 2025
 
+# Rattrapage : tous les trophees depuis cette date ("YYYY-MM-DD"), jusqu'a
+# maintenant. L'API ne renvoie que les ~100 derniers trophees par couleur, donc
+# un trou de plusieurs jours n'est rattrapable qu'en partie.
+SINCE_DATE = None
+
 # Toutes les combinaisons de couleurs (31 au total)
 ALL_COLOR_COMBINATIONS = [
     # 5 mono-couleurs
@@ -55,7 +60,10 @@ HEADERS_17LANDS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Pas de "br" : depuis octobre 2026, 17Lands repond en Brotli quand on
+    # l'annonce, et requests ne sait pas le decoder sans le paquet `brotli`.
+    # Chaque reponse devenait du JSON illisible, sans aucune erreur visible.
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
     "Cache-Control": "no-cache",
     "Origin": "https://www.17lands.com",
@@ -87,6 +95,9 @@ def get_date_range():
     - Si TARGET_DATE est défini: retourne la journée complète de cette date
     - Sinon: retourne les dernières 24h
     """
+    if SINCE_DATE:
+        start_time = datetime.strptime(SINCE_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return start_time, datetime.now(timezone.utc)
     if TARGET_DATE:
         # Parse la date cible
         target = datetime.strptime(TARGET_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -204,8 +215,14 @@ def get_existing_deck_ids(set_code, fmt):
         expected_count = 0
         print(f"   ⚠️ Exception count: {e}")
 
+    # Pagination par curseur (id > dernier id vu) : avec un offset, Postgres
+    # relit toutes les lignes precedentes a chaque page, et la 1re page de
+    # FRA/PremierDraft (8 600+ decks) finissait deja en statement timeout. Le
+    # format etait alors abandonne sans bruit, chaque jour.
+    last_id = None
     while True:
-        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}&select=aggregate_id&order=id&limit={page_size}&offset={offset}"
+        cursor = f"&id=gt.{last_id}" if last_id is not None else ""
+        url = f"{SUPABASE_URL}/rest/v1/trophy_decks?set_code=eq.{set_code}&format=eq.{fmt}{cursor}&select=id,aggregate_id&order=id&limit={page_size}"
 
         success = False
         is_last_page = False
@@ -225,12 +242,13 @@ def get_existing_deck_ids(set_code, fmt):
                         is_last_page = True
                         success = True
                         break  # Dernière page
+                    last_id = data[-1]['id']
                     offset += page_size
                     success = True
                     break
                 else:
                     print(f"   ⚠️ Erreur page {offset // page_size + 1} (tentative {attempt + 1}): {response.status_code}")
-                    time.sleep(2)
+                    time.sleep(3 * (attempt + 1))
             except Exception as e:
                 print(f"   ⚠️ Exception page {offset // page_size + 1} (tentative {attempt + 1}): {e}")
                 time.sleep(2)
@@ -365,7 +383,8 @@ def ingest_trophy_decks(set_code, formats):
     else:
         print(f"📅 Période: dernières 24h (depuis {start_time.isoformat()})")
 
-    stats = {"total_fetched": 0, "total_saved": 0, "skipped_old": 0, "skipped_error": 0, "skipped_existing": 0}
+    stats = {"total_fetched": 0, "total_saved": 0, "skipped_old": 0, "skipped_error": 0, "skipped_existing": 0,
+             "trophy_calls": 0, "trophy_failures": 0, "formats_abandoned": 0}
     request_count = 0  # Compteur pour pause périodique
 
     for fmt in formats:
@@ -376,6 +395,7 @@ def ingest_trophy_decks(set_code, formats):
         if existing_ids is None:
             print(f"   ❌ ABANDON du format {fmt}: impossible de charger les IDs existants")
             print(f"   ❌ Ceci évite d'écraser les archetypes existants par erreur")
+            stats["formats_abandoned"] += 1
             continue
         print(f"   📦 {len(existing_ids)} decks déjà en BDD")
 
@@ -385,6 +405,9 @@ def ingest_trophy_decks(set_code, formats):
             trophies = fetch_trophies(set_code, fmt, colors=color_combo)
             random_sleep(3.0, 5.0)
             request_count += 1
+            stats["trophy_calls"] += 1
+            if trophies is None:  # echec reseau / reponse illisible (≠ liste vide)
+                stats["trophy_failures"] += 1
 
             if not trophies:
                 continue
@@ -479,6 +502,8 @@ def ingest_trophy_decks(set_code, formats):
     print(f"   - Déjà en BDD (skip): {stats['skipped_existing']}")
     print(f"   - Hors période: {stats['skipped_old']}")
     print(f"   - Erreurs: {stats['skipped_error']}")
+    print(f"   - Appels /api/trophies/ en echec: {stats['trophy_failures']} / {stats['trophy_calls']}")
+    print(f"   - Formats abandonnes: {stats['formats_abandoned']}")
 
     return stats
 
@@ -494,6 +519,12 @@ def parse_arguments():
         type=str,
         default=None,
         help='Date cible au format YYYY-MM-DD (défaut: dernières 24h)'
+    )
+    parser.add_argument(
+        '--since',
+        type=str,
+        default=None,
+        help='Rattrapage : tous les trophees depuis YYYY-MM-DD jusqu\'a maintenant'
     )
     parser.add_argument(
         '--sets', '-s',
@@ -524,6 +555,8 @@ if __name__ == "__main__":
     # Override des configs par les arguments CLI
     if args.date:
         TARGET_DATE = args.date
+    if args.since:
+        SINCE_DATE = args.since
     if args.sets:
         TARGET_SET_CODES = list(args.sets)
     if args.formats:
@@ -564,7 +597,8 @@ if __name__ == "__main__":
         print(f"📅 Date cible: {TARGET_DATE}")
 
     # Traiter chaque set
-    total_stats = {"total_fetched": 0, "total_saved": 0, "skipped_old": 0, "skipped_error": 0, "skipped_existing": 0}
+    total_stats = {"total_fetched": 0, "total_saved": 0, "skipped_old": 0, "skipped_error": 0, "skipped_existing": 0,
+                   "trophy_calls": 0, "trophy_failures": 0, "formats_abandoned": 0}
 
     for s in sets_to_process:
         set_code = s['code']
@@ -582,3 +616,14 @@ if __name__ == "__main__":
     print(f"📦 Déjà en BDD (skip): {total_stats['skipped_existing']}")
     print(f"⏭️ Hors période: {total_stats['skipped_old']}")
     print(f"❌ Erreurs: {total_stats['skipped_error']}")
+
+    # Echouer bruyamment : sans ca le workflow restait "success" pendant que
+    # rien n'etait scrape (Brotli illisible, format abandonne), 13 jours durant.
+    failures = []
+    if total_stats["formats_abandoned"]:
+        failures.append(f"{total_stats['formats_abandoned']} format(s) abandonne(s) (IDs existants non charges)")
+    if total_stats["trophy_calls"] and total_stats["trophy_failures"] > total_stats["trophy_calls"] // 2:
+        failures.append(f"{total_stats['trophy_failures']}/{total_stats['trophy_calls']} appels /api/trophies/ en echec")
+    if failures:
+        print("\n🚨 ECHEC DU SCRAPING : " + " ; ".join(failures))
+        exit(1)
