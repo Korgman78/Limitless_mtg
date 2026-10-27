@@ -39,13 +39,13 @@ const wrFallbackFormatsFor = (f) =>
   [...new Set(f === "ArenaDirect_Sealed" ? ["ArenaDirect_Sealed", "TradDraft", "Sealed", "PremierDraft"] : [f, "PremierDraft"])];
 
 // Applique un JSON de reglages au coeur, par section :
-//   {"multicolor": {...}, "power": {...}, "search": {...}, "context": {...}}
+//   {"multicolor": {...}, "power": {...}, "search": {...}, "sources": {...}, "context": {...}}
 // Un JSON sans section connue est traite comme "multicolor" (ancien format).
 // Renvoie les options de contexte (ex: {shrinkK}) a passer a loadSetContext.
 export const applyTuning = (core, tuning) => {
   if (!tuning) return {};
   const t = typeof tuning === "string" ? JSON.parse(tuning) : tuning;
-  const sections = { multicolor: core.MULTICOLOR_CONSISTENCY, power: core.POWER_TUNING, search: core.SEARCH_TUNING };
+  const sections = { multicolor: core.MULTICOLOR_CONSISTENCY, power: core.POWER_TUNING, search: core.SEARCH_TUNING, sources: core.SOURCE_TUNING };
   const known = Object.keys(t).some((k) => k in sections || k === "context");
   if (!known) {
     Object.assign(core.MULTICOLOR_CONSISTENCY, t);
@@ -63,8 +63,13 @@ export const describeTuning = (core) => ({
 
 // options.shrinkK : lissage du GIH vers la moyenne du format selon l'echantillon,
 // wr' = (n * wr + K * moyenne) / (n + K), n = parties "in hand" de la carte.
+// options.synergyColumn : lift lu pour les synergies, "synergy_score" (global,
+// celui de la prod) ou "lift_score" (par archetype). Banc d'essai uniquement.
+// options.synergyMinLift : ignore les paires dont ce lift est en dessous.
 export const loadSetContext = async (repoRoot, setCode, rawFormat = "ArenaDirect_Sealed", options = {}) => {
   const shrinkK = Math.max(0, Number(options.shrinkK || 0));
+  const synergyColumn = options.synergyColumn === "lift_score" ? "lift_score" : "synergy_score";
+  const synergyMinLift = Number(options.synergyMinLift || 0);
   const env = readEnv(repoRoot);
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const key = env.SUPABASE_KEY || env.VITE_SUPABASE_KEY;
@@ -128,7 +133,7 @@ export const loadSetContext = async (repoRoot, setCode, rawFormat = "ArenaDirect
   // Synergies : premier format gagnant par paire, comme en prod.
   const synergyRows = [];
   for (const f of queryFormats) {
-    synergyRows.push(...(await fetchAll("synergy_scores", `set_code=eq.${setCode}&format=eq.${f}&select=card_a,card_b,synergy_score`)));
+    synergyRows.push(...(await fetchAll("synergy_scores", `set_code=eq.${setCode}&format=eq.${f}&select=card_a,card_b,synergy_score:${synergyColumn}`)));
   }
   const synSeen = new Set();
   const synergies = [];
@@ -138,6 +143,7 @@ export const loadSetContext = async (repoRoot, setCode, rawFormat = "ArenaDirect
     const k = [a, b].sort().join("::");
     if (synSeen.has(k)) continue;
     synSeen.add(k);
+    if (Number(r.synergy_score) < synergyMinLift) continue;
     synergies.push({ card_a: a, card_b: b, synergy_score: r.synergy_score });
   }
 

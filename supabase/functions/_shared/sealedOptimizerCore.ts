@@ -621,6 +621,19 @@ const nonLandSourceWeight = (cmc: number): number => {
   return 0.2;
 };
 
+// Cartes qui vont chercher un terrain (support tag `land_search` : basic
+// landcycling, fetch). Leur poids de source suit leur cout de lancement, ce qui
+// sous-compte un landcycler a 5 mana qui se cycle pour {2}. landSearchWeight
+// est un plancher ; 0 = desactive. Exporte pour les bancs locaux.
+export const SOURCE_TUNING = {
+  landSearchWeight: 0,
+};
+
+const sourceWeight = (pc: PoolCard): number => {
+  const w = nonLandSourceWeight(pc.cmc);
+  return pc.supportTags.includes("land_search") ? Math.max(w, SOURCE_TUNING.landSearchWeight) : w;
+};
+
 // Karsten-style requirements scaled for Limited (40-card, 17-land decks).
 // Targets ~85% on-curve cast probability (between the 80% and 90% tables).
 // Previous values (16/14/10 …) were 60-card constructed numbers — far too strict
@@ -680,7 +693,7 @@ const estimateSourcesFromDeck = (
     const pc = poolMap.get(dc.name);
     if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
     const produced = extractColors(pc.producedColours || "");
-    const weight = nonLandSourceWeight(pc.cmc);
+    const weight = sourceWeight(pc);
     for (const color of allColors)
       if (produced.includes(color)) sources[color] = (sources[color] || 0) + dc.qty * weight;
   }
@@ -716,7 +729,7 @@ const computeSourcesFromLands = (
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
     if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
-    const weight = nonLandSourceWeight(pc.cmc);
+    const weight = sourceWeight(pc);
     for (const c of extractColors(pc.producedColours || ""))
       if (allColors.includes(c)) sources[c] += dc.qty * weight;
   }
@@ -814,11 +827,17 @@ const getConsistencyCardWeight = (cmc: number, qty: number): number => {
 // (rapports *_2026-10-23_multi_leger*). Un tricolore est donc moins penalise
 // qu'un bicolore pour le meme deficit de sources : correction empirique, la
 // cause de fond (cartes plus fortes ? fixing sous-estime ?) reste a trouver.
+// 2026-10-27 : remonte a 2.5 / 0 / 3.0 / 2.0. Les cartes qui vont chercher un
+// terrain (landcyclers, fetchlands, tag land_search) comptent desormais comme
+// sources : une partie de l'ecart venait de la. Avec elles, 1.5/1.2 sur-notait
+// les tricolores sur HOB (-2.9 pts, significatif). Banc : FRA et MSH sans
+// difference distinguable, HOB predit mieux, aucun biais tricolore significatif
+// (rapports *_2026-10-27_allege_sources*).
 export const MULTICOLOR_CONSISTENCY = {
-  deficitFactor: 1.5,
+  deficitFactor: 2.5,
   deficitMaxFactor: 0,
-  earlyFloorFactor: 2.0,
-  midFloorFactor: 1.2,
+  earlyFloorFactor: 3.0,
+  midFloorFactor: 2.0,
 };
 
 const computeConsistencyScoreFromCastability = (
@@ -2606,7 +2625,7 @@ export const determineLands = (
   for (const dc of cards) {
     const pc = poolMap.get(dc.name);
     if (!pc || isLandType(pc.type) || !pc.isManaProducer) continue;
-    const weight = nonLandSourceWeight(pc.cmc);
+    const weight = sourceWeight(pc);
     for (const color of allColors)
       if (extractColors(pc.producedColours || "").includes(color)) currentSources[color] += dc.qty * weight;
   }
