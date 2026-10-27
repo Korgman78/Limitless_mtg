@@ -96,18 +96,60 @@ dépendent PAS de 17Lands, donc faisables dès que le spoiler est sur Scryfall.
   `support_tags`. Récupère lui-même l'oracle text depuis Scryfall.
   ```bash
   # éditer TARGET_SET = "MSH", puis :
-  python backend/enrichment/enrich_card_tags.py
+  PYTHONIOENCODING=utf-8 python backend/enrichment/enrich_card_tags.py
   ```
-- [ ] **Corrections par set** : créer `backend/corrections/correct_msh_tags.py`
-  (modèle : `correct_sos_tags.py`) pour corriger les faux positifs, encoder les
-  **mécaniques inédites du set** et recalibrer les seuils. Étape importante pour
-  un set à identité forte. Lancer après `enrich_card_tags.py`.
+  Le script finit par un bloc **STATS** (Removal, Mana Producers, Dependencies,
+  Support Tags) : le garder, c'est la matière première de l'étape suivante.
+  `python backend/enrichment/enrich_card_tags.py --review` liste en plus les
+  cartes contenant « target » mais non taguées removal.
+
+  **Fixing** — `produced_colours` vient du champ `produced_mana` de Scryfall
+  (cartes qui produisent elles-mêmes du mana), **plus** les cartes qui vont
+  chercher un terrain : basic landcycling, `<Type>cycling`, « search your
+  library for … basic land / land card(s) » (tag `land_search`, ajouté le
+  2026-10-27 : les 5 landcyclers de FRA ne comptaient pas comme fixing). Le
+  score de l'optimizer ne voit **que** ce champ et les terrains : tout fixer
+  absent de la liste « Mana Producers » est invisible pour lui.
+
+- [ ] **Corrections par set, avec l'IA** : le détecteur générique ne connaît pas
+  les mécaniques du set et produit des faux positifs. Démarche :
+  1. Donner à l'IA la sortie STATS + l'oracle text des cartes du set
+     (`card_list`), et lui demander de passer en revue : faux positifs de
+     dépendance (mots parasites capturés par les regex), removal manquants ou
+     en trop, **mécaniques inédites** du set à encoder en `dependency_tags` /
+     `support_tags`, **fixers oubliés** (landcycling, fetch, Trésors,
+     « add one mana of any color » conditionnel…), seuils de dépendance.
+  2. L'IA écrit `backend/corrections/correct_msh_tags.py` sur le modèle de
+     **`correct_fra_tags.py`** (pas `correct_sos_tags.py`, qui ÉCRASE les
+     `support_tags`) : helpers `dep()` pour les dépendances, `sup()` qui
+     **fusionne** avec les support tags déjà posés (multicolored,
+     land_search…). Docstring en tête : mécaniques du set + décompte des
+     corrections par section.
+  3. Relire le script (chaque correction est une ligne commentée), puis :
+     ```bash
+     PYTHONIOENCODING=utf-8 python backend/corrections/correct_msh_tags.py
+     ```
+     Il écrit directement en base (pas de dry-run) : relire avant de lancer.
+  4. Si les mots parasites sont génériques (pas propres au set), les ajouter
+     à `EXCLUDED_DEPENDENCY_WORDS` dans `enrich_card_tags.py` pour les sets
+     suivants (fait pour FRA : `more`, `then`, `different`…).
+
+  ⚠️ **Ordre impératif** : `populate_card_list` → `enrich_card_tags` →
+  `correct_xxx_tags`. Relancer `enrich_card_tags.py` plus tard **réécrit tous
+  les tags du set et efface les corrections** : il faut alors relancer
+  `correct_xxx_tags.py` juste après. Pour un ajout ponctuel (ex. une nouvelle
+  règle de détection), préférer une mise à jour ciblée des cartes concernées.
 - [ ] **Basculer le ciblage ETL** sur le nouveau set — éditer
   `TARGET_SET_CODES` dans :
   - `backend/etl_script.py`           (metagame + player-level)
   - `backend/etl_script_trophydecks.py`
   - `backend/etl_script_synergy.py`
   - `backend/calculate_archetypal_decks.py`
+  - `backend/etl_trophy_draft_picks.py` (Draft Practice)
+
+  Et `TARGET_SET` dans les 4 scripts manuels : `populate_card_list.py`,
+  `enrichment/enrich_card_tags.py`, `scryfall_enrichment.py`,
+  `enrichment/populate_arena_ids.py`.
 
   Pendant la transition, on peut viser les deux : `["SOS", "MSH"]` pour continuer
   à rafraîchir l'ancien set un temps.
@@ -321,6 +363,16 @@ TradDraft, 17Lands renvoie `gih_wr = null` pour la majorité des rares les
 premiers jours. Le sealed optimizer écartait silencieusement ces cartes, du pool
 comme des decks importés. Il se replie désormais sur Sealed puis PremierDraft
 (commit 3fec1d1). Cartes FRA sans WR : 138 → 26 sur 290.
+
+**Fixing par recherche de terrain** (2026-10-27) : les 5 landcyclers communs
+(Vinelasher Adept, Undulating Witness, Apex Witchstalker, Awaken the Inferno,
+Hexhaven Battalion) et 3 cartes qui vont chercher des terrains (Simulacrum
+Shaper, Fblthp, Knows the Way, Hexhaven Invigorator) n'étaient pas comptés comme
+sources de mana : Scryfall ne les liste pas dans `produced_mana`. Détection
+ajoutée à `enrich_card_tags.py` (tag `land_search`) et les 8 cartes FRA mises à
+jour en base de façon ciblée (sans relancer le script complet, qui aurait
+effacé les corrections). À faire : poids propre dans le score (une carte à
+landcycling coûte souvent 4-5 mais se cycle pour {2}), puis repasser le banc.
 
 **Dette HOB soldée au passage** : `correct_hob_tags.py` n'a jamais été écrit (le
 faux positif connu reste le cycle de bicolores tagué `is_removal`). À arbitrer :

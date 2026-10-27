@@ -19,7 +19,7 @@ tags parasites ('more' pour « seven or more cards », 'then', 'plain',
 vocabulaire reel du format : `planeswalker`, `threshold`, `prepared`.
 
 Corrections couvertes :
-  1. Faux positifs dependency (regex) — 11 cartes
+  1. Faux positifs dependency (regex) — 13 cartes
   2. Threshold : dependances effacees — 6 cartes
   3. Dependances PLANESWALKER — 17 cartes
   4. Dependance PREPARED — 1 carte
@@ -165,6 +165,13 @@ false_positive_removals = [
     # creature you control » -> 'equipment'. Le second membre du OR suffit a
     # declencher, la carte n'a pas besoin d'Equipements.
     dep("Danitha, Sword of Hope", []),
+
+    # « noncreature spell » lu comme un payoff alors que la carte n'a besoin
+    # d'aucun sort non-creature de notre cote (corrige le 2026-10-07) :
+    # Thalia taxe les sorts non-creatures de l'ADVERSAIRE,
+    # Theorix Charm a un mode qui CONTRE un sort non-creature.
+    dep("Thalia, the Survivor", []),
+    dep("Theorix Charm", []),
 ]
 
 # ======================================================================

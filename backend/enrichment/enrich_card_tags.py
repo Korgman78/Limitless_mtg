@@ -61,6 +61,17 @@ REMOVAL_PATTERNS = [
 ]
 
 VALID_MANA_COLORS = set("WUBRG")
+
+# Recherche de terrain : sources de mana que `produced_mana` de Scryfall ignore
+# (la carte ne produit rien elle-meme, elle va chercher un terrain). Sans elles,
+# les landcyclers de FRA ne comptaient pas comme fixing (2026-10-27).
+BASIC_TYPE_TO_COLOR = {"plains": "W", "island": "U", "swamp": "B", "mountain": "R", "forest": "G"}
+LANDCYCLING_RE = re.compile(r"\b(basic land|plains|island|swamp|mountain|forest)cycling\b", re.IGNORECASE)
+LAND_SEARCH_RE = re.compile(
+    r"search your library for (?:a|an|x|up to(?: \w+){1,2}?)\s+"
+    r"(basic land|plains|island|swamp|mountain|forest|land)(?: cards?)?\b",
+    re.IGNORECASE,
+)
 FIXER_ONLY_EXPLICIT_NAMES = {
     "Firdoch Core",
     "Springleaf Drum",
@@ -123,9 +134,18 @@ HARD_DEPENDENCY_PATTERNS = [
 ]
 
 GENERIC_THRESHOLD_PATTERNS = [
-    # Spell-matters style thresholds
-    (re.compile(r'\binstant or sorcery spell', re.IGNORECASE), "instant_sorcery", 6),
-    (re.compile(r'\bnoncreature spell', re.IGNORECASE), "noncreature_spell", 6),
+    # Spell-matters style thresholds. Le sort doit etre lance (ou controle) par
+    # NOUS : « you (next/may) cast a… », « …spells you cast », « to cast a… »,
+    # « its controller casts » (equipement), « copy target … spell you control ».
+    # Pas « …spells you control have X » (bonus mineur, ex. Samut). Exclut les
+    # faux positifs « an opponent casts… » et « counter target … spell ».
+    (re.compile(r"\b(?:you (?:next |may )?cast|you've cast|you have cast|to cast|its controller casts)\s+"
+                r"(?:a|an|your first|your second|another)?\s*instant or sorcery spell"
+                r"|\binstant (?:or|and) sorcery spells? you cast\b"
+                r"|\binstant or sorcery spell you control\b", re.IGNORECASE), "instant_sorcery", 6),
+    (re.compile(r"\b(?:you (?:next |may )?cast|you've cast|you have cast|to cast|its controller casts)\s+"
+                r"(?:a|an|your first|your second|another)?\s*noncreature spell"
+                r"|\bnoncreature spells? you cast\b", re.IGNORECASE), "noncreature_spell", 6),
     # Mana value threshold dependencies
     (re.compile(r'mana value\s+(\d+)\s+or greater', re.IGNORECASE), "mv_ge", 4),
 ]
@@ -248,6 +268,9 @@ def _extract_card_data(c, set_code, known_creature_types):
 
     # produced_mana : filtrer sur WUBRG uniquement
     produced_colors = [m for m in (produced_mana or []) if m in VALID_MANA_COLORS]
+    # + les terrains que la carte peut aller chercher (landcycling, fetch)
+    land_search_colors = _detect_land_search_colors(all_text)
+    produced_colors = sorted(set(produced_colors) | land_search_colors, key="WUBRG".index)
     is_mana_producer = len(produced_colors) > 0
     produced_colours_str = "".join(sorted(produced_colors, key=lambda x: "WUBRG".index(x))) if produced_colors else None
 
@@ -260,6 +283,10 @@ def _extract_card_data(c, set_code, known_creature_types):
     if not card_colors and 'card_faces' in c:
         card_colors = c['card_faces'][0].get('colors', []) if c['card_faces'] else []
     support_tags = _detect_support_tags(all_text, c.get('mana_cost', ''), card_colors)
+    if land_search_colors and "land_search" not in support_tags:
+        # Distingue les sources "par recherche" des vrais producteurs de mana,
+        # pour que le score puisse les ponderer a part (cout de cycling, tempo).
+        support_tags = sorted([*support_tags, "land_search"])
     is_fixer_only = _detect_fixer_only(
         name=name,
         type_line=type_line,
@@ -397,6 +424,24 @@ def _detect_dependencies(oracle_text):
         return sorted(all_tags), min_support, "tribal"
 
     return [], None, None
+
+
+def _detect_land_search_colors(oracle_text):
+    """Couleurs qu'une carte peut aller chercher sous forme de terrain.
+
+    « basic landcycling » ou « search your library for a basic land / land
+    card » : les 5 couleurs (on choisit le terrain). « Forestcycling » ou
+    « search your library for a Forest card » : la couleur de ce terrain.
+    """
+    colors = set()
+    for rx in (LANDCYCLING_RE, LAND_SEARCH_RE):
+        for m in rx.finditer(oracle_text or ""):
+            kind = m.group(1).lower()
+            if kind in BASIC_TYPE_TO_COLOR:
+                colors.add(BASIC_TYPE_TO_COLOR[kind])
+            else:  # "basic land" ou "land"
+                colors.update("WUBRG")
+    return colors
 
 
 def _detect_fixer_only(name, type_line, oracle_text, is_mana_producer, produced_colors):
@@ -602,7 +647,8 @@ def print_stats(cards):
     print(f"\n--- Mana Producers ({len(mana_cards)}) ---")
     for c in sorted(mana_cards, key=lambda x: x['card_name']):
         colors = c['produced_colours'] or '?'
-        print(f"  {c['card_name']} -> {colors}")
+        via = " (recherche de terrain)" if "land_search" in (c.get("support_tags") or []) else ""
+        print(f"  {c['card_name']} -> {colors}{via}")
 
     print(f"\n--- Dependencies ({len(dependency_cards)}) ---")
     for c in sorted(dependency_cards, key=lambda x: x['card_name']):
