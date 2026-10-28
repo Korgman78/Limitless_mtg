@@ -625,8 +625,18 @@ const nonLandSourceWeight = (cmc: number): number => {
 // landcycling, fetch). Leur poids de source suit leur cout de lancement, ce qui
 // sous-compte un landcycler a 5 mana qui se cycle pour {2}. landSearchWeight
 // est un plancher ; 0 = desactive. Exporte pour les bancs locaux.
+// Sorts chers (cout >= lateDropMinCmc) : un 7-drop n'a pas besoin d'etre lance
+// pile au tour 7. La consistance evalue sa castabilite lateDropExtraTurns tours
+// plus tard (0 = au tour de son cout).
+// 2026-10-28 : 2 tours. Verdant Kraken (FRA, GGG a 7) etait juge peu fiable meme
+// avec 13 sources vertes et ecarte des builds verts que les joueurs gagnants
+// jouaient. Banc outcome_calibration : FRA et HOB predisent mieux (significatif),
+// MSH sans difference distinguable (rapports *_2026-10-28_late_drop_t2*). Baisser
+// aussi la table de Karsten pour ces sorts ne changeait rien (non retenu).
 export const SOURCE_TUNING = {
   landSearchWeight: 0,
+  lateDropMinCmc: 6,
+  lateDropExtraTurns: 2,
 };
 
 const sourceWeight = (pc: PoolCard): number => {
@@ -880,7 +890,8 @@ const computeConsistencyScoreFromCastability = (
     if (totalRequired <= 0) continue;
 
     const cmc = Math.max(1, Math.round(Number(pc.cmc || 0)));
-    const turn = Math.max(2, Math.min(7, cmc));
+    const onCurveTurn = Math.max(2, Math.min(7, cmc));
+    const turn = cmc >= SOURCE_TUNING.lateDropMinCmc ? onCurveTurn + SOURCE_TUNING.lateDropExtraTurns : onCurveTurn;
     const drawsPlay = 7 + Math.max(0, turn - 1);
     const drawsDraw = drawsPlay + 1;
 

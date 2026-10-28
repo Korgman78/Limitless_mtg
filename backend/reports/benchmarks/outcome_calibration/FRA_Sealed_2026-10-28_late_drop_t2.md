@@ -1,0 +1,112 @@
+# Calibration sur resultats reels : FRA (Sealed comme proxy d'ArenaDirect_Sealed)
+
+- Date du run : 2026-10-28
+- Donnees 17Lands : `game_data_public.FRA.Sealed.csv.gz` (mise a jour Mon, 19 Oct 2026 16:20:07 GMT)
+- Score : coeur de production `sealedOptimizerCore.ts`, contexte ArenaDirect_Sealed, poids {'wrNormalized': 2.0, 'synergyNormalized': 1.0, 'consistencyScore': 1.3, 'curveScore': 1.0}
+
+## Proximite du proxy
+
+GIH WR Sealed vs ArenaDirect_Sealed, 255 cartes (>= 200 parties) : correlation brute 0.92, **corrigee du bruit 0.95**, ecart reel par carte 1.34 pt (seuil d'acceptation : 0.88).
+
+**Verdict : proxy accepte**
+
+## En bref
+
+- 15205 decks, 60191 parties, WR moyen 56.5 %.
+- A niveau de joueur egal, +10 pts de score = WR 56.5 % -> **59.6 %** toutes paires confondues, **60.7 %** au sein d'une meme paire.
+- Correlation entre score moyen d'une paire et ses victoires au-dessus de l'attendu : +0.44 (proche de +1 = le score classe bien les paires).
+
+## Comparaison : candidat late_drop_t2 vs prod
+
+| Mesure | prod | Candidat |
+|---|---:|---:|
+| Log-loss niveau + score (CV) | 0.64372 | 0.64366 |
+| AUC niveau + score (CV) | 0.6533 | 0.6535 |
+| WR +10 pts de score, toutes paires | 59.6 % | 59.7 % |
+| WR +10 pts de score, intra-paire | 60.7 % | 60.7 % |
+| Ecart Q5 - Q1, niveau 0.48-0.60 | +7.5 pt | +7.6 pt |
+| Ecart Q5 - Q1, niveau >= 0.60 | +8.0 pt | +8.5 pt |
+
+Ecart de log-loss apparie (candidat - prod) : -0.000057, IC 95 % [-0.000078 ; -0.000037] (bootstrap sur les events). **le candidat predit mieux**.
+
+Les ecarts de score ne se comparent pas en valeur absolue (l'echelle change avec les poids) : seuls le pouvoir predictif et l'ecart entre quintiles sont comparables.
+
+## Decks tricolores
+
+- 5862 decks a 3 couleurs principales (38.6 %), score moyen 69.0 contre 71.8 pour les bicolores.
+- A score egal, un tricolore gagne comme un bicolore note **+2.2 pts** de plus (IC 95 % [-0.0 ; +4.1], non significatif). Positif = le score sous-note les tricolores.
+
+- Avec le candidat : +2.0 pts (IC 95 % [-0.2 ; +3.8]).
+
+## Pouvoir predictif (validation croisee 5 plis, groupes par event)
+
+| Modele | Log-loss | AUC |
+|---|---:|---:|
+| aucun predicteur | 0.6848 | 0.5000 |
+| niveau joueur seul | 0.6447 | 0.6504 |
+| score prod seul | 0.6800 | 0.5552 |
+| niveau + score prod | 0.6437 | 0.6533 |
+| niveau + 4 axes (poids refits) | 0.6434 | 0.6540 |
+
+Une partie isolee est tres bruitee : le gain d'AUC du score reste faible meme quand son effet est reel. Lire plutot l'effet en points de WR et les quintiles.
+
+## WR de partie par quintile de score, a niveau comparable
+
+| Niveau | Q1 | Q2 | Q3 | Q4 | Q5 |
+|---|---:|---:|---:|---:|---:|
+| niveau < 0.48 | 35.4 % (3637) | 36.7 % (2950) | 37.1 % (2614) | 38.9 % (2571) | 42.6 % (2127) |
+| 0.48 - 0.60 | 51.2 % (3990) | 53.6 % (4186) | 55.0 % (4240) | 55.3 % (4326) | 58.7 % (4431) |
+| niveau >= 0.60 | 63.7 % (2939) | 65.0 % (4181) | 67.7 % (5151) | 69.0 % (5642) | 71.6 % (7206) |
+
+Bornes de score des quintiles : 64.4, 68.9, 72.7, 77.3
+
+## Saturation des axes
+
+| Axe | Moyenne | p10 | p90 | A 100 | A 0 |
+|---|---:|---:|---:|---:|---:|
+| wrNormalized | 65.3 | 41.9 | 89.0 | 2.9 % | 0.0 % |
+| synergyNormalized | 70.5 | 58.2 | 81.6 | 0.1 % | 0.0 % |
+| consistencyScore | 78.7 | 59.1 | 94.0 | 0.2 % | 0.0 % |
+| curveScore | 71.4 | 50.8 | 87.7 | 0.0 % | 0.1 % |
+
+## Poids refits sur les victoires (ratio a l'axe puissance)
+
+| Axe | Effet par point (log-odds x100) | Ratio refit | Ratio prod |
+|---|---:|---:|---:|
+| wrNormalized | +0.606 | +1.00 | 1.00 |
+| synergyNormalized | +0.407 | +0.67 | 0.50 |
+| consistencyScore | +0.234 | +0.39 | 0.65 |
+| curveScore | -0.021 | -0.03 | 0.50 |
+
+Un axe sature a un effet par point gonfle (il ne varie que sur les decks hors plafond) : ne pas reporter ces ratios tels quels dans la prod.
+
+## Par paire de couleurs (>= 150 decks)
+
+| Paire | Decks | WR reel | WR attendu (niveau) | Ecart | Score moyen | Axe puissance moyen |
+|---|---:|---:|---:|---:|---:|---:|
+| GR | 1299 | 55.0 % | 55.4 % | -0.4 pt | 67.7 | 51.5 |
+| BU | 1286 | 57.8 % | 57.5 % | +0.3 pt | 79.7 | 83.6 |
+| UW | 1232 | 59.0 % | 57.3 % | +1.7 pt | 75.1 | 69.9 |
+| GW | 1169 | 55.7 % | 55.8 % | -0.1 pt | 65.7 | 46.1 |
+| BR | 940 | 55.1 % | 56.3 % | -1.2 pt | 70.9 | 54.2 |
+| BGR | 920 | 57.1 % | 56.9 % | +0.2 pt | 69.3 | 68.3 |
+| BG | 872 | 57.9 % | 57.8 % | +0.1 pt | 73.4 | 68.0 |
+| RU | 832 | 57.1 % | 57.8 % | -0.7 pt | 74.4 | 69.7 |
+| BUW | 774 | 57.3 % | 55.7 % | +1.6 pt | 72.2 | 78.3 |
+| GRW | 705 | 52.9 % | 54.3 % | -1.3 pt | 64.4 | 54.2 |
+| BRU | 579 | 57.4 % | 57.0 % | +0.4 pt | 72.5 | 79.6 |
+| BW | 575 | 57.0 % | 56.3 % | +0.7 pt | 69.3 | 55.1 |
+| RW | 575 | 57.2 % | 57.2 % | +0.0 pt | 66.5 | 45.4 |
+| BGU | 549 | 56.7 % | 56.9 % | -0.2 pt | 72.6 | 82.0 |
+| GU | 547 | 56.8 % | 57.3 % | -0.5 pt | 72.1 | 73.2 |
+| BGW | 509 | 54.5 % | 54.5 % | +0.0 pt | 65.8 | 61.4 |
+| GRU | 465 | 56.3 % | 56.9 % | -0.6 pt | 71.0 | 75.4 |
+| RUW | 459 | 57.0 % | 56.5 % | +0.5 pt | 69.6 | 69.8 |
+| GUW | 387 | 54.5 % | 55.0 % | -0.5 pt | 67.6 | 67.3 |
+| BRW | 265 | 50.8 % | 52.2 % | -1.4 pt | 64.0 | 59.0 |
+
+## Limites
+
+- Proxy : Sealed n'est pas ArenaDirect_Sealed (17Lands ne publie pas les parties ArenaDirect).
+- Le niveau du joueur (`user_game_win_rate_bucket`) est un controle grossier : les bons joueurs construisent aussi de meilleurs decks, l'effet du score peut etre un peu surestime.
+- Les GIH WR du score viennent en partie des memes parties (fuite faible, une carte agrege des milliers de parties).

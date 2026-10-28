@@ -59,6 +59,7 @@ export const describeTuning = (core) => ({
   multicolor: { ...core.MULTICOLOR_CONSISTENCY },
   power: { ...core.POWER_TUNING },
   search: { ...core.SEARCH_TUNING },
+  sources: { ...core.SOURCE_TUNING },
 });
 
 // options.shrinkK : lissage du GIH vers la moyenne du format selon l'echantillon,
