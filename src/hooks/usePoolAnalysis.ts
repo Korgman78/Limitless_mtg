@@ -148,7 +148,8 @@ type CardListRow = {
 };
 
 // 6 : nouveau score (parite multicolore, bonus bomb lineaire) + explication.
-const POOL_ANALYSIS_CACHE_VERSION = 6;
+// 7 : nouveau score (sorts a 6+ : castabilite, seuil top-heavy 2.5, poids courbe 0.75).
+const POOL_ANALYSIS_CACHE_VERSION = 7;
 const POOL_ANALYSIS_TIMEOUT_MS = 25_000;
 const POOL_ANALYSIS_JOB_POLL_MS = 800;
 const POOL_ANALYSIS_JOB_TIMEOUT_MS = 90_000;
