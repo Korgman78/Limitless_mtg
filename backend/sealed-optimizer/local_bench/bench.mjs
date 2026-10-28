@@ -16,6 +16,10 @@
 // --polish-check : le polish final verifie le score avec terrains avant d'accepter
 // --max-evals : budget par shard, sans deadline (defaut 15000).
 //               0 = deadline de prod en ms seule (non reproductible).
+//
+// Reprise : les resultats sont sauvegardes tous les 10 pools dans <out>.partial.json.
+// Un run interrompu relance avec les memes arguments reprend la ou il s'est arrete
+// (pools deja traites conserves si les reglages sont identiques).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -147,9 +151,37 @@ console.error(
   `budget ${MAX_EVALS > 0 ? `${MAX_EVALS} evals/shard` : "temps seul"}, deadline ${MAX_MS} ms`,
 );
 
+// ─── Reprise d'un run interrompu ─────────────────────────────────────────────
+const PARTIAL = `${args.out}.partial.json`;
+const fingerprint = JSON.stringify({
+  set: SET, format: FORMAT, weights, tuning: lib.describeTuning(core), context: ctxOptions,
+  aggLambda: AGG_LAMBDA, seed: SEED, maxEvals: MAX_EVALS, maxMs: MAX_MS,
+});
+const done = new Map();
+if (fs.existsSync(PARTIAL)) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(PARTIAL, "utf8"));
+    if (prev.fingerprint === fingerprint) for (const r of prev.results) done.set(r.aggregate_id, r);
+    else console.error(`  ${path.basename(PARTIAL)} ignore : reglages differents`);
+  } catch {
+    console.error(`  ${path.basename(PARTIAL)} illisible, ignore`);
+  }
+}
+const saveProgress = () => {
+  const tmp = `${PARTIAL}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ fingerprint, results }));
+  fs.renameSync(tmp, PARTIAL);
+};
+
 const results = [];
 const started = Date.now();
+let resumed = 0;
 for (const [idx, rec] of records.entries()) {
+  if (done.has(rec.aggregate_id)) {
+    results.push(done.get(rec.aggregate_id));
+    resumed++;
+    continue;
+  }
   const t0 = Date.now();
   // Pool : sans basiques (comme parsePoolText), noms canonicalises.
   const parsed = new Map();
@@ -196,8 +228,12 @@ for (const [idx, rec] of records.entries()) {
     shard_evals: shardEvals,
     ms: Date.now() - t0,
   });
-  if ((idx + 1) % 10 === 0) console.error(`  ${idx + 1}/${records.length} pools (${Math.round((Date.now() - started) / 1000)} s)`);
+  if ((idx + 1) % 10 === 0) {
+    saveProgress();
+    console.error(`  ${idx + 1}/${records.length} pools (${Math.round((Date.now() - started) / 1000)} s)`);
+  }
 }
+if (resumed) console.error(`  ${resumed} pools repris de ${path.basename(PARTIAL)}`);
 
 // ─── Resume ──────────────────────────────────────────────────────────────────
 const mean = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
@@ -220,4 +256,5 @@ fs.writeFileSync(args.out, JSON.stringify({
   summary,
   results,
 }, null, 1));
+fs.rmSync(PARTIAL, { force: true });
 console.error(JSON.stringify(summary, null, 1));
