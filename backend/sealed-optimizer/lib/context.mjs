@@ -39,13 +39,14 @@ const wrFallbackFormatsFor = (f) =>
   [...new Set(f === "ArenaDirect_Sealed" ? ["ArenaDirect_Sealed", "TradDraft", "Sealed", "PremierDraft"] : [f, "PremierDraft"])];
 
 // Applique un JSON de reglages au coeur, par section :
-//   {"multicolor": {...}, "power": {...}, "search": {...}, "sources": {...}, "context": {...}}
+//   {"multicolor": {...}, "power": {...}, "search": {...}, "sources": {...}, "curve": {...},
+//    "context": {...}}
 // Un JSON sans section connue est traite comme "multicolor" (ancien format).
 // Renvoie les options de contexte (ex: {shrinkK}) a passer a loadSetContext.
 export const applyTuning = (core, tuning) => {
   if (!tuning) return {};
   const t = typeof tuning === "string" ? JSON.parse(tuning) : tuning;
-  const sections = { multicolor: core.MULTICOLOR_CONSISTENCY, power: core.POWER_TUNING, search: core.SEARCH_TUNING, sources: core.SOURCE_TUNING };
+  const sections = { multicolor: core.MULTICOLOR_CONSISTENCY, power: core.POWER_TUNING, search: core.SEARCH_TUNING, sources: core.SOURCE_TUNING, curve: core.CURVE_TUNING };
   const known = Object.keys(t).some((k) => k in sections || k === "context");
   if (!known) {
     Object.assign(core.MULTICOLOR_CONSISTENCY, t);
@@ -60,6 +61,7 @@ export const describeTuning = (core) => ({
   power: { ...core.POWER_TUNING },
   search: { ...core.SEARCH_TUNING },
   sources: { ...core.SOURCE_TUNING },
+  curve: { ...core.CURVE_TUNING },
 });
 
 // options.shrinkK : lissage du GIH vers la moyenne du format selon l'echantillon,

@@ -245,8 +245,11 @@ const CANDIDATES_PER_MAIN_ARCHETYPE = 2;
 const CANDIDATES_PER_SPLASH_ARCHETYPE = 2;
 export const DEFAULT_MAX_OPTIMIZE_MS = 10_000;
 
+// 2026-10-28 : courbe 1 -> 0.75. Sur 15 000 decks FRA, a score egal, +10 pts d'axe
+// courbe = -0.8 pt de WR (axe surpondere). Banc outcome_calibration : FRA, MSH et
+// HOB predisent mieux (rapports *_2026-10-28_curve075*, *_six25_curve075*).
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
-  power: 2, consistency: 1.3, curve: 1, synergy: 1,
+  power: 2, consistency: 1.3, curve: 0.75, synergy: 1,
 };
 
 const DEFAULT_OPTIMIZER_SEED = 1337;
@@ -1540,6 +1543,14 @@ const sanitizeCurveComponentScales = (
   };
 };
 
+// Haut de courbe : nombre de sorts a 6+ toleres avant penalite. Exporte pour les bancs.
+// 2026-10-28 : 1.5 -> 2.5. Les joueurs en jouent 1.9 en moyenne et, a score egal,
+// chaque sort a 6+ de plus vaut +1 pt de WR (15 000 decks FRA). Banc : FRA predit
+// mieux, MSH et HOB sans difference distinguable (rapports *_2026-10-28_six25*).
+export const CURVE_TUNING = {
+  sixPlusThreshold: 2.5,
+};
+
 const computeCurveAndStructurePenalty = (
   expanded: PoolCard[],
   cards: DeckCard[],
@@ -1578,7 +1589,7 @@ const computeCurveAndStructurePenalty = (
   const sixPlus = (actualCurve[6] || 0) + (actualCurve[7] || 0);
   const maxFourFive = twoThree * 0.8 + 1;
   const excessFourFive = Math.max(0, fourFive - maxFourFive);
-  const excessSixPlus = Math.max(0, sixPlus - 1.5);
+  const excessSixPlus = Math.max(0, sixPlus - CURVE_TUNING.sixPlusThreshold);
   const topHeavyPenalty = excessFourFive * 0.07 + excessSixPlus * 0.12;
 
   // 2) Mild skeleton-shape anchoring (for metagame realism), much softer than
