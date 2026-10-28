@@ -147,6 +147,14 @@ def download_game_data(set_code: str, event: str) -> tuple[Path, str | None]:
 
 # ─── 3. Decks ────────────────────────────────────────────────────────────────
 
+def _count(value: str) -> int:
+    """Quantite de carte : certains sets ecrivent "1.0" au lieu de "1"."""
+    try:
+        return int(float(value)) if value else 0
+    except ValueError:
+        return 0
+
+
 def build_decks(gz_path: Path) -> list[dict]:
     """Une ligne = une partie ; un deck = (draft_id, build_index)."""
     csv.field_size_limit(10_000_000)
@@ -164,11 +172,11 @@ def build_decks(gz_path: Path) -> list[dict]:
             if d is None:
                 d = {
                     "draft_id": key[0],
-                    "build_index": int(key[1]),
+                    "build_index": int(float(key[1] or 0)),
                     "main_colors": row[idx["main_colors"]],
                     "splash_colors": row[idx["splash_colors"]],
-                    "deck": {n: int(row[i]) for i, n in deck_cols if row[i] not in ("", "0")},
-                    "sideboard": {n: int(row[i]) for i, n in side_cols if row[i] not in ("", "0")},
+                    "deck": {n: q for i, n in deck_cols if (q := _count(row[i])) > 0},
+                    "sideboard": {n: q for i, n in side_cols if (q := _count(row[i])) > 0},
                     "games": 0,
                     "wins": 0,
                 }

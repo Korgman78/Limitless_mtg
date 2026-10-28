@@ -17,6 +17,10 @@ const core = await lib.loadCore(repoRoot);
 const ctxOptions = lib.applyTuning(core, TUNING_ARG || null);
 const ctx = await lib.loadSetContext(repoRoot, SET, FORMAT || "ArenaDirect_Sealed", ctxOptions);
 const pairMap = core.buildPairMap(ctx.synergies);
+if (ctx.cardCount === 0) {
+  console.error(`Aucune carte ${SET} dans card_list : peupler card_list avant de lancer l'outil (README, etape 1).`);
+  process.exit(1);
+}
 
 let weights = core.DEFAULT_SCORE_WEIGHTS;
 if (WEIGHTS_ARG) {
