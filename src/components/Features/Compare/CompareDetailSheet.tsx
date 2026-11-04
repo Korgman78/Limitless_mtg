@@ -21,12 +21,14 @@ function sentence(r: CompareRow, s: CompareSettings): string {
   const abs = Math.abs(r.shift).toFixed(1);
   const a = sideLabel(s, 'a'), b = sideLabel(s, 'b');
   const kind = valueKind(s);
-  if (Math.abs(r.shift) < 0.05) return `About the same in ${b} and ${a}.`;
-  if (kind === 'share') return `${r.shift > 0 ? 'More' : 'Less'} played in ${b} than in ${a}: ${abs} points of meta share.`;
+  const [hi, lo] = r.shift > 0 ? [a, b] : [b, a];
+  const prep = s.axis === 'skill' ? 'for' : 'in';
+  if (Math.abs(r.shift) < 0.05) return `About the same ${prep} ${a} and ${prep} ${b}.`;
+  if (kind === 'share') return `More played in ${hi} than in ${lo}: ${abs} points of meta share.`;
   const what = kind !== 'delta' ? ''
     : s.axis === 'skill' ? ', beyond the usual gap between the two levels'
     : ', once each format’s average is taken into account';
-  return `${abs} points ${r.shift > 0 ? 'better' : 'worse'} ${s.axis === 'skill' ? 'for' : 'in'} ${b} than ${s.axis === 'skill' ? 'for' : 'in'} ${a}${what}.`;
+  return `${abs} points better ${prep} ${hi} than ${prep} ${lo}${what}.`;
 }
 
 export const CompareDetailSheet: React.FC<Props> = ({ row: r, settings: s, domain, onClose, onOpen }) => {
@@ -40,8 +42,8 @@ export const CompareDetailSheet: React.FC<Props> = ({ row: r, settings: s, domai
       <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
           {which === 'a'
-            ? <span className="h-2 w-2 rounded-full border-2 border-slate-400" />
-            : <span className="h-2 w-2 rounded-full bg-emerald-400" />}
+            ? <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            : <span className="h-2 w-2 rounded-full border-2 border-slate-400" />}
           <span className="truncate">{sideLabel(s, which)}</span>
         </div>
         <div className="mt-1 text-lg font-black tabular-nums text-white">{fmtValue(v, kind)}</div>

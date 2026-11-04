@@ -39,7 +39,7 @@ export interface CompareRow {
   /** Valeurs tracees et comparees : ecart a la moyenne (WR) ou part de meta. */
   a: number;
   b: number;
-  /** b - a : positif = la carte/l'archetype gagne de la valeur en B. */
+  /** a - b (gauche - droite) : positif = la carte/l'archetype fait mieux en A. */
   shift: number;
   gamesA: number | null;
   gamesB: number | null;
@@ -164,7 +164,7 @@ export function buildRows(
       isSplash: !isCards && /splash/i.test(item.filter_context),
       rarity: isCards ? normalizeRarity(item.rarity) : null,
       a, b,
-      shift: b - a,
+      shift: a - b,
       gamesA, gamesB,
       smallSample: known && Math.min(gamesA!, gamesB!) < threshold,
     });

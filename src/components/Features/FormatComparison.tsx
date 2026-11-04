@@ -28,13 +28,14 @@ interface StoredSettings {
   metric: Metric;
 }
 
+// Lecture gauche vs droite : Shift = A - B, positif = mieux a gauche.
 const DEFAULTS: StoredSettings = {
   axis: 'format',
   subject: 'archetypes',
-  fmtA: 'PremierDraft',
-  fmtB: 'ArenaDirect_Sealed',
-  lvlA: 'global',
-  lvlB: 'top',
+  fmtA: 'ArenaDirect_Sealed',
+  fmtB: 'PremierDraft',
+  lvlA: 'top',
+  lvlB: 'global',
   skillFormat: 'PremierDraft',
   metric: 'wr',
 };
@@ -44,7 +45,7 @@ const DEFAULT_FILTERS: CompareFilters = { search: '', colors: [], rarities: [], 
 const isDesktop = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
 
 export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet, onCardClick, onArchetypeClick }) => {
-  const [stored, setStored] = useLocalStorage<StoredSettings>('limitless-compare', DEFAULTS);
+  const [stored, setStored] = useLocalStorage<StoredSettings>('limitless-compare-v2', DEFAULTS);
   const st: StoredSettings = { ...DEFAULTS, ...stored };
   const isSkill = st.axis === 'skill';
 
@@ -145,7 +146,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet, o
 
   const isCards = settings.subject === 'cards';
   const activeFilterCount = countActiveFilters(filters, isCards);
-  const sideB = isSkill ? `for ${levelLabel(settings.b)} players` : `in ${formatLabel(settings.b)}`;
+  const sideText = (v: string) => (isSkill ? `for ${levelLabel(v)} players` : `in ${formatLabel(v)}`);
   const skillUnavailable = isSkill && !playerQuery.isLoading && !(availableLevels.has(settings.a) && availableLevels.has(settings.b));
 
   const filtersBar = (stacked: boolean) => (
@@ -195,7 +196,7 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet, o
   } else {
     body = (
       <>
-        {!filters.search && <CompareSummary rows={sorted} sideB={sideB} onSelect={selectRow} />}
+        {!filters.search && <CompareSummary rows={sorted} sideA={sideText(settings.a)} sideB={sideText(settings.b)} onSelect={selectRow} />}
         <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
           <span>{sorted.length} {isCards ? 'cards' : 'archetypes'}</span>
           <label className="flex items-center gap-1.5 md:hidden">
@@ -205,9 +206,9 @@ export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet, o
               onChange={e => { const [k, d] = e.target.value.split(':'); setSortKey(k as SortKey); setSortDir(d as 'asc' | 'desc'); }}
               className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-1 text-[11px] font-bold text-slate-200 outline-none"
             >
-              <option value="shift:desc">Biggest gains</option>
-              <option value="shift:asc">Biggest losses</option>
-              <option value="b:desc">Best {isSkill ? levelLabel(settings.b) : formatLabel(settings.b)}</option>
+              <option value="shift:desc">Better {sideText(settings.a)}</option>
+              <option value="shift:asc">Better {sideText(settings.b)}</option>
+              <option value="a:desc">Best {isSkill ? `${levelLabel(settings.a)} players` : formatLabel(settings.a)}</option>
               {!isSkill && <option value="games:desc">Most played</option>}
               <option value="name:asc">Name</option>
             </select>

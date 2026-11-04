@@ -87,9 +87,9 @@ const SECTIONS: GuideSection[] = [
     glow: 'from-purple-500/20',
     tagline: 'See how cards and archetypes shift between two formats — or between player skill levels.',
     see: [
-      { b: 'Between formats', t: ' — how archetypes (win rate or meta share) and cards perform when you move from one format to another, e.g. Premier Draft → Arena Direct Sealed.' },
+      { b: 'Between formats', t: ' — how archetypes (win rate or meta share) and cards perform in one format vs another, e.g. Arena Direct Sealed vs Premier Draft.' },
       { b: 'Between skill levels', t: ' — how much better a card does for Top players than for Global players, beyond the usual skill gap.' },
-      { b: 'Biggest gains and losses', t: ' at the top, then the full table: both values on a shared scale, the Shift and the number of games.' },
+      { b: 'What does better on each side', t: ' at the top, then the full table: both values on a shared scale, the Shift and the number of games.' },
     ],
     doItems: [
       { b: 'Pick the two sides', t: ' and swap them with ⇄ — any two formats, or any two player levels.' },
@@ -149,7 +149,7 @@ const GLOSSARY: { term: string; def: string }[] = [
   { term: 'GIH WR', def: 'Games In Hand win rate — the win % of games where you had the card in hand (drawn or in your opening hand). The main card-quality metric.' },
   { term: 'ALSA', def: 'Average Last Seen At — the average pick number where a card was last seen in packs. Lower = taken earlier = more contested.' },
   { term: 'Delta', def: 'A value’s gap versus the format’s average win rate (e.g. +2.4 means 2.4 points above average).' },
-  { term: 'Shift', def: 'In Compare, how much a metric changes from the first side to the second, in percentage points (e.g. Premier Draft → Arena Direct Sealed). Positive means it does better on the second side.' },
+  { term: 'Shift', def: 'In Compare, the left side minus the right side, in percentage points (e.g. Arena Direct Sealed vs Premier Draft). Positive means it does better on the left.' },
   { term: 'Meta share', def: 'The percentage of all games played by a given archetype.' },
   { term: 'Trophy deck', def: 'A 7-win (7-X) run on Arena. These decks are the dataset behind Trophy Decks and the Trophies Map.' },
   { term: 'Core card', def: 'One of the highest-frequency pillars that defines an archetype’s skeleton — the cards you almost always run.' },

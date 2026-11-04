@@ -93,10 +93,10 @@ export const CompareTable: React.FC<Props> = ({ rows, settings, domain, sortKey,
         {header('a', aLabel, 'right', `${aLabel} · ${unitHint}`)}
         {header('b', bLabel, 'right', `${bLabel} · ${unitHint}`)}
         <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2 border-slate-400" />{aLabel}</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" />{bLabel}</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" />{aLabel}</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2 border-slate-400" />{bLabel}</span>
         </div>
-        {header('shift', 'Shift', 'right', `${bLabel} minus ${aLabel}, in percentage points`)}
+        {header('shift', 'Shift', 'right', `${aLabel} minus ${bLabel}, in percentage points`)}
         {showGames && header('games', 'Games', 'right', 'Smallest sample of the two sides')}
       </div>
 

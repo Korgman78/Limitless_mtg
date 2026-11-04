@@ -11,14 +11,14 @@ interface DumbbellProps {
 }
 
 /**
- * A (cercle creux) et B (point plein) sur un axe commun a toutes les lignes,
+ * A (point plein, cote gauche) et B (cercle creux) sur un axe commun a toutes les lignes,
  * relies par un trait colore selon le sens de l'ecart : l'ecart se lit sans
  * calcul, et les lignes se comparent entre elles d'un coup d'oeil.
  */
 export const Dumbbell: React.FC<DumbbellProps> = ({ a, b, domain, reference = null, className = '' }) => {
   const [lo, hi] = domain;
   const pos = (v: number) => `${Math.min(100, Math.max(0, ((v - lo) / (hi - lo || 1)) * 100))}%`;
-  const tone = shiftTone(b - a);
+  const tone = shiftTone(a - b);
   const left = Math.min(a, b), right = Math.max(a, b);
 
   return (
@@ -33,11 +33,11 @@ export const Dumbbell: React.FC<DumbbellProps> = ({ a, b, domain, reference = nu
       />
       <div
         className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-slate-950"
-        style={{ left: pos(a) }}
+        style={{ left: pos(b) }}
       />
       <div
         className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${TONE_BG[tone]} ring-2 ring-slate-950`}
-        style={{ left: pos(b) }}
+        style={{ left: pos(a) }}
       />
     </div>
   );

@@ -54,11 +54,15 @@ const SideSelect: React.FC<SideSelectProps> = ({ value, options, onChange, ariaL
       value={value}
       onChange={e => onChange(e.target.value)}
       className={`w-full cursor-pointer appearance-none truncate rounded-lg border py-2 pl-3 pr-8 text-sm font-bold text-white outline-none transition-colors focus:border-indigo-400 ${
-        accent ? 'border-indigo-500/40 bg-indigo-500/10' : 'border-slate-700 bg-slate-800/60'
+        accent ? 'border-indigo-500/40 bg-indigo-950' : 'border-slate-700 bg-slate-800'
       }`}
     >
+      {/* Fonds pleins et couleurs explicites : sous Windows, la liste deroulante native
+          reprend le fond du <select> sur du blanc, un fond translucide la rendait illisible. */}
       {options.map(o => (
-        <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
+        <option key={o.value} value={o.value} disabled={o.disabled} className="bg-slate-900 text-white disabled:text-slate-500">
+          {o.label}
+        </option>
       ))}
     </select>
     <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -96,10 +100,10 @@ export const CompareHeader: React.FC<CompareHeaderProps> = ({
 
   const subjectWord = isSkill || s.subject === 'cards' ? 'cards' : 'archetypes';
   const summary = isSkill
-    ? `Which cards reward skill in ${formatLabel(s.skillFormat)}: ${levelLabel(s.b)} players compared with ${levelLabel(s.a)} players.`
+    ? `Which cards reward skill in ${formatLabel(s.skillFormat)}: ${levelLabel(s.a)} players vs ${levelLabel(s.b)} players.`
     : isMeta
-      ? `How much each archetype is played in ${formatLabel(s.b)} compared with ${formatLabel(s.a)}.`
-      : `How ${subjectWord} perform when you move from ${formatLabel(s.a)} to ${formatLabel(s.b)}.`;
+      ? `How much each archetype is played in ${formatLabel(s.a)} vs ${formatLabel(s.b)}.`
+      : `How ${subjectWord} perform in ${formatLabel(s.a)} vs ${formatLabel(s.b)}.`;
 
   const baseA = baselines[s.a], baseB = baselines[s.b];
 
@@ -191,21 +195,21 @@ export const CompareHeader: React.FC<CompareHeaderProps> = ({
           <Info size={12} /> How to read
           {!isSkill && !isMeta && baseA != null && baseB != null && (
             <span className="ml-1 font-normal text-slate-500">
-              · avg WR {formatShort(s.a)} {baseA.toFixed(1)}% → {formatShort(s.b)} {baseB.toFixed(1)}%
+              · avg WR {formatShort(s.a)} {baseA.toFixed(1)}% vs {formatShort(s.b)} {baseB.toFixed(1)}%
             </span>
           )}
         </button>
         {showHelp && (
           <p className="mt-1.5 max-w-3xl">
-            <span className="mr-1 inline-block h-2 w-2 rounded-full border-2 border-slate-400 align-middle" /> {sideLabel(s, 'a')}
-            <span className="mx-1.5 text-slate-600">→</span>
-            <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-400 align-middle" /> {sideLabel(s, 'b')}.{' '}
-            <strong className="text-slate-300">Shift</strong> is the change from the first to the second side, in percentage points:
-            positive (green) means it does better in {sideLabel(s, 'b')}.{' '}
+            <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-400 align-middle" /> {sideLabel(s, 'a')}
+            <span className="mx-1.5 text-slate-600">vs</span>
+            <span className="mr-1 inline-block h-2 w-2 rounded-full border-2 border-slate-400 align-middle" /> {sideLabel(s, 'b')}.{' '}
+            <strong className="text-slate-300">Shift</strong> is left minus right, in percentage points: positive (green) means it
+            does better {s.axis === 'skill' ? 'for' : 'in'} {sideLabel(s, 'a')}, negative (red) better {s.axis === 'skill' ? 'for' : 'in'} {sideLabel(s, 'b')}.{' '}
             {!isSkill && !isMeta &&
               "Values are measured against each format's average win rate, so a format that is easier overall doesn't make every card look better. "}
             {isSkill &&
-              "Better players win more with almost every card, so each level is measured against its own average: a positive shift means the card rewards skill more than usual. "}
+              "Better players win more with almost every card, so each level is measured against its own average: with the better players on the left, a positive shift means the card rewards skill more than usual. "}
             {!isSkill && 'Rows with too few games in either format are hidden by default: their shift is mostly noise.'}
           </p>
         )}
