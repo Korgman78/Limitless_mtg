@@ -214,10 +214,46 @@ pistes ci-dessous.
    correction. Synergie peu prédictive sur MSH/HOB.
 9. [ ] **Contexte rechargé par chaque shard** : le mettre en cache dans le job parent
    (gain de temps total modeste, aucun gain de qualité).
-10. [ ] **GIH par paire de couleurs** (`filter_context`) : pas de biais entre paires
-    sur MSH/HOB, à ne reprendre que si FRA en montre un.
+10. [x] **GIH local par archétype** (non retenu le 2026-10-07) : une fois la paire
+    choisie, GIH local s'il existe, sinon global (code retiré après le test).
+    Prédit significativement **moins bien** les victoires que le GIH global sur MSH
+    (Δ log-loss +0,00033, IC [+0,00020 ; +0,00045]) et HOB (+0,00028, IC [+0,00016 ;
+    +0,00041]) ; écart Q5-Q1 réduit dans toutes les tranches. Le GIH local n'existe que
+    pour une partie des cartes (ex. 33 à 82 cartes en UB) et pas du tout en ArenaDirect
+    sur ECL, TMT, SOS. EOE et FIN non testables : `card_list` vide en base.
+    Pour info, MTGA_Draft_17Lands mélange 70 % local / 30 % global (non testé ici).
 11. [ ] **Déployer le lot validé** (valeurs par défaut déjà passées dans le cœur et
     `index.ts`, non déployées) : parité multicolore, bonus bomb linéaire, diversité 4,0
     unifiée, polish vérifié, budget 12 000 évaluations par shard. Après déploiement :
     vérifier en mode `debug` le taux de shards coupés par la deadline CPU
     (`debugHcSummary.deadlineHitRate`) ; s'il est élevé, baisser `DEEP_SHARD_MAX_EVALS`.
+
+### Écarts joueurs / optimizer (analyse du 2026-10-28)
+Sources : 500 pools FRA rejoués (`backend/sealed-optimizer/pool_replay/`), 15 000 decks
+FRA du game_data analysés « à score et niveau égaux », échanges de cartes dans les
+builds de l'optimizer. Déployé le jour même : castabilité des sorts à 6+ évaluée
+2 tours plus tard, seuil top-heavy 1,5 → 2,5 sorts à 6+, poids courbe 1 → 0,75.
+
+12. [ ] **Poids de la consistance 1,3 → 1,0** : à score égal, +10 pts de consistance
+    = −0,4 pt de WR (FRA) ; le refit des axes donne consistance ≈ 0,4 × puissance
+    (prod 0,65). Tester avec `--weights 2,1.0,0.75,1` sur FRA, MSH, HOB.
+13. [ ] **Analyse « à score égal » dans `outcome_calibration`** : ajouter à chaque
+    fiche l'effet sur le WR, à score et niveau égaux, des sorts à 6+, rares,
+    splash, sorts à ≤ 2, et des 4 axes (bootstrap). Repère les biais du score set
+    par set sans analyse manuelle.
+14. [ ] **Pénalité d'écart à la courbe des skeletons** (`curveSkeletonPenalty`) :
+    34 % de l'écart d'axe courbe entre joueurs et optimizer, et l'axe courbe ne
+    prédit presque rien une fois les autres axes pris en compte. À tester après le
+    point 12 (échelle réduite).
+15. [ ] **Rares moyennes sous-notées** (priorité basse) : à GIH 54-58, l'optimizer
+    joue une rare 20-30 pts moins souvent qu'une commune (joueurs : l'inverse) ;
+    à score égal, +0,8 pt de WR par rare. Cause : synergie moyennée sur toutes les
+    paires, non mesurées = 0 (37 paires mesurées par commune, 11 par rare).
+    Correction au prorata de la couverture testée : HOB prédit moins bien, non
+    retenue. Piste restante : paire non mesurée d'une carte peu couverte = lift de
+    sa paire mesurée la plus faible. Ne touche qu'une dizaine de cartes FRA ; les
+    rares à GIH ≥ 58 sont jouées autant que par les joueurs.
+- Constats sans action : le splash est surnoté par le score (−1 pt de WR à score
+  égal), l'optimizer a raison de presque jamais splasher ; la domination du bleu
+  est cohérente avec ArenaDirect (UB 58,8 % contre GW 51,5 %) ; axe puissance au
+  plafond pour 4 % des decks seulement ; Living Library garde son tag removal.
