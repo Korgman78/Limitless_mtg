@@ -414,7 +414,7 @@ Ligne `sets` **créée inactive** le 2026-11-04 (upsert REST), avec
 
 **Phase 1 exécutée le 2026-11-04** : `card_list` peuplée (341 cartes, 341
 `image_url`, 341 `oracle_text`), `enrich_card_tags.py` (36 removal,
-65 producteurs de mana), puis `corrections/correct_trk_tags.py` — 139
+65 producteurs de mana), puis `corrections/correct_trk_tags.py` — 141
 corrections. Mécaniques du set :
 
 | Mécanique | Cartes | Traitement |
@@ -428,7 +428,7 @@ corrections. Mécaniques du set :
 
 Après corrections : `dependency_tags` = `{dilemma: 8, noncreature_spell: 8,
 strange_new_worlds: 7, fixer_only: 2, historic: 1, instant_sorcery: 1}`,
-35 removal. Les seuils sont **provisoires** : à recalibrer sur les trophy decks.
+37 removal. Les seuils sont **provisoires** : à recalibrer sur les trophy decks.
 
 Le jour J (2026-11-10), un seul UPDATE, faisable depuis un téléphone :
 ```sql

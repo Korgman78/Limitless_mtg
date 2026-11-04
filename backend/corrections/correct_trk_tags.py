@@ -26,7 +26,7 @@ Corrections couvertes :
   1. Faux positifs dependency (regex) — 20 cartes
   2. Dependances STRANGE NEW WORLDS — 13 cartes (7 dependances, 6 effacees)
   3. Dependances DILEMMA — 8 cartes
-  4. Corrections is_removal — 15 cartes
+  4. Corrections is_removal — 17 cartes (dont 2 Stardates)
   5. Support : strange_new_worlds (terrains non-basiques, New Planet) — 43 cartes
   6. Support : dilemma (cartes modales) — 40 cartes
 """
@@ -248,6 +248,10 @@ removal_corrections = [
     removal("Saavik, Stoic Student", True),     # flash, X degats a un attaquant/bloqueur
     removal("De-evolve", True),                 # -4/-0, ne bloque plus, exil a threshold
     removal("Marooned", True),                  # aura « doesn't untap » (paye {3} pour taper)
+
+    # --- Stardates (bonus sheet `sds`, stockee sous TRK) ---
+    removal("Ertai Resurrected", True),         # flash, mode « destroy another target creature »
+    removal("Arcum Dagsson", True),             # edict repetable sur creature-artefact (Borg, robots...)
 ]
 
 # ======================================================================
