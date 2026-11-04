@@ -209,7 +209,9 @@ export default function MTGLimitedApp(): React.ReactElement {
   // --- Persisted State (Smart Defaults) ---
   const [activeTab, setActiveTab] = useLocalStorage<string>('limitless-tab', 'decks');
   const [activeFormat, setActiveFormat] = useLocalStorage<string>('limitless-format', 'PremierDraft');
-  const [activeSet, setActiveSet] = useLocalStorage<string>('limitless-set', 'TLA');
+  // Pas de set par defaut : un nouveau visiteur recoit le set actif le plus
+  // recent (start_date) via l'effet de realignement plus bas.
+  const [activeSet, setActiveSet] = useLocalStorage<string>('limitless-set', '');
   const [deckTypeFilter, setDeckTypeFilter] = useLocalStorage<string>('limitless-deckType', 'Two colors');
   const [archetypeFilter, setArchetypeFilter] = useLocalStorage<string>('limitless-archetype', 'Global');
   const [sortConfig, setSortConfig] = useLocalStorage<SortConfig>('limitless-sort', { key: 'gih_wr', dir: 'desc' });
@@ -238,7 +240,8 @@ export default function MTGLimitedApp(): React.ReactElement {
   // Supabase (rotation de format), les visiteurs de retour gardent un code absent
   // de la liste. Le <select> retombe alors visuellement sur la 1re option pendant
   // que les requêtes continuent d'interroger l'ancien set — on réaligne sur le
-  // set le plus récent.
+  // set le plus récent. Couvre aussi le premier passage (activeSet vide) :
+  // useSets trie par start_date décroissante.
   useEffect(() => {
     if (!availableSets.length) return;
     if (availableSets.some(s => s.code === activeSet)) return;
@@ -702,7 +705,7 @@ export default function MTGLimitedApp(): React.ReactElement {
             <div className="relative">
               <select value={activeSet} onChange={(e) => setActiveSet(e.target.value)} className="appearance-none bg-indigo-600 hover:bg-indigo-500 transition-colors text-white border border-indigo-500 py-1.5 pl-3 pr-8 rounded-lg text-xs font-bold focus:outline-none uppercase cursor-pointer">
                 {availableSets.map(s => <option key={s.code} value={s.code}>{s.code}</option>)}
-                {availableSets.length === 0 && <option value="TLA">TLA</option>}
+                {availableSets.length === 0 && <option value={activeSet}>{activeSet || '…'}</option>}
               </select>
               <ChevronRight size={12} className="absolute right-2 top-2.5 text-white rotate-90 pointer-events-none" />
             </div>
