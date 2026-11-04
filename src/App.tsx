@@ -1166,7 +1166,14 @@ export default function MTGLimitedApp(): React.ReactElement {
             {/* 3. FORMAT COMPARISON TAB */}
             {activeTab === 'compare' && (
               <motion.div key="compare-tab" className="fade-in-soft">
-                <FormatComparison activeSet={activeSet} />
+                <FormatComparison
+                  activeSet={activeSet}
+                  onCardClick={(cardName) => handleCardSelect({ name: cardName })}
+                  onArchetypeClick={(colors) => {
+                    const deck = decks.find(d => d.colors === colors);
+                    if (deck) setSelectedDeck(deck);
+                  }}
+                />
               </motion.div>
             )}
 

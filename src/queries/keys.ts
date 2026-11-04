@@ -18,6 +18,8 @@ export const queryKeys = {
     ['formatComparison', set, mode] as const,
   playerLevelComparison: (set: string, format: string) =>
     ['playerLevelComparison', set, format] as const,
+  compareSamples: (set: string, subject: string, formatA: string, formatB: string) =>
+    ['compareSamples', set, subject, formatA, formatB] as const,
   articles: (setFilter: string) => ['articles', setFilter] as const,
   article: (id: string | number) => ['article', id] as const,
   formatBalance: (set: string) => ['formatBalance', set] as const,

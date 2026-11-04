@@ -1,519 +1,283 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, ArrowUpDown, AlertTriangle, PieChart as PieChartIcon, Repeat, HelpCircle, Trophy, X, Users } from 'lucide-react';
-import type { FormatComparisonProps, FormatOption } from '../../types';
-import { FORMAT_OPTIONS, PLAYER_LEVEL_OPTIONS, RARITY_STYLES } from '../../constants';
+import React, { useCallback, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertTriangle } from 'lucide-react';
+import type { FormatComparisonProps } from '../../types';
+import { PLAYER_LEVEL_OPTIONS } from '../../constants';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useCoachMarks } from '../../hooks/useCoachMarks';
-import { extractColors, normalizeRarity, getCardImage, normalizeArchetypeName, getArchetypeAcronym } from '../../utils/helpers';
-import CardImage from '../Common/CardImage';
-import { ManaIcons } from '../Common/ManaIcons';
-import { ComparisonRowSkeleton } from '../Common/Skeleton';
-import { CoachMarkWrapper } from '../Common/CoachMark';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { useFormatComparison } from '../../queries/useFormatComparison';
 import { usePlayerLevelComparison } from '../../queries/usePlayerLevelComparison';
+import { useCompareSamples } from '../../queries/useCompareSamples';
+import type { Axis, CompareFilters, CompareRow, CompareSettings, Metric, SortKey, Subject } from './Compare/compareModel';
+import { axisDomain, buildRows, filterRows, formatLabel, levelLabel, sortRows } from './Compare/compareModel';
+import { CompareHeader } from './Compare/CompareHeader';
+import { CompareFiltersBar, countActiveFilters } from './Compare/CompareFiltersBar';
+import { CompareSummary } from './Compare/CompareSummary';
+import { CompareTable } from './Compare/CompareTable';
+import { CompareDetailSheet } from './Compare/CompareDetailSheet';
 
-export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet }) => {
-  const [formatA, setFormatA] = useState<string>('PremierDraft');
-  const [formatB, setFormatB] = useState<string>('ArenaDirect_Sealed');
-  const [compareMode, setCompareMode] = useState<string>('archetypes');
+/** Reglages persistes : chaque axe garde sa propre paire A/B. */
+interface StoredSettings {
+  axis: Axis;
+  subject: Subject;
+  fmtA: string;
+  fmtB: string;
+  lvlA: string;
+  lvlB: string;
+  skillFormat: string;
+  metric: Metric;
+}
 
-  // Type de comparaison : 'format' (par format) ou 'player' (par niveau de joueur)
-  const [comparisonType, setComparisonType] = useState<string>('format');
-  const [levelA, setLevelA] = useState<string>('top');
-  const [levelB, setLevelB] = useState<string>('bottom');
-  const isPlayer = comparisonType === 'player';
-  // En mode player on compare toujours des cartes ; on réutilise formatA comme format sélectionné.
-  const cardLike = isPlayer || compareMode === 'cards';
+const DEFAULTS: StoredSettings = {
+  axis: 'format',
+  subject: 'archetypes',
+  fmtA: 'PremierDraft',
+  fmtB: 'ArenaDirect_Sealed',
+  lvlA: 'global',
+  lvlB: 'top',
+  skillFormat: 'PremierDraft',
+  metric: 'wr',
+};
 
-  // Vue unifiée : un seul sélecteur pilote les deux dimensions (type + sujet).
-  // 'archetypes' / 'cards' = comparaison par format ; 'players' = comparaison par niveau de joueur.
-  const view = isPlayer ? 'players' : compareMode;
-  const setView = (v: string): void => {
-    if (v === 'players') { setComparisonType('player'); }
-    else { setComparisonType('format'); setCompareMode(v); }
+const DEFAULT_FILTERS: CompareFilters = { search: '', colors: [], rarities: [], archType: 'all', hideSmallSamples: true };
+
+const isDesktop = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+
+export const FormatComparison: React.FC<FormatComparisonProps> = ({ activeSet, onCardClick, onArchetypeClick }) => {
+  const [stored, setStored] = useLocalStorage<StoredSettings>('limitless-compare', DEFAULTS);
+  const st: StoredSettings = { ...DEFAULTS, ...stored };
+  const isSkill = st.axis === 'skill';
+
+  const settings: CompareSettings = {
+    axis: st.axis,
+    subject: isSkill ? 'cards' : st.subject,
+    a: isSkill ? st.lvlA : st.fmtA,
+    b: isSkill ? st.lvlB : st.fmtB,
+    skillFormat: st.skillFormat,
+    metric: st.metric,
   };
-  const VIEW_OPTIONS = [
-    { id: 'archetypes', label: 'Archetypes', Icon: PieChartIcon },
-    { id: 'cards', label: 'Cards · Formats', Icon: Zap },
-    { id: 'players', label: 'Cards · Players', Icon: Users },
-  ];
 
-  // Coach marks for onboarding
-  const { isUnseen, markAsSeen, getMessage } = useCoachMarks();
+  const [filters, setFilters] = useState<CompareFilters>(DEFAULT_FILTERS);
+  const debouncedSearch = useDebounce<string>(filters.search, 250);
+  const [sortKey, setSortKey] = useState<SortKey>('shift');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [detail, setDetail] = useState<CompareRow | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const formatQuery = useFormatComparison(activeSet, compareMode, !isPlayer);
-  const playerQuery = usePlayerLevelComparison(activeSet, formatA, isPlayer);
-  const data = isPlayer ? (playerQuery.data ?? []) : (formatQuery.data ?? []);
-  const loading = isPlayer ? playerQuery.isLoading : formatQuery.isLoading;
-  const error = isPlayer ? playerQuery.error : formatQuery.error;
-  const fetchError = error ? 'Failed to load comparison data' : null;
-  const [metricMode, setMetricMode] = useState<string>('winrate');
-  const [mobileShowFormatB, setMobileShowFormatB] = useState<boolean>(false);
-  const [mobileTooltip, setMobileTooltip] = useState<string | null>(null);
+  const formatQuery = useFormatComparison(activeSet, st.subject, !isSkill);
+  const playerQuery = usePlayerLevelComparison(activeSet, st.skillFormat, isSkill);
+  const samplesQuery = useCompareSamples(activeSet, st.subject, st.fmtA, st.fmtB, !isSkill);
+  const query = isSkill ? playerQuery : formatQuery;
+  const data = query.data ?? [];
 
-  const [rarityFilter, setRarityFilter] = useState<string[]>([]);
-  const [colorFilters, setColorFilters] = useState<string[]>([]);
-  const [archTypeFilter, setArchTypeFilter] = useState<string>('All');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const debouncedSearchTerm = useDebounce<string>(searchTerm, 300);
-
-  const [sortDir, setSortDir] = useState<string>('desc');
-  const [visibleCount, setVisibleCount] = useState<number>(30);
-  const [zoomedCard, setZoomedCard] = useState<string | null>(null);
-
-  const observerTarget = React.useRef<HTMLDivElement | null>(null);
-
-  const getFormatLabel = (val: string): string => FORMAT_OPTIONS.find((o: FormatOption) => o.value === val)?.label || val;
-  const getFormatShort = (val: string): string => FORMAT_OPTIONS.find((o: FormatOption) => o.value === val)?.short || val.substring(0, 3).toUpperCase();
-
-  // Sélecteurs actifs selon le type de comparaison (format A/B ou niveau A/B)
-  const selA = isPlayer ? levelA : formatA;
-  const selB = isPlayer ? levelB : formatB;
-  const getLabel = (val: string): string => isPlayer
-    ? (PLAYER_LEVEL_OPTIONS.find((o: FormatOption) => o.value === val)?.label || val)
-    : getFormatLabel(val);
-  const getShort = (val: string): string => isPlayer
-    ? (PLAYER_LEVEL_OPTIONS.find((o: FormatOption) => o.value === val)?.short || val)
-    : getFormatShort(val);
-
-  useEffect(() => {
-    if (mobileTooltip) {
-      const timer = setTimeout(() => setMobileTooltip(null), 4000);
-      return () => clearTimeout(timer);
+  const availableLevels = useMemo(() => {
+    const out = new Set<string>();
+    if (!isSkill) return out;
+    for (const o of PLAYER_LEVEL_OPTIONS) {
+      if ((playerQuery.data ?? []).some((r: any) => r[`card_wr_${o.value}`] != null)) out.add(o.value);
     }
-  }, [mobileTooltip]);
+    return out;
+  }, [isSkill, playerQuery.data]);
 
-  // Reset visible count when data changes
-  useEffect(() => {
-    setVisibleCount(30);
-  }, [data]);
+  const patchSettings = useCallback((patch: Partial<CompareSettings>) => {
+    setStored(prev => {
+      const cur = { ...DEFAULTS, ...prev };
+      const next = { ...cur };
+      if (patch.axis) next.axis = patch.axis;
+      if (patch.subject) next.subject = patch.subject;
+      if (patch.skillFormat) next.skillFormat = patch.skillFormat;
+      if (patch.metric) next.metric = patch.metric;
+      const skill = next.axis === 'skill';
+      const [ka, kb] = skill ? (['lvlA', 'lvlB'] as const) : (['fmtA', 'fmtB'] as const);
+      // Choisir le meme cote des deux cotes n'a pas de sens : on echange.
+      if (patch.a && patch.a !== cur[ka]) {
+        if (patch.a === cur[kb]) next[kb] = cur[ka];
+        next[ka] = patch.a;
+      }
+      if (patch.b && patch.b !== cur[kb]) {
+        if (patch.b === cur[ka]) next[ka] = cur[kb];
+        next[kb] = patch.b;
+      }
+      return next;
+    });
+  }, [setStored]);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      entries => { if (entries[0].isIntersecting) setVisibleCount(prev => prev + 40); },
-      { threshold: 0.1, rootMargin: '600px' }
+  const swap = useCallback(() => {
+    setStored(prev => {
+      const cur = { ...DEFAULTS, ...prev };
+      return cur.axis === 'skill'
+        ? { ...cur, lvlA: cur.lvlB, lvlB: cur.lvlA }
+        : { ...cur, fmtA: cur.fmtB, fmtB: cur.fmtA };
+    });
+  }, [setStored]);
+
+  const patchFilters = useCallback((patch: Partial<CompareFilters>) => setFilters(f => ({ ...f, ...patch })), []);
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
+  };
+
+  const allRows = useMemo(
+    () => buildRows(data, settings, isSkill ? undefined : samplesQuery.data?.games),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, samplesQuery.data, settings.axis, settings.subject, settings.a, settings.b, settings.metric],
+  );
+  const { visible, hiddenSmall } = useMemo(
+    () => filterRows(allRows, { ...filters, search: debouncedSearch, hideSmallSamples: !isSkill && filters.hideSmallSamples }),
+    [allRows, filters, debouncedSearch, isSkill],
+  );
+  // Pas de taille d'echantillon par niveau de joueur : un tri par parties retombe sur le shift.
+  const effectiveSort: SortKey = isSkill && sortKey === 'games' ? 'shift' : sortKey;
+  const sorted = useMemo(() => sortRows(visible, effectiveSort, sortDir), [visible, effectiveSort, sortDir]);
+  const domain = useMemo(
+    () => axisDomain(visible, settings),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible, settings.axis, settings.subject, settings.metric],
+  );
+
+  const openRow = (r: CompareRow) => {
+    setDetail(null);
+    if (r.kind === 'card') onCardClick?.(r.id);
+    else onArchetypeClick?.(r.id);
+  };
+  const selectRow = (r: CompareRow) => (isDesktop() ? openRow(r) : setDetail(r));
+
+  const isCards = settings.subject === 'cards';
+  const activeFilterCount = countActiveFilters(filters, isCards);
+  const sideB = isSkill ? `for ${levelLabel(settings.b)} players` : `in ${formatLabel(settings.b)}`;
+  const skillUnavailable = isSkill && !playerQuery.isLoading && !(availableLevels.has(settings.a) && availableLevels.has(settings.b));
+
+  const filtersBar = (stacked: boolean) => (
+    <CompareFiltersBar
+      filters={filters}
+      onChange={patchFilters}
+      isCards={isCards}
+      showSampleToggle={!isSkill}
+      hiddenSmall={hiddenSmall}
+      stacked={stacked}
+    />
+  );
+
+  let body: React.ReactNode;
+  if (query.isLoading || (!isSkill && samplesQuery.isLoading)) {
+    body = (
+      <div className="space-y-2" aria-busy="true">
+        {[...Array(8)].map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-900/60" />)}
+      </div>
     );
-    if (observerTarget.current) observer.observe(observerTarget.current);
-    return () => { if (observerTarget.current) observer.unobserve(observerTarget.current); };
-  }, [data, compareMode, rarityFilter, colorFilters, searchTerm]);
-
-  const processedData = useMemo(() => {
-    const fMap: Record<string, string> = { 'PremierDraft': 'premier', 'TradDraft': 'trad', 'Sealed': 'sealed', 'ArenaDirect_Sealed': 'direct' };
-    // En mode player, les colonnes du pivot sont suffixées par le niveau (top/middle/bottom).
-    const sA = isPlayer ? levelA : (fMap[formatA] || 'premier');
-    const sB = isPlayer ? levelB : (fMap[formatB] || 'direct');
-
-    return data
-      .filter((item: any) => {
-        if (cardLike && debouncedSearchTerm) {
-          if (!item.card_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) return false;
-        }
-        if (cardLike) {
-          if (rarityFilter.length > 0) {
-            const r = normalizeRarity(item.rarity);
-            if (!rarityFilter.includes(r)) return false;
-          }
-          if (colorFilters.length > 0) {
-            const cColors = extractColors(item.colors || "");
-            if (colorFilters.includes('M') && cColors.length > 1) return true;
-            if (colorFilters.includes('C') && cColors.length === 0) return true;
-            const monoFilters = colorFilters.filter(f => ['W', 'U', 'B', 'R', 'G'].includes(f));
-            if (monoFilters.length > 0) {
-              for (let f of monoFilters) { if (cColors.includes(f)) return true; }
-              return false;
-            }
-          }
-        }
-        if (!cardLike && archTypeFilter) {
-          const rawContext = item.filter_context || "";
-          const colorsOnly = rawContext.replace(' + Splash', '').replace(/[^WUBRG]/g, '');
-          const isSplash = rawContext.toLowerCase().includes('splash');
-          if (archTypeFilter === 'All') return colorsOnly.length === 2 || (colorsOnly.length === 3 && !isSplash);
-          if (archTypeFilter === '2color') return colorsOnly.length === 2 && !isSplash;
-          if (archTypeFilter === 'splash') return colorsOnly.length === 2 && isSplash;
-          if (archTypeFilter === '3color') return colorsOnly.length === 3;
-        }
-        return true;
-      })
-      .map((item: any) => {
-        let valA: number, valB: number, rawA: number | null, rawB: number | null, diff: number | null;
-        if (isPlayer) {
-          // Comparaison entre niveaux de joueur sur un même format : WR BRUT, pas de normalisation.
-          // L'écart (ex. top - global) identifie les cartes qui bénéficient du skill.
-          valA = parseFloat(item[`card_wr_${sA}`]);
-          valB = parseFloat(item[`card_wr_${sB}`]);
-          rawA = null; rawB = null;
-          diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
-        } else if (cardLike) {
-          valA = parseFloat(item[`card_delta_${sA}`]);
-          valB = parseFloat(item[`card_delta_${sB}`]);
-          rawA = parseFloat(item[`card_wr_${sA}`]);
-          rawB = parseFloat(item[`card_wr_${sB}`]);
-          diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
-        } else {
-          if (metricMode === 'winrate') {
-            valA = parseFloat(item[`arch_delta_${sA}`]);
-            valB = parseFloat(item[`arch_delta_${sB}`]);
-            rawA = parseFloat(item[`arch_wr_${sA}`]);
-            rawB = parseFloat(item[`arch_wr_${sB}`]);
-            diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
-          } else {
-            valA = parseFloat(item[`meta_share_${sA}`]);
-            valB = parseFloat(item[`meta_share_${sB}`]);
-            rawA = null; rawB = null;
-            diff = (!isNaN(valA) && !isNaN(valB)) ? (valA - valB) : null;
-          }
-        }
-        if (isNaN(valA) || isNaN(valB)) return null;
-        return { ...item, valA, valB, rawA: isNaN(rawA as any) ? null : rawA, rawB: isNaN(rawB as any) ? null : rawB, diff };
-      })
-      .filter((item: any) => item !== null)
-      .sort((a: any, b: any) => {
-        const diffA = a.diff !== null ? a.diff : -99999;
-        const diffB = b.diff !== null ? b.diff : -99999;
-        return sortDir === 'desc' ? (diffB - diffA) : (diffA - diffB);
-      });
-  }, [data, compareMode, cardLike, isPlayer, comparisonType, levelA, levelB, formatA, formatB, rarityFilter, colorFilters, archTypeFilter, sortDir, metricMode, debouncedSearchTerm]);
-
-  const visibleData = processedData.slice(0, visibleCount);
-  const SortButtonContent = () => <>{sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}</>;
+  } else if (query.error) {
+    body = (
+      <EmptyState icon>Couldn't load the comparison. Check your connection and try again.</EmptyState>
+    );
+  } else if (skillUnavailable) {
+    body = (
+      <EmptyState>
+        Skill-level win rates aren't available for {activeSet} in {formatLabel(settings.skillFormat)}
+        {availableLevels.size > 1 ? ' for these levels. Pick another level above.' : ' yet.'}
+      </EmptyState>
+    );
+  } else if (sorted.length === 0) {
+    body = (
+      <EmptyState>
+        {allRows.length === 0
+          ? `No data to compare for ${activeSet} yet.`
+          : hiddenSmall > 0 && visible.length === 0 && activeFilterCount === 0
+            ? 'Every row has too few games. Untick "Hide small samples" to see them anyway.'
+            : 'Nothing matches these filters.'}
+        {activeFilterCount > 0 && (
+          <button onClick={() => setFilters({ ...DEFAULT_FILTERS, hideSmallSamples: filters.hideSmallSamples })} className="mt-3 block w-full text-xs font-bold text-indigo-300 hover:text-white">
+            Clear filters
+          </button>
+        )}
+      </EmptyState>
+    );
+  } else {
+    body = (
+      <>
+        {!filters.search && <CompareSummary rows={sorted} sideB={sideB} onSelect={selectRow} />}
+        <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
+          <span>{sorted.length} {isCards ? 'cards' : 'archetypes'}</span>
+          <label className="flex items-center gap-1.5 md:hidden">
+            Sort
+            <select
+              value={`${effectiveSort}:${sortDir}`}
+              onChange={e => { const [k, d] = e.target.value.split(':'); setSortKey(k as SortKey); setSortDir(d as 'asc' | 'desc'); }}
+              className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-1 text-[11px] font-bold text-slate-200 outline-none"
+            >
+              <option value="shift:desc">Biggest gains</option>
+              <option value="shift:asc">Biggest losses</option>
+              <option value="b:desc">Best {isSkill ? levelLabel(settings.b) : formatLabel(settings.b)}</option>
+              {!isSkill && <option value="games:desc">Most played</option>}
+              <option value="name:asc">Name</option>
+            </select>
+          </label>
+        </div>
+        <CompareTable
+          rows={sorted}
+          settings={settings}
+          domain={domain}
+          sortKey={effectiveSort}
+          sortDir={sortDir}
+          onSort={handleSort}
+          onSelect={selectRow}
+          showGames={!isSkill}
+        />
+      </>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-6 min-h-screen relative">
-      <AnimatePresence>
-        {fetchError && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3">
-            <AlertTriangle size={18} className="text-red-400" />
-            <span className="text-sm">{fetchError}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="relative flex min-h-screen flex-col gap-3 pb-32 md:gap-4">
+      <CompareHeader
+        settings={settings}
+        onChange={patchSettings}
+        onSwap={swap}
+        availableLevels={availableLevels}
+        baselines={samplesQuery.data?.baselines ?? {}}
+        activeFilterCount={activeFilterCount}
+        onOpenFilters={() => setFiltersOpen(true)}
+        filters={filtersBar(false)}
+      />
+
+      {body}
 
       <AnimatePresence>
-        {mobileTooltip && (
-          <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-20 left-4 right-4 z-[60] bg-indigo-900/95 text-white p-3 rounded-xl border border-indigo-500/50 shadow-2xl backdrop-blur-md"
-            onClick={() => setMobileTooltip(null)}>
-            <div className="flex items-start gap-3">
-              <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs font-medium leading-relaxed">{mobileTooltip}</p>
-            </div>
-          </motion.div>
+        {detail && (
+          <CompareDetailSheet key="detail" row={detail} settings={settings} domain={domain} onClose={() => setDetail(null)} onOpen={openRow} />
         )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {zoomedCard && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
-            onClick={() => setZoomedCard(null)}>
-            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
-              onClick={(e) => e.stopPropagation()}>
-              <CardImage src={getCardImage(zoomedCard)} loading="eager"
-                className="max-h-[85vh] max-w-full rounded-2xl shadow-2xl border border-white/10" />
-            </motion.div>
-            <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={24} /></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md pb-4 pt-2">
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4 shadow-2xl">
-          {/* Sélecteur de vue unifié (sujet + dimension de comparaison) */}
-          <div className="relative flex bg-slate-950 p-1 rounded-xl border border-slate-800 w-full">
-            {VIEW_OPTIONS.map(({ id, label, Icon }) => {
-              const active = view === id;
-              return (
-                <button key={id} onClick={() => setView(id)}
-                  className={`relative flex-1 flex items-center justify-center gap-1 md:gap-1.5 px-1.5 md:px-4 py-2 md:py-2.5 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-tight md:tracking-wide leading-tight transition-colors duration-200 ${active ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}>
-                  {active && (
-                    <motion.div layoutId="compare-view-pill"
-                      className="absolute inset-0 bg-indigo-600 rounded-lg shadow-[0_4px_14px_rgba(79,70,229,0.45)]"
-                      transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
-                  )}
-                  <span className="relative z-10 flex items-center gap-1 text-center">
-                    <Icon size={12} className="shrink-0" />
-                    <span>{label}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Ligne de configuration contextuelle */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            {isPlayer && (
-              <div className="flex flex-col gap-1 sm:w-44 flex-shrink-0">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest pl-1">Format</span>
-                <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
-                  {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-            )}
-            <div className="flex flex-col gap-1 flex-1 min-w-0">
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">
-                {isPlayer ? 'Player levels' : 'Formats'}
-              </span>
-              <div className="relative flex items-center">
-                <div className="flex items-center gap-2 w-full relative z-10">
-                  {isPlayer ? (
-                    <>
-                      <select value={levelA} onChange={(e) => setLevelA(e.target.value)} className="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
-                        {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <span className="text-slate-600 font-black text-[10px] flex-shrink-0">VS</span>
-                      <select value={levelB} onChange={(e) => setLevelB(e.target.value)} className="flex-1 min-w-0 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
-                        {PLAYER_LEVEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </>
-                  ) : (
-                    <>
-                      <select value={formatA} onChange={(e) => setFormatA(e.target.value)} className="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
-                        {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <span className="text-slate-600 font-black text-[10px] flex-shrink-0">VS</span>
-                      <select value={formatB} onChange={(e) => setFormatB(e.target.value)} className="flex-1 min-w-0 bg-indigo-900/40 border border-indigo-500/30 text-white text-[10px] font-bold p-2.5 rounded-lg outline-none uppercase cursor-pointer focus:border-indigo-500 transition-colors">
-                        {FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </>
-                  )}
-                </div>
-                <Zap size={13} className="text-yellow-400 absolute left-1/2 -translate-x-1/2 -bottom-2 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)] z-0" fill="currentColor" />
-              </div>
-            </div>
-          </div>
-
-          {isPlayer && (
-            <p className="text-[10px] text-slate-500 leading-snug -mt-1">
-              Raw win rate by player skill group · a positive shift means the card <span className="text-emerald-400/80 font-bold">rewards skill</span>.
-            </p>
-          )}
-
-          <div className="flex flex-wrap justify-between items-center pt-3 border-t border-slate-800 gap-4">
-            <div className="flex-1 flex flex-wrap gap-2 items-center w-full">
-              {cardLike ? (
-                <div className="flex flex-col md:flex-row gap-2 w-full md:items-center justify-between">
-                  <div className="flex gap-2 w-full md:w-auto md:order-2 md:ml-auto">
-                    <div className="relative flex-1 md:w-48 md:flex-none">
-                      <input type="text" placeholder="Search card..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 text-slate-300 py-1.5 pl-8 pr-3 rounded-lg text-[10px] font-bold focus:border-indigo-500 focus:outline-none transition-colors" />
-                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                    </div>
-                    <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0">
-                      <SortButtonContent />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-0.5 p-1 bg-slate-950 rounded-lg border border-slate-800 overflow-x-auto no-scrollbar w-full md:w-auto md:order-1 mask-linear-fade">
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      {['W', 'U', 'B', 'R', 'G'].map(c => (
-                        <button key={c} onClick={() => setColorFilters(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c])}
-                          className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${colorFilters.includes(c) ? 'scale-110 shadow-md z-10' : 'opacity-60 grayscale'}`}
-                          style={{ borderColor: colorFilters.includes(c) ? 'white' : 'transparent' }}>
-                          <img src={`https://svgs.scryfall.io/card-symbols/${c}.svg`} className="w-full h-full" />
-                        </button>
-                      ))}
-                      <div className="w-[1px] h-4 bg-slate-700 mx-1"/>
-                      <button onClick={() => setColorFilters(p => p.includes('M') ? p.filter(x => x !== 'M') : [...p, 'M'])} className={`w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 via-red-500 to-blue-600 border flex items-center justify-center text-[8px] font-black text-white ${colorFilters.includes('M') ? 'border-white scale-110' : 'border-transparent opacity-60 grayscale'}`}>M</button>
-                      <button onClick={() => setColorFilters(p => p.includes('C') ? p.filter(x => x !== 'C') : [...p, 'C'])} className={`w-6 h-6 rounded-full bg-slate-400 border flex items-center justify-center text-[8px] font-black text-slate-900 ${colorFilters.includes('C') ? 'border-white scale-110' : 'border-transparent opacity-60'}`}>C</button>
-                    </div>
-                    <div className="w-[1px] h-5 bg-slate-800 mx-1 flex-shrink-0"></div>
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      {['M', 'R', 'U', 'C'].map(r => (
-                        <button key={r} onClick={() => setRarityFilter(p => p.includes(r) ? p.filter(x => x !== r) : [...p, r])}
-                          className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black border transition-all ${rarityFilter.includes(r) ? `${RARITY_STYLES[r]} border-white/40 shadow-lg scale-105` : 'bg-slate-900 border-transparent text-slate-500 opacity-40 hover:opacity-60'}`}>{r}</button>
-                      ))}
-                      {(rarityFilter.length > 0 || colorFilters.length > 0) && (<button onClick={() => { setRarityFilter([]); setColorFilters([]); }} className="ml-1 p-1 text-slate-500 hover:text-white transition-colors"><X size={14} /></button>)}
-                    </div>
-                  </div>
-                  <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="hidden md:flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest md:order-3">
-                    <SortButtonContent />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                  <select value={archTypeFilter} onChange={(e) => setArchTypeFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg outline-none cursor-pointer flex-1 md:w-auto capitalize truncate">
-                    <option value="All">All Archetypes</option>
-                    <option value="2color">2 Colors</option>
-                    <option value="splash">2 Col. + Splash</option>
-                    <option value="3color">3 Colors</option>
-                  </select>
-                  <CoachMarkWrapper
-                    id="format-metric-mode"
-                    message={getMessage('format-metric-mode')}
-                    isUnseen={isUnseen('format-metric-mode')}
-                    onMarkSeen={() => markAsSeen('format-metric-mode')}
-                    position="bottom"
-                    delay={1500}
-                  >
-                    <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 flex-shrink-0">
-                      <button onClick={() => { setMetricMode('winrate'); markAsSeen('format-metric-mode'); }} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'winrate' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                        <Trophy size={9} /> WR
-                      </button>
-                      <button onClick={() => { setMetricMode('meta'); markAsSeen('format-metric-mode'); }} className={`flex items-center gap-1 px-2 py-1.5 rounded text-[9px] font-black transition-all ${metricMode === 'meta' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>
-                        <PieChartIcon size={9} /> META
-                      </button>
-                    </div>
-                  </CoachMarkWrapper>
-                  <button onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')} className="md:hidden text-indigo-400 text-[9px] font-black flex items-center justify-center gap-1 bg-indigo-500/10 px-2 py-1.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest flex-shrink-0" title={sortDir === 'desc' ? 'Overperformers' : 'Underperformers'}>
-                    <ArrowUpDown size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
-            {!cardLike && (
-              <CoachMarkWrapper
-                id="format-sort-direction"
-                message={getMessage('format-sort-direction')}
-                isUnseen={isUnseen('format-sort-direction')}
-                onMarkSeen={() => markAsSeen('format-sort-direction')}
-                position="left"
-                delay={2000}
-                className="hidden md:block ml-auto"
-              >
-                <button onClick={() => { setSortDir(p => p === 'desc' ? 'asc' : 'desc'); markAsSeen('format-sort-direction'); }} className="flex text-indigo-400 text-[10px] font-black items-center gap-2 bg-indigo-500/10 px-4 py-2.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all uppercase tracking-widest">
-                  <SortButtonContent />
-                </button>
-              </CoachMarkWrapper>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3 pb-32">
-        {/* Mobile tip for tapping stats */}
-        <AnimatePresence>
-          {isUnseen('format-tap-stats') && !loading && visibleData.length > 0 && (
+        {filtersOpen && (
+          <motion.div
+            key="filters"
+            className="fixed inset-0 z-[950] flex items-end bg-black/60 backdrop-blur-sm md:hidden"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setFiltersOpen(false)}
+          >
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden bg-indigo-900/30 border border-indigo-500/30 rounded-lg p-2.5 flex items-center gap-2"
+              role="dialog"
+              aria-label="Filters"
+              className="w-full rounded-t-2xl border-t border-slate-700 bg-slate-900 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              onClick={e => e.stopPropagation()}
             >
-              <HelpCircle size={14} className="text-indigo-400 flex-shrink-0" />
-              <p className="text-[11px] text-indigo-200 flex-1">{getMessage('format-tap-stats')}</p>
-              <button onClick={() => markAsSeen('format-tap-stats')} className="text-indigo-400 hover:text-white p-1">
-                <X size={14} />
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-700" />
+              <h3 className="mb-3 text-sm font-black text-white">Filters</h3>
+              {filtersBar(true)}
+              <button onClick={() => setFiltersOpen(false)} className="mt-4 w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-bold text-white">
+                Show {sorted.length} {isCards ? 'cards' : 'archetypes'}
               </button>
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        {loading ? (
-          <div className="space-y-3">
-            {[...Array(8)].map((_, i) => <ComparisonRowSkeleton key={i} />)}
-          </div>
-        ) : visibleData.length === 0 ? (
-          <div className="text-center py-20 text-slate-500 font-bold italic border border-dashed border-slate-800 rounded-xl">Aucune donnée trouvée.</div>
-        ) : (
-          <>
-            {visibleData.map((item: any, idx: number) => {
-              const getStatsTooltip = (label: string, val: number): string => {
-                if (isPlayer) return `${label} players: this card has a ${val.toFixed(1)}% win rate (games drawn)`;
-                if (compareMode === 'cards') return `In ${label}, this card win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
-                if (metricMode === 'winrate') return `In ${label}, this archetype win rate is ${Math.abs(val).toFixed(1)}% ${val >= 0 ? 'above' : 'below'} global average win rate`;
-                return `In ${label}, this archetype represents ${val.toFixed(1)}% of the Meta`;
-              };
-              const getShiftTooltip = (val: number): string => {
-                const absVal = Math.abs(val).toFixed(1);
-                const fA = getLabel(selA); const fB = getLabel(selB);
-                if (isPlayer) return `This card's win rate is ${absVal}% ${val >= 0 ? 'higher' : 'lower'} for ${fA} vs ${fB} players`;
-                if (compareMode === 'cards') return `This card ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
-                if (metricMode === 'winrate') return `This archetype ${val >= 0 ? 'overperforms' : 'underperforms'} in ${fA} vs ${fB} by ${absVal}%`;
-                return `This archetype is ${val >= 0 ? 'more played' : 'less played'} in ${fA} vs ${fB} by ${absVal} points`;
-              };
-              const handleStatClick = (e: React.MouseEvent, text: string): void => {
-                e.stopPropagation();
-                if (window.innerWidth < 768) setMobileTooltip(text);
-              };
-
-              return (
-                <motion.div key={`${item.card_name || item.filter_context}-${idx}`}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => cardLike && setZoomedCard(item.card_name)}
-                  className={`w-full bg-slate-900/50 border border-slate-800/60 rounded-xl p-3.5 flex items-center justify-between group hover:border-indigo-500/40 hover:bg-slate-800/80 transition-all text-left ${cardLike ? 'cursor-zoom-in' : ''}`}>
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    {cardLike ? (
-                      <div className="relative shrink-0">
-                        <CardImage src={getCardImage(item.card_name)} className="w-12 h-16 md:w-14 md:h-20 rounded-lg object-cover bg-black border border-slate-700 shadow-2xl" alt={item.card_name} />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 min-w-0">
-                        <ManaIcons colors={extractColors(item.filter_context)} size="lg" />
-                        <span className="font-black text-xs md:text-sm text-slate-100 truncate tracking-tight pt-0.5">
-                          <span className="md:hidden">{getArchetypeAcronym(item.filter_context)}</span>
-                          <span className="hidden md:inline">{normalizeArchetypeName(item.filter_context)}</span>
-                        </span>
-                      </div>
-                    )}
-                    {cardLike && (
-                      <div className="flex flex-col justify-center h-full flex-1 min-w-0">
-                        <span className="font-black text-xs md:text-sm text-slate-100 text-left leading-tight line-clamp-2 md:truncate w-full block">{item.card_name}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-row items-center gap-2 md:gap-3 flex-shrink-0">
-                    {idx === 0 ? (
-                      <CoachMarkWrapper
-                        id="format-toggle-mobile"
-                        message={getMessage('format-toggle-mobile')}
-                        isUnseen={isUnseen('format-toggle-mobile')}
-                        onMarkSeen={() => markAsSeen('format-toggle-mobile')}
-                        position="left"
-                        delay={1000}
-                        className="md:hidden"
-                      >
-                        <button onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); markAsSeen('format-toggle-mobile'); }}
-                          className="p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90" aria-label="Switch format view">
-                          <Repeat size={16} />
-                        </button>
-                      </CoachMarkWrapper>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); setMobileShowFormatB(!mobileShowFormatB); }}
-                        className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-400 transition-colors active:scale-90" aria-label="Switch format view">
-                        <Repeat size={16} />
-                      </button>
-                    )}
-                    <div className="flex flex-row gap-8 items-center">
-                      <div className={`${mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
-                        title={getStatsTooltip(getLabel(selA), item.valA)} onClick={(e) => handleStatClick(e, getStatsTooltip(getLabel(selA), item.valA))}>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getShort(selA)}</span>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getLabel(selA)}</span>
-                        <span className={`text-xs font-mono font-bold ${isPlayer ? 'text-slate-200' : (item.valA !== null && item.valA >= 0 ? 'text-emerald-500' : 'text-red-400')}`}>
-                          {item.valA !== null ? (isPlayer ? '' : (metricMode === 'winrate' && item.valA > 0 ? '+' : '')) + item.valA.toFixed(1) + '%' : '--'}
-                        </span>
-                        {item.rawA !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawA.toFixed(1)}%</span>}
-                      </div>
-                      <div className={`${!mobileShowFormatB ? 'hidden' : 'flex'} md:flex flex-col items-end group-hover:opacity-100 transition-opacity min-w-[60px]`}
-                        title={getStatsTooltip(getLabel(selB), item.valB)} onClick={(e) => handleStatClick(e, getStatsTooltip(getLabel(selB), item.valB))}>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 md:hidden">{getShort(selB)}</span>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tight opacity-70 hidden md:block">{getLabel(selB)}</span>
-                        <span className={`text-xs font-mono font-bold ${isPlayer ? 'text-slate-200' : (item.valB !== null && item.valB >= 0 ? 'text-emerald-500' : 'text-red-400')}`}>
-                          {item.valB !== null ? (isPlayer ? '' : (metricMode === 'winrate' && item.valB > 0 ? '+' : '')) + item.valB.toFixed(1) + '%' : '--'}
-                        </span>
-                        {item.rawB !== null && <span className="text-[9px] text-slate-500 font-bold opacity-80 mt-0.5">{item.rawB.toFixed(1)}%</span>}
-                      </div>
-                    </div>
-                    <div className={`flex flex-col items-end min-w-[70px] md:min-w-[90px] p-2 md:p-2.5 rounded-lg md:rounded-xl border transition-all ${item.diff >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'} ${Math.abs(item.diff) > 5 ? (item.diff >= 0 ? 'shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'shadow-[0_0_12px_rgba(239,68,68,0.4)]') : ''}`}
-                      title={getShiftTooltip(item.diff)} onClick={(e) => handleStatClick(e, getShiftTooltip(item.diff))}>
-                      <span className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Shift</span>
-                      <span className={`text-lg md:text-xl font-black tabular-nums ${item.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.diff !== null ? ((item.diff >= 0 ? '+' : '') + item.diff.toFixed(1) + '%') : '--'}
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-            {visibleCount < processedData.length && (
-              <div ref={observerTarget} className="h-10 w-full flex items-center justify-center opacity-50">
-                <span className="text-[10px] animate-pulse">Loading more cards...</span>
-              </div>
-            )}
-          </>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 };
+
+const EmptyState: React.FC<{ children: React.ReactNode; icon?: boolean }> = ({ children, icon }) => (
+  <div className="rounded-xl border border-dashed border-slate-800 px-6 py-14 text-center text-sm text-slate-400">
+    {icon && <AlertTriangle size={18} className="mx-auto mb-2 text-amber-400" />}
+    {children}
+  </div>
+);

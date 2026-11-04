@@ -9,11 +9,6 @@ export interface CoachMark {
 const STORAGE_KEY = 'limitless-coach-marks';
 
 const DEFAULT_COACH_MARKS: Record<string, string> = {
-  // FormatComparison hints
-  'format-toggle-mobile': 'Appuyez sur ⟳ pour voir les stats du second format',
-  'format-metric-mode': 'Basculez entre Winrate et Meta Share',
-  'format-sort-direction': 'Triez pour voir les surperformances ou sous-performances',
-  'format-tap-stats': 'Appuyez sur les stats pour voir les détails',
   // CardDetailOverlay hint
   'deck-wr-point': 'Ce point indique le winrate du deck. Appuyez pour plus de détails.',
   // Sparkline hint

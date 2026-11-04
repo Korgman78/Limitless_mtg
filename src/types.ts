@@ -134,6 +134,10 @@ export interface CardDetailOverlayProps {
 
 export interface FormatComparisonProps {
   activeSet: string;
+  /** Ouvre la fiche carte (format actif de l'app). */
+  onCardClick?: (cardName: string) => void;
+  /** Ouvre le dashboard d'un archetype, par code couleurs (ex. « BU + Splash »). */
+  onArchetypeClick?: (colors: string) => void;
 }
 
 export interface PressReviewProps {

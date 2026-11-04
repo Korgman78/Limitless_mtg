@@ -16,7 +16,7 @@ export function useFormatComparison(activeSet: string, compareMode: string, enab
       if (error) throw error
       return data || []
     },
-    enabled,
+    enabled: enabled && !!activeSet,
     staleTime: 5 * 60_000,
   })
 }

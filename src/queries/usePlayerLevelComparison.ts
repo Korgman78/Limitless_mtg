@@ -20,7 +20,7 @@ export function usePlayerLevelComparison(activeSet: string, format: string, enab
       if (error) throw error
       return data || []
     },
-    enabled,
+    enabled: enabled && !!activeSet,
     staleTime: 5 * 60_000,
   })
 }
