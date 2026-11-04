@@ -3,25 +3,51 @@ import { TrendingUp } from 'lucide-react';
 import type { MetagamePieChartProps, Deck } from '../../types';
 
 export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, totalGames, globalMeanWR }) => {
+  // Survol a la souris (desktop) et selection au tap (mobile) : le survol prime.
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const activeIndex = hoveredIndex ?? selectedIndex;
+
   const counts: Record<string, number> = { 'Mono': 0, '2 Color': 0, '2+Splash': 0, '3 Color': 0, '>3 Color': 0 };
+  // Somme des wr x parties : WR de chaque part pondere par les parties.
+  const weightedWins: Record<string, number> = { 'Mono': 0, '2 Color': 0, '2+Splash': 0, '3 Color': 0, '>3 Color': 0 };
 
   decks.forEach((d: Deck) => {
     if (d.games === 0) return;
-    if (d.type === 'Mono-color') counts['Mono'] += d.games;
-    else if (d.type === 'Two colors') counts['2 Color'] += d.games;
-    else if (d.type === 'Two colors + splash') counts['2+Splash'] += d.games;
-    else if (d.type === 'Three colors') counts['3 Color'] += d.games;
-    else counts['>3 Color'] += d.games;
+    let key: string;
+    if (d.type === 'Mono-color') key = 'Mono';
+    else if (d.type === 'Two colors') key = '2 Color';
+    else if (d.type === 'Two colors + splash') key = '2+Splash';
+    else if (d.type === 'Three colors') key = '3 Color';
+    else key = '>3 Color';
+    counts[key] += d.games;
+    weightedWins[key] += d.wr * d.games;
   });
 
+  const wrOf = (key: string) => (counts[key] > 0 ? weightedWins[key] / counts[key] : null);
+
   const data = [
-    { label: 'Mono', value: counts['Mono'], color: '#94a3b8' },
-    { label: '2 Color', value: counts['2 Color'], color: '#6366f1' },
-    { label: '2+Splash', value: counts['2+Splash'], color: '#a855f7' },
-    { label: '3 Color', value: counts['3 Color'], color: '#f59e0b' },
-    { label: '>3 Color', value: counts['>3 Color'], color: '#ea580c' },
+    { label: 'Mono', fullLabel: 'Mono colour', value: counts['Mono'], wr: wrOf('Mono'), color: '#94a3b8' },
+    { label: '2 Color', fullLabel: 'Two colours', value: counts['2 Color'], wr: wrOf('2 Color'), color: '#6366f1' },
+    { label: '2+Splash', fullLabel: 'Two colours + splash', value: counts['2+Splash'], wr: wrOf('2+Splash'), color: '#a855f7' },
+    { label: '3 Color', fullLabel: 'Three colours', value: counts['3 Color'], wr: wrOf('3 Color'), color: '#f59e0b' },
+    { label: '>3 Color', fullLabel: 'Four+ colours', value: counts['>3 Color'], wr: wrOf('>3 Color'), color: '#ea580c' },
   ];
+
+  const active = activeIndex !== null ? data[activeIndex] : null;
+  const displayedWR = active ? active.wr : (globalMeanWR ?? null);
+  const displayedLabel = active ? `${active.fullLabel} WR` : 'Format WR Baseline';
+
+  // Survol reserve a la souris : sur ecran tactile, le tap passe par onClick
+  // (un second tap sur la meme part, ou un tap ailleurs dans la carte, deselectionne).
+  const interactionProps = (i: number) => ({
+    onPointerEnter: (e: React.PointerEvent) => { if (e.pointerType === 'mouse') setHoveredIndex(i); },
+    onPointerLeave: (e: React.PointerEvent) => { if (e.pointerType === 'mouse') setHoveredIndex(null); },
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setSelectedIndex(prev => (prev === i ? null : i));
+    },
+  });
 
   const total = totalGames || 1;
   let cumulativePercent = 0;
@@ -33,7 +59,7 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
   };
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-38px_rgba(59,130,246,0.32)]">
+    <div onClick={() => setSelectedIndex(null)} className="relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_20px_40px_-38px_rgba(59,130,246,0.32)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(99,102,241,0.08),transparent_28%),radial-gradient(circle_at_100%_0%,rgba(168,85,247,0.05),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.04),rgba(2,6,23,0.2))]" />
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-white/20 to-transparent" />
 
@@ -64,7 +90,7 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
                 ? `M 1 0 A 1 1 0 1 1 -1 0 A 1 1 0 1 1 1 0`
                 : `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`;
 
-              const isHovered = hoveredIndex === i;
+              const isHovered = activeIndex === i;
 
               return (
                 <path
@@ -75,8 +101,7 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
                   strokeWidth={isHovered ? "0.08" : "0.05"}
                   filter={isHovered ? "url(#pressed)" : undefined}
                   className="cursor-pointer transition-all duration-150"
-                  onMouseEnter={() => setHoveredIndex(i)}
-                  onMouseLeave={() => setHoveredIndex(null)}
+                  {...interactionProps(i)}
                 />
               );
             })}
@@ -85,14 +110,14 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
 
           {/* Center info - shows hovered slice or default */}
           <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-            {hoveredIndex !== null && data[hoveredIndex] ? (
+            {active ? (
               <>
-                <span className="text-[8px] text-slate-400 font-bold uppercase">{data[hoveredIndex].label}</span>
+                <span className="text-[8px] text-slate-400 font-bold uppercase">{active.label}</span>
                 <span className="text-sm font-black text-white tabular-nums drop-shadow-[0_0_10px_rgba(255,255,255,0.08)]">
-                  {((data[hoveredIndex].value / total) * 100).toFixed(1)}%
+                  {((active.value / total) * 100).toFixed(1)}%
                 </span>
                 <span className="text-[8px] text-slate-500 tabular-nums">
-                  {(data[hoveredIndex].value / 1000).toFixed(1)}k games
+                  {(active.value / 1000).toFixed(1)}k games
                 </span>
               </>
             ) : (
@@ -104,12 +129,23 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
           </div>
         </div>
 
+        {/* WR global ou de la part active - Desktop only */}
+        <div className="hidden md:flex md:h-36 flex-1 flex-col items-center justify-center text-center">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{displayedLabel}</span>
+          <span className="mt-0.5 text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 tabular-nums leading-tight">
+            {displayedWR !== null ? `${displayedWR.toFixed(1)}%` : '—'}
+          </span>
+        </div>
+
         <div className="flex-1 flex justify-end">
           <div className="w-full max-w-[130px] md:max-w-[150px] space-y-1">
             {data.map((d, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between rounded-md border border-white/5 p-1 text-[10px] transition-all hover:border-slate-600 hover:bg-slate-800/50 md:p-1.5 md:text-[11px]"
+                {...(d.value > 0 ? interactionProps(i) : {})}
+                className={`flex items-center justify-between rounded-md border p-1 text-[10px] transition-all md:p-1.5 md:text-[11px] ${
+                  d.value > 0 ? 'cursor-pointer' : ''
+                } ${activeIndex === i ? 'border-slate-600 bg-slate-800/50' : 'border-white/5'}`}
                 style={{
                   borderLeftColor: d.value > 0 ? d.color : 'transparent',
                   borderLeftWidth: '3px',
@@ -128,8 +164,8 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
         </div>
       </div>
 
-      {/* Format WR Baseline - Mobile only */}
-      {globalMeanWR !== undefined && (
+      {/* WR global ou de la part selectionnee - Mobile only */}
+      {displayedWR !== null && (
         <div className="md:hidden mt-2 pt-2 border-t border-slate-800/50">
           <div className="flex items-center justify-center">
             <div className="relative group">
@@ -142,9 +178,9 @@ export const MetagamePieChart: React.FC<MetagamePieChartProps> = ({ decks, total
                   <TrendingUp size={10} className="text-indigo-400" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[7px] font-bold uppercase tracking-wider text-slate-500">Format WR Baseline</span>
+                  <span className="text-[7px] font-bold uppercase tracking-wider text-slate-500">{displayedLabel}</span>
                   <span className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 tabular-nums leading-tight">
-                    {globalMeanWR.toFixed(1)}%
+                    {displayedWR.toFixed(1)}%
                   </span>
                 </div>
               </div>
