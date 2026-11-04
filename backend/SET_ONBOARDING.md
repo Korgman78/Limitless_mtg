@@ -1,8 +1,8 @@
 # Onboarding d'un nouveau set
 
 Runbook pour ajouter une extension à Limitless MTG. Reconstitué depuis les
-configs réelles — à suivre dans l'ordre. Dernier set onboardé : **FRA — Reality
-Fracture**, sortie Arena le 2026-09-29 (cf. section en bas).
+configs réelles — à suivre dans l'ordre. Dernier set onboardé : **TRK — Star
+Trek**, sortie Arena le 2026-11-10 (cf. section en bas).
 
 ## Comment l'app gère les sets (à savoir avant de commencer)
 - L'app liste les sets de la table Supabase **`sets`** où `active=true`, **moins**
@@ -377,6 +377,79 @@ landcycling coûte souvent 4-5 mais se cycle pour {2}), puis repasser le banc.
 **Dette HOB soldée au passage** : `correct_hob_tags.py` n'a jamais été écrit (le
 faux positif connu reste le cycle de bicolores tagué `is_removal`). À arbitrer :
 soit on l'écrit, soit on l'assume puisque HOB sort bientôt de la fenêtre chaude.
+
+---
+
+## Cas concret — TRK (Star Trek), sortie Arena 2026-11-10
+
+Onboarding préparé le 2026-11-04 (J-6). Papier le 2026-11-13, avant-premières
+du 6 au 12.
+
+Vérifications faites le 2026-11-04 :
+- Code **`TRK`** confirmé des deux côtés — Scryfall (`code: trk`,
+  `arena_code: trk`, « Star Trek », `set_type: expansion`) et 17Lands (`TRK` en
+  tête de `https://www.17lands.com/data/expansions`, `card_ratings` renvoie `[]`,
+  normal avant la sortie).
+- **Bonus sheet `sds` « Stardates »** (`set_type: masterpiece`, 30 cartes —
+  Sheoldred, the Apocalypse, Jhoira, Riku…) : rattachée automatiquement par
+  `fetch_bonus_sheet_codes`. Sets enfants hors périmètre : `ttrk` (tokens),
+  `atrk` (art series), `trc` « Star Trek Commander » et ses enfants.
+- **Pas de Special Guests** : `set:spg date=2026-11-13` ne renvoie rien.
+- **Spoiler complet** : base numérotée **1→326 sans trou** (puis 332→579 de
+  traitements alternatifs, 1701→1706 promo). La requête du script ramène
+  **311 cartes** — 96C / 110U / 80R / 25M —, plus les 30 Stardates = 341.
+
+Fait dans le code (2026-11-04) :
+- `TRK` ajouté à côté de `FRA` dans les 5 ciblages ETL (`etl_script`,
+  `etl_script_trophydecks`, `etl_script_synergy`, `calculate_archetypal_decks`,
+  `etl_trophy_draft_picks`). FRA y reste pendant la transition.
+- `TARGET_SET = "TRK"` dans les 4 scripts manuels de Phase 1/2.
+- ⚠️ `meta_pulse.yaml` était resté sur `--sets MSH` depuis la bascule de juin :
+  le meta pulse ne tournait plus sur aucun set vivant (ni HOB ni FRA). Remis sur
+  `--sets FRA TRK` (filtré par `active`, donc TRK inerte jusqu'au jour J).
+- `differently`, `while`, `time`, `times` ajoutés à `EXCLUDED_DEPENDENCY_WORDS`.
+
+Ligne `sets` **créée inactive** le 2026-11-04 (upsert REST), avec
+`start_date = 2026-11-11` — J+1, même convention que HOB et FRA.
+
+**Phase 1 exécutée le 2026-11-04** : `card_list` peuplée (341 cartes, 341
+`image_url`, 341 `oracle_text`), `enrich_card_tags.py` (36 removal,
+65 producteurs de mana), puis `corrections/correct_trk_tags.py` — 139
+corrections. Mécaniques du set :
+
+| Mécanique | Cartes | Traitement |
+|---|---|---|
+| `Strange new worlds` — X = terrains de noms différents | 13 | dép. `strange_new_worlds` sur 7 (min 2-3 non-basiques), effacée sur 6 |
+| Terrains non-basiques, jetons « New Planet », tuteurs de Planète | 43 | support `strange_new_worlds` |
+| `face a dilemma` — chaque choix de mode | 8 payoffs | dép. `dilemma` (min 4, Riku 5) |
+| Cartes modales (sorts, ETB, terrains rares) | 40 | support `dilemma` |
+| `Federation` — types parmi les créatures non-Borg | 6 | aucune dépendance (tag `borg` parasite effacé) |
+| « attack while … total power 8 or greater » | 6 | aucune dépendance (tag `while` parasite effacé) |
+
+Après corrections : `dependency_tags` = `{dilemma: 8, noncreature_spell: 8,
+strange_new_worlds: 7, fixer_only: 2, historic: 1, instant_sorcery: 1}`,
+35 removal. Les seuils sont **provisoires** : à recalibrer sur les trophy decks.
+
+Le jour J (2026-11-10), un seul UPDATE, faisable depuis un téléphone :
+```sql
+update sets set active = true where code = 'TRK';
+```
+
+**Reste à faire :**
+- [x] Créer la ligne `sets` — fait le 2026-11-04, `active=false`.
+- [x] Phase 1 : `populate_card_list.py` + `enrich_card_tags.py` + `correct_trk_tags.py`.
+- [ ] **Avant le 10/11 : pousser le ciblage sur `main`** — les crons GitHub
+      Actions lisent le code de `main`, pas le poste local. Sans ça, les trophy
+      decks de J sont perdus.
+- [ ] J : `update sets set active = true where code = 'TRK';`
+- [ ] J : `populate_arena_ids.py TRK` (obligatoire pour le diary, cf. FRA).
+      Contrôle : 336/341 attendus (les 5 basiques en moins).
+- [ ] J+1/J+3 : `scryfall_enrichment.py` (après le 1er `daily_etl` sur TRK).
+- [ ] Calibrer le sealed optimizer quand assez de trophy decks Sealed :
+      `calibrate_dependency_thresholds.py --set TRK` (dry run d'abord), en
+      particulier `dilemma` et `strange_new_worlds`.
+- [ ] Retirer `FRA` des 5 ciblages et de `meta_pulse.yaml` quand il ne sort plus
+      de trophy decks.
 
 ---
 

@@ -10,7 +10,7 @@ from pathlib import Path
 # 1. CONFIGURATION
 # ==============================================================================
 
-TARGET_SET = "FRA"
+TARGET_SET = "TRK"
 
 # --- ENVIRONNEMENT ---
 current_dir = Path(__file__).parent
@@ -104,6 +104,10 @@ EXCLUDED_DEPENDENCY_WORDS = {
     'more', 'then', 'different', 'opponent', 'cast', 'charge', 'plain',
     # Supertype, pas un type de creature (« return target legendary card »)
     'legendary',
+    # Captures sur TRK (Star Trek) : « the number of differently named lands »,
+    # « Whenever you attack while creatures you control have total power 8 »,
+    # « the number of times you chose a mode ».
+    'differently', 'while', 'time', 'times',
 }
 
 TOKEN_COUNT_WORDS = {
